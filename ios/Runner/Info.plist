@@ -7,7 +7,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Busboard Nl</string>
+	<string>BusBoard NL</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>BusBoard NL uses your location to find nearby bus stops.</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
