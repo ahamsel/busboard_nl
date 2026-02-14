@@ -63,18 +63,8 @@ class ArrivalRowTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    // Scheduled time
-                    Text(
-                      arrival.scheduledDisplay,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
                     // Live badge
                     if (arrival.isLive) ...[
-                      const SizedBox(width: 8),
                       _LiveBadge(status: arrival.liveStatus),
                     ],
                     if (arrival.isLive && arrival.vehicleNumber != null) ...[
@@ -93,7 +83,7 @@ class ArrivalRowTile extends StatelessWidget {
             ),
           ),
 
-          // Countdown
+          // Countdown + expected arrival time
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
@@ -107,16 +97,27 @@ class ArrivalRowTile extends StatelessWidget {
                   letterSpacing: -0.3,
                 ),
               ),
+              const SizedBox(height: 1),
+              Text(
+                arrival.isLive && arrival.predictedTime != null
+                    ? 'exp ${arrival.displayTime.toDisplayString()}'
+                    : arrival.scheduledDisplay,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               if (arrival.isLive &&
                   arrival.predictedTime != null &&
                   arrival.scheduledTime != arrival.predictedTime)
                 Text(
                   'sched ${arrival.scheduledDisplay}',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.25),
-                    fontSize: 10.5,
+                    color: Colors.white.withValues(alpha: 0.2),
+                    fontSize: 10,
                     decoration: TextDecoration.lineThrough,
-                    decorationColor: Colors.white.withValues(alpha: 0.25),
+                    decorationColor: Colors.white.withValues(alpha: 0.2),
                   ),
                 ),
             ],

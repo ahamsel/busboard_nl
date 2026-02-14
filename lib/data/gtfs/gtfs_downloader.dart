@@ -9,10 +9,17 @@ import 'package:archive/archive.dart';
 /// - Reuse if cached ZIP exists and is < 7 days old.
 /// - Manual [force] parameter re-downloads regardless.
 class GtfsDownloader {
-  static const gtfsUrl = 'https://www.metrobus.com/gtfs.asp';
+  static const gtfsUrl = 'https://www.metrobustransit.ca/google/google_transit.zip';
   static const _zipFilename = 'metrobus_gtfs.zip';
   static const _extractDir = 'gtfs_data';
   static const _maxCacheAge = Duration(days: 7);
+  static const _requiredFiles = [
+    'stops.txt',
+    'routes.txt',
+    'trips.txt',
+    'stop_times.txt',
+    'calendar.txt',
+  ];
 
   /// Get the app documents directory.
   Future<Directory> get _appDir async => getApplicationDocumentsDirectory();
@@ -29,12 +36,21 @@ class GtfsDownloader {
     return Directory('${dir.path}/$_extractDir');
   }
 
-  /// Whether the cached GTFS data is still valid (< 7 days old).
+  /// Whether the cached GTFS data is still valid (< 7 days old and
+  /// extraction contains the required files).
   Future<bool> isCacheValid() async {
     final zip = await _zipFile;
     if (!await zip.exists()) return false;
     final modified = await zip.lastModified();
-    return DateTime.now().difference(modified) < _maxCacheAge;
+    if (DateTime.now().difference(modified) >= _maxCacheAge) return false;
+
+    // Verify extracted files actually exist
+    final extDir = await extractionDir;
+    if (!await extDir.exists()) return false;
+    for (final requiredFile in _requiredFiles) {
+      if (!await File('${extDir.path}/$requiredFile').exists()) return false;
+    }
+    return true;
   }
 
   /// Last download timestamp, or null if never downloaded.
@@ -62,6 +78,15 @@ class GtfsDownloader {
     if (response.statusCode != 200) {
       throw Exception(
         'Failed to download GTFS data: HTTP ${response.statusCode}',
+      );
+    }
+
+    // Validate response is a ZIP (magic bytes: PK = 0x50 0x4B)
+    if (response.bodyBytes.length < 4 ||
+        response.bodyBytes[0] != 0x50 ||
+        response.bodyBytes[1] != 0x4B) {
+      throw Exception(
+        'GTFS download did not return a valid ZIP file',
       );
     }
 
