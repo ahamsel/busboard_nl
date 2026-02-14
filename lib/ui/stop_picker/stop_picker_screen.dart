@@ -264,13 +264,13 @@ class _LoadingGtfs extends StatelessWidget {
 }
 
 /// Error state if GTFS download/parse fails.
-class _GtfsError extends StatelessWidget {
+class _GtfsError extends ConsumerWidget {
   final String error;
 
   const _GtfsError({required this.error});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     return Center(
       child: Padding(
@@ -295,9 +295,7 @@ class _GtfsError extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
-              onPressed: () {
-                // TODO: trigger reload
-              },
+              onPressed: () => ref.invalidate(gtfsRepositoryProvider),
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
             ),

@@ -4,11 +4,18 @@ import 'package:intl/intl.dart';
 import '../../state/providers.dart';
 
 /// Settings screen for changing refresh interval and forcing GTFS re-download.
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  bool _refreshing = false;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final settings = ref.watch(settingsProvider);
 
@@ -152,12 +159,28 @@ class SettingsScreen extends ConsumerWidget {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () async {
-                        // Force re-download
-                        ref.invalidate(gtfsRepositoryProvider);
-                      },
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Refresh Schedule Now'),
+                      onPressed: _refreshing
+                          ? null
+                          : () async {
+                              setState(() => _refreshing = true);
+                              ref.read(settingsProvider.notifier).requestForceRefresh();
+                              ref.invalidate(gtfsRepositoryProvider);
+                              // Wait for the provider to complete
+                              await ref.read(gtfsRepositoryProvider.future);
+                              if (mounted) {
+                                setState(() => _refreshing = false);
+                              }
+                            },
+                      icon: _refreshing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh, size: 18),
+                      label: Text(
+                        _refreshing ? 'Downloading...' : 'Refresh Schedule Now',
+                      ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: theme.colorScheme.primary,
                         side: BorderSide(

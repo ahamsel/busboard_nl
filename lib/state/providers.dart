@@ -15,23 +15,27 @@ class AppSettings {
   final String? selectedStopId;
   final int refreshIntervalSeconds;
   final DateTime? lastGtfsUpdate;
+  final bool forceGtfsRefresh;
 
   const AppSettings({
     this.selectedStopId,
     this.refreshIntervalSeconds = 30,
     this.lastGtfsUpdate,
+    this.forceGtfsRefresh = false,
   });
 
   AppSettings copyWith({
     String? selectedStopId,
     int? refreshIntervalSeconds,
     DateTime? lastGtfsUpdate,
+    bool? forceGtfsRefresh,
   }) {
     return AppSettings(
       selectedStopId: selectedStopId ?? this.selectedStopId,
       refreshIntervalSeconds:
           refreshIntervalSeconds ?? this.refreshIntervalSeconds,
       lastGtfsUpdate: lastGtfsUpdate ?? this.lastGtfsUpdate,
+      forceGtfsRefresh: forceGtfsRefresh ?? this.forceGtfsRefresh,
     );
   }
 }
@@ -71,6 +75,14 @@ class SettingsNotifier extends Notifier<AppSettings> {
     await prefs.setString('lastGtfsUpdate', time.toIso8601String());
     state = state.copyWith(lastGtfsUpdate: time);
   }
+
+  void requestForceRefresh() {
+    state = state.copyWith(forceGtfsRefresh: true);
+  }
+
+  void clearForceRefresh() {
+    state = state.copyWith(forceGtfsRefresh: false);
+  }
 }
 
 final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
@@ -80,12 +92,25 @@ final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
 // ─── GTFS Repository ───────────────────────────────────────
 
 final gtfsRepositoryProvider = FutureProvider<GtfsRepository>((ref) async {
+  final settings = ref.read(settingsProvider);
+  final force = settings.forceGtfsRefresh;
+
   final repo = GtfsRepository();
-  await repo.load();
-  final lastDownload = await repo.lastDownloadTime();
-  if (lastDownload != null) {
-    ref.read(settingsProvider.notifier).setLastGtfsUpdate(lastDownload);
-  }
+  await repo.load(force: force);
+
+  // Update settings after build is complete
+  Future.microtask(() {
+    if (force) {
+      ref.read(settingsProvider.notifier).clearForceRefresh();
+    }
+    final lastDownload = repo.lastDownloadTime();
+    lastDownload.then((time) {
+      if (time != null) {
+        ref.read(settingsProvider.notifier).setLastGtfsUpdate(time);
+      }
+    });
+  });
+
   return repo;
 });
 
