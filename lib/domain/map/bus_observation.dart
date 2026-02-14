@@ -1,0 +1,32 @@
+/// A single raw GPS observation from a bus.
+class BusObservation {
+  final DateTime timestamp;
+  final double lat;
+  final double lon;
+  final double heading;
+  final double speed;
+  final String? gtfsTripId;
+  final bool rejected;
+
+  const BusObservation({
+    required this.timestamp,
+    required this.lat,
+    required this.lon,
+    required this.heading,
+    required this.speed,
+    this.gtfsTripId,
+    this.rejected = false,
+  });
+
+  BusObservation copyWith({bool? rejected}) {
+    return BusObservation(
+      timestamp: timestamp,
+      lat: lat,
+      lon: lon,
+      heading: heading,
+      speed: speed,
+      gtfsTripId: gtfsTripId,
+      rejected: rejected ?? this.rejected,
+    );
+  }
+}

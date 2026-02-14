@@ -39,7 +39,7 @@ class NearestStopService {
     final nearby = <NearbyStop>[];
 
     for (final stop in allStops) {
-      final distance = _haversineDistance(
+      final distance = haversineDistance(
         latitude,
         longitude,
         stop.stopLat,
@@ -59,7 +59,7 @@ class NearestStopService {
   }
 
   /// Calculate the haversine distance between two points in meters.
-  static double _haversineDistance(
+  static double haversineDistance(
     double lat1,
     double lon1,
     double lat2,

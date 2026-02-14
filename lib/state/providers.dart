@@ -8,6 +8,8 @@ import '../data/realtime/timetrack_models.dart';
 import '../domain/arrival/arrival_models.dart';
 import '../domain/arrival/arrival_service.dart';
 import '../domain/location/nearest_stop_service.dart';
+import '../domain/map/bus_motion_engine.dart';
+import '../domain/map/bus_tracking_state.dart';
 
 // ─── Settings ──────────────────────────────────────────────
 
@@ -193,6 +195,44 @@ final nearestStopsProvider = FutureProvider.autoDispose<List<NearbyStop>>((
     longitude: position.longitude,
     allStops: repo.stopsById.values,
   );
+});
+
+// ─── Bus Motion Engine ────────────────────────────────────
+
+final busMotionEngineProvider = Provider.autoDispose<BusMotionEngine?>((ref) {
+  final repoAsync = ref.watch(gtfsRepositoryProvider);
+  final repo = repoAsync.asData?.value;
+  if (repo == null) return null;
+  return BusMotionEngine(repo);
+});
+
+final busTrackingStreamProvider =
+    StreamProvider.autoDispose<Map<String, BusTrackingState>>((ref) async* {
+  final engine = ref.watch(busMotionEngineProvider);
+  if (engine == null) {
+    yield {};
+    return;
+  }
+
+  final api = ref.read(timetrackApiProvider);
+  final settings = ref.watch(settingsProvider);
+  final interval = Duration(seconds: settings.refreshIntervalSeconds);
+
+  // Initial fetch
+  final vehicles = await api.fetchVehicles();
+  engine.processBatch(vehicles, DateTime.now());
+  yield Map.unmodifiable(engine.states);
+
+  // Poll at refresh interval
+  await for (final _ in Stream.periodic(interval)) {
+    try {
+      final vehicles = await api.fetchVehicles();
+      engine.processBatch(vehicles, DateTime.now());
+      yield Map.unmodifiable(engine.states);
+    } catch (_) {
+      // Continue on error
+    }
+  }
 });
 
 // ─── Stop Info helper ──────────────────────────────────────

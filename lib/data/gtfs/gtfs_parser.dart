@@ -73,12 +73,14 @@ class GtfsParser {
     final rows = await _parseCsv('trips.txt');
     return rows
         .map((row) {
+          final shapeId = row['shape_id'];
           return TripInfo(
             tripId: row['trip_id'] ?? '',
             routeId: row['route_id'] ?? '',
             serviceId: row['service_id'] ?? '',
             tripHeadsign: row['trip_headsign'] ?? '',
             directionId: int.tryParse(row['direction_id'] ?? '') ?? 0,
+            shapeId: (shapeId != null && shapeId.isNotEmpty) ? shapeId : null,
           );
         })
         .where((t) => t.tripId.isNotEmpty)
@@ -139,6 +141,24 @@ class GtfsParser {
           );
         })
         .where((cd) => cd.serviceId.isNotEmpty)
+        .toList();
+  }
+
+  // Parse shapes.txt into ShapePoint list.
+  Future<List<ShapePoint>> parseShapes() async {
+    final rows = await _parseCsv('shapes.txt');
+    return rows
+        .map((row) {
+          return ShapePoint(
+            shapeId: row['shape_id'] ?? '',
+            lat: double.tryParse(row['shape_pt_lat'] ?? '') ?? 0.0,
+            lon: double.tryParse(row['shape_pt_lon'] ?? '') ?? 0.0,
+            sequence: int.tryParse(row['shape_pt_sequence'] ?? '') ?? 0,
+            distTraveled:
+                double.tryParse(row['shape_dist_traveled'] ?? ''),
+          );
+        })
+        .where((s) => s.shapeId.isNotEmpty)
         .toList();
   }
 

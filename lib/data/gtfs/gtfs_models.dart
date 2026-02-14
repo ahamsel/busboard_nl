@@ -42,6 +42,7 @@ class TripInfo {
   final String serviceId;
   final String tripHeadsign;
   final int directionId;
+  final String? shapeId;
 
   const TripInfo({
     required this.tripId,
@@ -49,6 +50,7 @@ class TripInfo {
     required this.serviceId,
     required this.tripHeadsign,
     required this.directionId,
+    this.shapeId,
   });
 
   @override
@@ -138,5 +140,21 @@ class CalendarDate {
     required this.serviceId,
     required this.date,
     required this.exceptionType,
+  });
+}
+
+class ShapePoint {
+  final String shapeId;
+  final double lat;
+  final double lon;
+  final int sequence;
+  final double? distTraveled;
+
+  const ShapePoint({
+    required this.shapeId,
+    required this.lat,
+    required this.lon,
+    required this.sequence,
+    this.distTraveled,
   });
 }
