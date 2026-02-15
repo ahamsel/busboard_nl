@@ -46,12 +46,14 @@ The motion engine (`bus_motion_engine.dart`) provides smooth bus animation betwe
 
 - **Route shape snapping** — raw GPS positions snapped to GTFS route geometry
 - **Shape fallback matching** — resolves routes by route number + headsign when GTFS trip ID is unavailable
-- **Interpolation** — linear interpolation along route shapes between two GPS observations
-- **Dead-reckoning** — extrapolates forward using segment average speed for up to 35s beyond the last GPS point
-- **Speed decay** — gradually reduces extrapolation speed (100% → 65%) to avoid overshooting
-- **Stop heuristic** — gentle slowdown (60–100%) near bus stops, never a full stop (most stops are skipped)
-- **Blend smoothing** — 600ms cubic ease-out transition when new GPS data corrects a predicted position
-- **Backward movement** — allows up to 120m backward correction (blend makes it look natural)
+- **Measurement-time aware timing** — uses `position_time_seconds` (bus measurement time), not fetch time, for motion deltas
+- **Interpolation** — interpolation/extrapolation primarily in route-progress space (meters along GTFS shape)
+- **Kalman progress filter** — 1D position/velocity filter per bus for smoother prediction between updates
+- **Adaptive measurement trust** — measurement noise scales with snap quality (larger snap distance = less trust)
+- **Auto-adjust mode** — bounded on-device tuning of Kalman and blend parameters using live innovation/correction metrics
+- **Dead-reckoning** — extrapolates forward up to 35s beyond the last GPS point with decay and stop-aware slowdown
+- **Road-follow blend smoothing** — correction blend follows route geometry through turns (avoids straight-line glides)
+- **Anti-typewriter clamp** — active buses are visually monotonic (no tiny backward jitter); true backtracking still allowed
 - **Outlier rejection** — rejects GPS points implying speeds >140 km/h
 
 ## Architecture
@@ -93,6 +95,24 @@ flutter run
 
 # Run tests
 flutter test
+
+# Run movement replay harness (turns, lag, noise, stability metrics)
+flutter test test/map/bus_motion_replay_harness_test.dart
+
+# Capture real TimeTrack snapshots locally (example: 15 minutes)
+dart run tool/capture_timetrack_snapshots.dart \
+  --interval 5 \
+  --duration 900 \
+  --out test/fixtures/timetrack/capture.json
+
+# Replay captured snapshots through BusMotionEngine
+BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
+flutter test test/map/bus_motion_snapshot_replay_test.dart
+
+# Optional: write replay metrics JSON (for commit-to-commit trend tracking)
+BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
+BUS_MOTION_METRICS_OUT=build/bus_motion/replay_metrics.json \
+flutter test test/map/bus_motion_snapshot_replay_test.dart
 ```
 
 ## Key Technical Notes

@@ -8,6 +8,237 @@ import 'bus_observation.dart';
 import 'bus_tracking_state.dart';
 import 'shape_matcher.dart';
 
+/// Per-batch diagnostics to quantify interpolation quality.
+class BusMotionDiagnostics {
+  final DateTime timestamp;
+  final int processedVehicles;
+  final int acceptedUpdates;
+  final int duplicateOrOutOfOrderUpdates;
+  final int rejectedOutliers;
+  final double? correctionP50Meters;
+  final double? correctionP90Meters;
+  final double? correctionMeanMeters;
+  final double? innovationP50Meters;
+  final double? innovationP90Meters;
+  final double? innovationMeanMeters;
+  final bool autoAdjustEnabled;
+  final double kalmanAccelStdMps2;
+  final double kalmanMeasurementStdM;
+  final int blendDurationMs;
+
+  const BusMotionDiagnostics({
+    required this.timestamp,
+    required this.processedVehicles,
+    required this.acceptedUpdates,
+    required this.duplicateOrOutOfOrderUpdates,
+    required this.rejectedOutliers,
+    this.correctionP50Meters,
+    this.correctionP90Meters,
+    this.correctionMeanMeters,
+    this.innovationP50Meters,
+    this.innovationP90Meters,
+    this.innovationMeanMeters,
+    required this.autoAdjustEnabled,
+    required this.kalmanAccelStdMps2,
+    required this.kalmanMeasurementStdM,
+    required this.blendDurationMs,
+  });
+
+  BusMotionDiagnostics.empty()
+    : timestamp = DateTime.fromMillisecondsSinceEpoch(0),
+      processedVehicles = 0,
+      acceptedUpdates = 0,
+      duplicateOrOutOfOrderUpdates = 0,
+      rejectedOutliers = 0,
+      correctionP50Meters = null,
+      correctionP90Meters = null,
+      correctionMeanMeters = null,
+      innovationP50Meters = null,
+      innovationP90Meters = null,
+      innovationMeanMeters = null,
+      autoAdjustEnabled = true,
+      kalmanAccelStdMps2 = 1.5,
+      kalmanMeasurementStdM = 20.0,
+      blendDurationMs = 600;
+}
+
+class _UpdateResult {
+  final bool accepted;
+  final bool duplicateOrOutOfOrder;
+  final bool rejectedOutlier;
+  final double? correctionMeters;
+  final double? filterInnovationMeters;
+
+  const _UpdateResult._({
+    required this.accepted,
+    required this.duplicateOrOutOfOrder,
+    required this.rejectedOutlier,
+    this.correctionMeters,
+    this.filterInnovationMeters,
+  });
+
+  const _UpdateResult.accepted({
+    double? correctionMeters,
+    double? filterInnovationMeters,
+  }) : this._(
+         accepted: true,
+         duplicateOrOutOfOrder: false,
+         rejectedOutlier: false,
+         correctionMeters: correctionMeters,
+         filterInnovationMeters: filterInnovationMeters,
+       );
+
+  const _UpdateResult.duplicate()
+    : this._(
+        accepted: false,
+        duplicateOrOutOfOrder: true,
+        rejectedOutlier: false,
+      );
+
+  const _UpdateResult.rejected()
+    : this._(
+        accepted: false,
+        duplicateOrOutOfOrder: false,
+        rejectedOutlier: true,
+      );
+}
+
+class _ProgressProjection {
+  final double progressMeters;
+  final double velocityMps;
+  final double ageSeconds;
+
+  const _ProgressProjection({
+    required this.progressMeters,
+    required this.velocityMps,
+    required this.ageSeconds,
+  });
+}
+
+class _BlendOrigin {
+  final double lat;
+  final double lon;
+  final double heading;
+  final DateTime startTime;
+  final String? shapeId;
+  final double? progressAlongRoute;
+
+  const _BlendOrigin({
+    required this.lat,
+    required this.lon,
+    required this.heading,
+    required this.startTime,
+    this.shapeId,
+    this.progressAlongRoute,
+  });
+}
+
+class _RouteProgressKalman {
+  final String shapeId;
+  DateTime _time;
+  double _positionM;
+  double _velocityMps;
+  double _p00;
+  double _p01;
+  double _p10;
+  double _p11;
+
+  _RouteProgressKalman({
+    required this.shapeId,
+    required DateTime measurementTime,
+    required double positionMeters,
+    required double velocityMps,
+  }) : _time = measurementTime,
+       _positionM = positionMeters,
+       _velocityMps = velocityMps,
+       _p00 = 400.0,
+       _p01 = 0.0,
+       _p10 = 0.0,
+       _p11 = 64.0;
+
+  DateTime get measurementTime => _time;
+
+  double ingest({
+    required DateTime measurementTime,
+    required double measuredProgressM,
+    required double measuredSpeedMps,
+    required double accelStdMps2,
+    required double measurementStdM,
+  }) {
+    final dt = measurementTime.difference(_time).inMilliseconds / 1000.0;
+    if (dt > 0.0) {
+      _predict(dt: dt, accelStdMps2: accelStdMps2);
+      _time = measurementTime;
+    }
+
+    final r = measurementStdM * measurementStdM;
+    final innovation = measuredProgressM - _positionM;
+    final s = _p00 + r;
+    if (s <= 1e-6) return innovation.abs();
+
+    final k0 = _p00 / s;
+    final k1 = _p10 / s;
+
+    _positionM += k0 * innovation;
+    _velocityMps += k1 * innovation;
+
+    final p00 = (1.0 - k0) * _p00;
+    final p01 = (1.0 - k0) * _p01;
+    final p10 = _p10 - k1 * _p00;
+    final p11 = _p11 - k1 * _p01;
+
+    _p00 = p00;
+    _p01 = p01;
+    _p10 = p10;
+    _p11 = p11;
+
+    if (measuredSpeedMps.isFinite) {
+      _velocityMps = _velocityMps * 0.85 + measuredSpeedMps * 0.15;
+    }
+    return innovation.abs();
+  }
+
+  _ProgressProjection project({
+    required DateTime now,
+    required double maxProjectionSeconds,
+  }) {
+    var dt = now.difference(_time).inMilliseconds / 1000.0;
+    if (dt < 0.0) dt = 0.0;
+    final clampedDt = dt.clamp(0.0, maxProjectionSeconds);
+
+    final projectedPosition = _positionM + _velocityMps * clampedDt;
+    return _ProgressProjection(
+      progressMeters: projectedPosition,
+      velocityMps: _velocityMps,
+      ageSeconds: clampedDt,
+    );
+  }
+
+  void _predict({required double dt, required double accelStdMps2}) {
+    if (dt <= 0.0) return;
+    final sigma2 = accelStdMps2 * accelStdMps2;
+
+    final q00 = 0.25 * dt * dt * dt * dt * sigma2;
+    final q01 = 0.5 * dt * dt * dt * sigma2;
+    final q11 = dt * dt * sigma2;
+
+    final newPosition = _positionM + _velocityMps * dt;
+    final newVelocity = _velocityMps;
+
+    final fp00 = _p00 + dt * (_p10 + _p01) + dt * dt * _p11;
+    final fp01 = _p01 + dt * _p11;
+    final fp10 = _p10 + dt * _p11;
+    final fp11 = _p11;
+
+    _positionM = newPosition;
+    _velocityMps = newVelocity;
+    _p00 = fp00 + q00;
+    _p01 = fp01 + q01;
+    _p10 = fp10 + q01;
+    _p11 = fp11 + q11;
+  }
+}
+
 /// Processes raw TimeTrack vehicle batches into smoothed bus tracking states.
 ///
 /// Handles outlier rejection, shape matching, backward clamping,
@@ -27,11 +258,37 @@ class BusMotionEngine {
   static const _maxDeadReckoningSeconds = 35.0;
   static const _maxExtrapolationSpeedKmh = 80.0;
   static const _minMovingSpeedKmh = 2.0;
+
   /// Seconds of extrapolation at full speed before decay begins.
   static const _decayOnsetSeconds = 10.0;
+
   /// Minimum fraction of speed retained during decay (65%).
   static const _decayFloor = 0.65;
+
+  /// Keep full trust in reported speed while source data is fresh.
+  static const _freshMeasurementAgeSeconds = 20.0;
+
+  /// Beyond this age, prediction trust drops to [_staleSpeedFloor].
+  static const _staleMeasurementAgeSeconds = 120.0;
+
+  /// Never trust stale measurements for more than this speed fraction.
+  static const _staleSpeedFloor = 0.2;
+  static const _kalmanAccelStdMps2 = 1.5;
+  static const _kalmanMeasurementStdM = 20.0;
+  static const _kalmanMinMeasurementStdM = 8.0;
+  static const _kalmanMaxMeasurementStdM = 65.0;
+  static const _kalmanSnapDistanceWeight = 0.35;
+  static const _kalmanMaxProjectionSeconds = 180.0;
+  static const _kalmanMinAccelStdMps2 = 0.6;
+  static const _kalmanMaxAccelStdMps2 = 3.5;
+  static const _autoAdjustMinSamples = 6;
+  static const _targetInnovationP50Meters = 25.0;
+  static const _targetCorrectionP90Meters = 45.0;
+  static const _autoAdjustEwmaAlpha = 0.2;
+  static const _blendDurationMinMs = 420;
+  static const _blendDurationMaxMs = 1100;
   static const _maxVisualBackwardMeters = 120.0;
+  static const _maxOffRouteVisualBackwardMeters = 60.0;
 
   /// Counter for consecutive backward movements per bus.
   final Map<String, int> _backwardCount = {};
@@ -39,10 +296,21 @@ class BusMotionEngine {
   /// Last rendered progress per bus key, used to prevent visual snap-backs.
   final Map<String, double> _renderProgressByKey = {};
 
-  /// Blend origin per bus: (lat, lon, heading, startTime).
-  /// Used to smoothly transition from predicted to actual position.
-  final Map<String, (double, double, double, DateTime)> _blendOrigins = {};
+  /// Blend origin per bus. When shape progress is available, blend in progress
+  /// space so correction follows the road geometry through turns.
+  final Map<String, _BlendOrigin> _blendOrigins = {};
   static const _blendDurationMs = 600;
+
+  /// Route-progress Kalman filter per bus key.
+  final Map<String, _RouteProgressKalman> _progressFilters = {};
+
+  BusMotionDiagnostics _lastDiagnostics = BusMotionDiagnostics.empty();
+  final bool _autoAdjustEnabled = true;
+  double _kalmanAccelStdMps2Current = _kalmanAccelStdMps2;
+  double _kalmanMeasurementStdMCurrent = _kalmanMeasurementStdM;
+  int _blendDurationMsCurrent = _blendDurationMs;
+  double? _innovationP50Ewma;
+  double? _correctionP90Ewma;
 
   /// Trip -> stop_times rows sorted by stop_sequence.
   final Map<String, List<StopTimeRow>> _stopTimesByTripId = {};
@@ -62,20 +330,35 @@ class BusMotionEngine {
   }
 
   Map<String, BusTrackingState> get states => Map.unmodifiable(_states);
+  BusMotionDiagnostics get diagnostics => _lastDiagnostics;
+  Map<String, double> get debugRenderedProgressByKey =>
+      Map.unmodifiable(_renderProgressByKey);
 
   /// Process a batch of vehicles from the TimeTrack API.
   void processBatch(List<TimeTrackVehicle> vehicles, DateTime fetchTime) {
     final seenKeys = <String>{};
+    final correctionSamples = <double>[];
+    final innovationSamples = <double>[];
+    var processedVehicles = 0;
+    var acceptedUpdates = 0;
+    var duplicateUpdates = 0;
+    var rejectedOutliers = 0;
 
     for (final v in vehicles) {
       final key = _resolveBusKey(v);
       if (key == null || v.busLat == 0.0 || v.busLon == 0.0) continue;
+      processedVehicles++;
 
       seenKeys.add(key);
 
       final headingDeg = _parseHeadingDegrees(v.heading);
+      final measurementTime = _measurementTimeFromSeconds(
+        v.positionTimeSeconds,
+        fetchTime,
+      );
       final obs = BusObservation(
         timestamp: fetchTime,
+        measurementTime: measurementTime,
         lat: v.busLat,
         lon: v.busLon,
         heading: headingDeg,
@@ -88,10 +371,20 @@ class BusMotionEngine {
       if (existing == null) {
         // New bus
         _states[key] = _createNewState(v, obs, key);
+        acceptedUpdates++;
         continue;
       }
 
-      _updateExisting(key, existing, obs, v);
+      final result = _updateExisting(key, existing, obs, v);
+      if (result.accepted) acceptedUpdates++;
+      if (result.duplicateOrOutOfOrder) duplicateUpdates++;
+      if (result.rejectedOutlier) rejectedOutliers++;
+      if (result.correctionMeters != null) {
+        correctionSamples.add(result.correctionMeters!);
+      }
+      if (result.filterInnovationMeters != null) {
+        innovationSamples.add(result.filterInnovationMeters!);
+      }
     }
 
     // Mark unseen buses as stale or prune
@@ -111,7 +404,34 @@ class BusMotionEngine {
       _backwardCount.remove(key);
       _renderProgressByKey.remove(key);
       _blendOrigins.remove(key);
+      _progressFilters.remove(key);
     }
+
+    final correctionStats = _summarizeSamples(correctionSamples);
+    final innovationStats = _summarizeSamples(innovationSamples);
+    _autoAdjustParameters(
+      correctionSampleCount: correctionSamples.length,
+      correctionP90Meters: correctionStats.$2,
+      innovationSampleCount: innovationSamples.length,
+      innovationP50Meters: innovationStats.$1,
+    );
+    _lastDiagnostics = BusMotionDiagnostics(
+      timestamp: fetchTime,
+      processedVehicles: processedVehicles,
+      acceptedUpdates: acceptedUpdates,
+      duplicateOrOutOfOrderUpdates: duplicateUpdates,
+      rejectedOutliers: rejectedOutliers,
+      correctionP50Meters: correctionStats.$1,
+      correctionP90Meters: correctionStats.$2,
+      correctionMeanMeters: correctionStats.$3,
+      innovationP50Meters: innovationStats.$1,
+      innovationP90Meters: innovationStats.$2,
+      innovationMeanMeters: innovationStats.$3,
+      autoAdjustEnabled: _autoAdjustEnabled,
+      kalmanAccelStdMps2: _kalmanAccelStdMps2Current,
+      kalmanMeasurementStdM: _kalmanMeasurementStdMCurrent,
+      blendDurationMs: _blendDurationMsCurrent,
+    );
   }
 
   BusTrackingState _createNewState(
@@ -121,6 +441,7 @@ class BusMotionEngine {
   ) {
     String? shapeId;
     double? progress;
+    double? snapDistanceMeters;
     var smoothedLat = obs.lat;
     var smoothedLon = obs.lon;
 
@@ -136,12 +457,23 @@ class BusMotionEngine {
       if (snap != null &&
           snap.perpendicularDistance <= _offRouteThresholdMeters) {
         progress = snap.distanceAlongRoute;
+        snapDistanceMeters = snap.perpendicularDistance;
         smoothedLat = snap.snappedLat;
         smoothedLon = snap.snappedLon;
       }
     }
 
     final obsWithProgress = obs.copyWith(progressAlongRoute: progress);
+    if (shapeId != null && progress != null) {
+      _ingestProgressMeasurement(
+        key: key,
+        shapeId: shapeId,
+        measuredProgressM: progress,
+        measurementTime: obs.measurementTime,
+        measuredSpeedKmh: obs.speed,
+        snapDistanceMeters: snapDistanceMeters,
+      );
+    }
 
     return BusTrackingState(
       routeRun: v.routeRun.isNotEmpty ? v.routeRun : key,
@@ -160,45 +492,41 @@ class BusMotionEngine {
     );
   }
 
-  void _updateExisting(
+  _UpdateResult _updateExisting(
     String key,
     BusTrackingState state,
     BusObservation obs,
     TimeTrackVehicle v,
   ) {
-    // Capture where this bus is currently rendered before we change state,
-    // so we can blend smoothly from the predicted position to the new one.
-    final now = DateTime.now();
-    final currentVisual = _interpolateSingle(key, state, now);
-    if (currentVisual != null) {
-      _blendOrigins[key] = (
-        currentVisual.$1,
-        currentVisual.$2,
-        currentVisual.$3,
-        now,
-      );
-    }
-
     var displayLat = obs.lat;
     var displayLon = obs.lon;
     var displayHeading = obs.heading;
+    double? snapDistanceMeters;
+    double? filterInnovationMeters;
 
-    // Outlier rejection: check implied speed
+    // Outlier rejection and duplicate suppression.
     final lastGood = state.observations.lastWhere(
       (o) => !o.rejected,
       orElse: () => state.observations.last,
     );
-    final dtSeconds =
-        obs.timestamp.difference(lastGood.timestamp).inMilliseconds / 1000.0;
+    final measurementDeltaSeconds = _measurementDeltaSeconds(lastGood, obs);
 
-    if (dtSeconds > 0.5) {
+    // Duplicate or out-of-order source data. Keep the last known pose but
+    // refresh liveness so the bus doesn't go stale while feed catches up.
+    if (measurementDeltaSeconds <= 0.0) {
+      _states[key] = state.copyWith(lastUpdateTime: obs.timestamp);
+      return const _UpdateResult.duplicate();
+    }
+
+    final motionDeltaSeconds = _motionDeltaSeconds(lastGood, obs);
+    if (motionDeltaSeconds > 0.5) {
       final dist = NearestStopService.haversineDistance(
         lastGood.lat,
         lastGood.lon,
         obs.lat,
         obs.lon,
       );
-      final impliedSpeedKmh = (dist / dtSeconds) * 3.6;
+      final impliedSpeedKmh = (dist / motionDeltaSeconds) * 3.6;
       if (impliedSpeedKmh > _maxSpeedKmh) {
         // Reject this observation
         final rejected = obs.copyWith(rejected: true);
@@ -207,8 +535,34 @@ class BusMotionEngine {
           observations: newObs,
           lastUpdateTime: obs.timestamp,
         );
-        return;
+        return const _UpdateResult.rejected();
       }
+    }
+
+    // Capture where this bus is currently rendered before we change state,
+    // so we can blend smoothly from the predicted position to the new one.
+    final now = DateTime.now();
+    final currentVisual = _interpolateSingle(key, state, now);
+    if (currentVisual != null) {
+      final currentShapeId = state.shapeId;
+      final currentProgress = currentShapeId == null
+          ? null
+          : (_renderProgressByKey[key] ??
+                state.progressAlongRoute ??
+                _projectProgressFilter(
+                  key: key,
+                  shapeId: currentShapeId,
+                  now: now,
+                )?.progressMeters);
+
+      _blendOrigins[key] = _BlendOrigin(
+        lat: currentVisual.$1,
+        lon: currentVisual.$2,
+        heading: currentVisual.$3,
+        startTime: now,
+        shapeId: currentShapeId,
+        progressAlongRoute: currentProgress,
+      );
     }
 
     // Shape matching
@@ -216,13 +570,23 @@ class BusMotionEngine {
     double? progress = state.progressAlongRoute;
     var status = BusStatus.active;
 
-    if (obs.gtfsTripId != null && obs.gtfsTripId != state.currentTripId) {
+    final tripChanged =
+        obs.gtfsTripId != null && obs.gtfsTripId != state.currentTripId;
+    if (tripChanged) {
       // Trip changed — re-resolve shape
       final trip = _repo.tripsById[obs.gtfsTripId];
       shapeId = trip?.shapeId;
     }
     // Fallback: match by route number + headsign when no shape resolved
     shapeId ??= _resolveShapeFallback(v);
+
+    if (tripChanged) {
+      // Reset visual continuity constraints across trip boundaries so we do
+      // not inherit old progress clamping/blending into a new trip.
+      _renderProgressByKey.remove(key);
+      _blendOrigins.remove(key);
+      _backwardCount.remove(key);
+    }
 
     if (shapeId != null) {
       final snap = _trySnap(obs.lat, obs.lon, shapeId);
@@ -233,6 +597,7 @@ class BusMotionEngine {
         } else {
           displayLat = snap.snappedLat;
           displayLon = snap.snappedLon;
+          snapDistanceMeters = snap.perpendicularDistance;
 
           // Check backward movement
           final snappedProgress = snap.distanceAlongRoute;
@@ -267,7 +632,7 @@ class BusMotionEngine {
     }
 
     // Stopped detection
-    if (dtSeconds > _stoppedDuration.inSeconds) {
+    if (measurementDeltaSeconds > _stoppedDuration.inSeconds) {
       final dist = NearestStopService.haversineDistance(
         lastGood.lat,
         lastGood.lon,
@@ -282,6 +647,20 @@ class BusMotionEngine {
     final obsWithProgress = obs.copyWith(progressAlongRoute: progress);
     final newObs = _addObservation(state.observations, obsWithProgress);
 
+    if (shapeId != null &&
+        progress != null &&
+        status != BusStatus.offRoute &&
+        status != BusStatus.stale) {
+      filterInnovationMeters = _ingestProgressMeasurement(
+        key: key,
+        shapeId: shapeId,
+        measuredProgressM: progress,
+        measurementTime: obs.measurementTime,
+        measuredSpeedKmh: obs.speed,
+        snapDistanceMeters: snapDistanceMeters,
+      );
+    }
+
     _states[key] = state.copyWith(
       currentTripId: obs.gtfsTripId,
       shapeId: shapeId,
@@ -292,6 +671,19 @@ class BusMotionEngine {
       progressAlongRoute: progress,
       status: status,
       lastUpdateTime: obs.timestamp,
+    );
+
+    final correctionMeters = currentVisual == null
+        ? null
+        : NearestStopService.haversineDistance(
+            currentVisual.$1,
+            currentVisual.$2,
+            displayLat,
+            displayLon,
+          );
+    return _UpdateResult.accepted(
+      correctionMeters: correctionMeters,
+      filterInnovationMeters: filterInnovationMeters,
     );
   }
 
@@ -314,14 +706,42 @@ class BusMotionEngine {
       // old predicted position to the new interpolation target.
       final blend = _blendOrigins[key];
       if (blend != null) {
-        final blendAge = now.difference(blend.$4).inMilliseconds;
-        if (blendAge < _blendDurationMs) {
+        final blendAge = now.difference(blend.startTime).inMilliseconds;
+        if (blendAge < _blendDurationMsCurrent) {
           // Ease-out cubic for natural deceleration feel
-          final t = blendAge / _blendDurationMs;
+          final t = blendAge / _blendDurationMsCurrent;
           final eased = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
-          lat = blend.$1 + (lat - blend.$1) * eased;
-          lon = blend.$2 + (lon - blend.$2) * eased;
-          heading = _lerpAngle(blend.$3, heading, eased);
+
+          final targetShapeId = state.shapeId;
+          final targetProgress = _renderProgressByKey[key];
+          final canBlendOnShape =
+              blend.shapeId != null &&
+              blend.progressAlongRoute != null &&
+              targetShapeId != null &&
+              targetProgress != null &&
+              blend.shapeId == targetShapeId;
+
+          if (canBlendOnShape) {
+            final blendedProgress =
+                blend.progressAlongRoute! +
+                (targetProgress - blend.progressAlongRoute!) * eased;
+            final shapedPoint = _pointOnShape(targetShapeId, blendedProgress);
+            if (shapedPoint != null) {
+              lat = shapedPoint.$1;
+              lon = shapedPoint.$2;
+              heading =
+                  _headingAlongShape(targetShapeId, blendedProgress) ??
+                  _lerpAngle(blend.heading, heading, eased);
+            }
+          } else if (blend.shapeId != null &&
+              targetShapeId != null &&
+              blend.shapeId != targetShapeId) {
+            // Trip/shape changed — do not blend across unrelated paths.
+          } else {
+            lat = blend.lat + (lat - blend.lat) * eased;
+            lon = blend.lon + (lon - blend.lon) * eased;
+            heading = _lerpAngle(blend.heading, heading, eased);
+          }
         } else {
           _blendOrigins.remove(key);
         }
@@ -363,9 +783,14 @@ class BusMotionEngine {
     final prevObs = prev;
     if (prevObs == null) return (last.lat, last.lon, last.heading);
 
-    final segmentMs =
-        last.timestamp.difference(prevObs.timestamp).inMilliseconds;
+    final segmentMs = last.timestamp
+        .difference(prevObs.timestamp)
+        .inMilliseconds;
     if (segmentMs <= 0) return (last.lat, last.lon, last.heading);
+    final segmentMotionSeconds = _motionDeltaSeconds(prevObs, last);
+    final usableMotionSeconds = segmentMotionSeconds > 0
+        ? segmentMotionSeconds
+        : (segmentMs / 1000.0);
 
     final elapsed = now.difference(prevObs.timestamp).inMilliseconds;
     var t = elapsed / segmentMs;
@@ -383,16 +808,26 @@ class BusMotionEngine {
           last.lat,
           last.lon,
         );
-        final segSpeedKmh = segmentMs > 0
-            ? (segDistM / (segmentMs / 1000.0)) * 3.6
+        final segSpeedKmh = usableMotionSeconds > 0
+            ? (segDistM / usableMotionSeconds) * 3.6
             : 0.0;
         if (segSpeedKmh > _maxExtrapolationSpeedKmh ||
             segSpeedKmh < _minMovingSpeedKmh) {
           t = 1.0;
+        } else if (segDistM <= 1e-3) {
+          t = 1.0;
         } else {
           // Compute t with speed decay applied
-          final decayedSpeed =
-              _applyExtrapolationDecay(segSpeedKmh, extraSeconds);
+          var decayedSpeed = _applyExtrapolationDecay(
+            segSpeedKmh,
+            extraSeconds,
+          );
+          final measurementAgeSeconds =
+              now.difference(last.measurementTime).inMilliseconds / 1000.0;
+          decayedSpeed = _applyMeasurementAgeConfidence(
+            decayedSpeed,
+            measurementAgeSeconds,
+          );
           final extraM = (decayedSpeed / 3.6) * extraSeconds;
           t = 1.0 + (extraM / segDistM);
         }
@@ -432,8 +867,49 @@ class BusMotionEngine {
     }
 
     var nextProgress = lastProgress;
+    final projected = _projectProgressFilter(
+      key: key,
+      shapeId: shapeId,
+      now: now,
+    );
+    final canProjectFromFilter =
+        projected != null &&
+        (state.status == BusStatus.active ||
+            state.status == BusStatus.backtracking) &&
+        projected.ageSeconds <= _maxExtrapolationSeconds;
 
-    if (prev != null && prev.progressAlongRoute != null) {
+    if (canProjectFromFilter) {
+      var speedKmh = projected.velocityMps.abs() * 3.6;
+      speedKmh = _applyMeasurementAgeConfidence(speedKmh, projected.ageSeconds);
+
+      final predictedDelta = projected.progressMeters - lastProgress;
+      final direction = predictedDelta < -1.0 ? -1.0 : 1.0;
+      var deltaM = predictedDelta.abs();
+
+      final maxBySpeed =
+          (speedKmh / 3.6) *
+          projected.ageSeconds.clamp(0.0, _maxDeadReckoningSeconds);
+      deltaM = math.min(deltaM, maxBySpeed);
+      var tentativeProgress = lastProgress + deltaM * direction;
+
+      final distanceToStop = _distanceToNextStopMeters(
+        tripId: state.currentTripId,
+        shapeId: shapeId,
+        progress: tentativeProgress,
+      );
+      speedKmh = _applyStopHeuristic(
+        speedKmh: speedKmh,
+        status: state.status,
+        distanceToNextStopM: distanceToStop,
+      );
+
+      final maxAfterStop =
+          (speedKmh / 3.6) *
+          projected.ageSeconds.clamp(0.0, _maxDeadReckoningSeconds);
+      deltaM = math.min(deltaM, maxAfterStop);
+      tentativeProgress = lastProgress + deltaM * direction;
+      nextProgress = tentativeProgress;
+    } else if (prev != null && prev.progressAlongRoute != null) {
       final prevProgress = prev.progressAlongRoute!;
       final segmentMs = last.timestamp
           .difference(prev.timestamp)
@@ -456,8 +932,9 @@ class BusMotionEngine {
             // Prefer segment average speed — it reflects real-world
             // conditions (stops, traffic) better than instantaneous speed.
             final segDistM = (lastProgress - prevProgress).abs();
-            final segAvgKmh = segmentMs > 0
-                ? (segDistM / (segmentMs / 1000.0)) * 3.6
+            final segmentMotionSeconds = _motionDeltaSeconds(prev, last);
+            final segAvgKmh = segmentMotionSeconds > 0
+                ? (segDistM / segmentMotionSeconds) * 3.6
                 : 0.0;
             // Use segment average if meaningful, else fall back to
             // instantaneous. Both must clear the minimum threshold.
@@ -468,14 +945,20 @@ class BusMotionEngine {
             // Apply speed decay: full speed for the first N seconds,
             // then linearly decay to _decayFloor over the remaining window.
             speedKmh = _applyExtrapolationDecay(speedKmh, extraSeconds);
+            final measurementAgeSeconds =
+                now.difference(last.measurementTime).inMilliseconds / 1000.0;
+            speedKmh = _applyMeasurementAgeConfidence(
+              speedKmh,
+              measurementAgeSeconds,
+            );
 
             // Slow near upcoming stops using extrapolated progress,
             // not just the last GPS point.
-            final currentExtraM = (speedKmh / 3.6) *
+            final currentExtraM =
+                (speedKmh / 3.6) *
                 extraSeconds.clamp(0.0, _maxDeadReckoningSeconds);
             final direction = delta < -1.0 ? -1.0 : 1.0;
-            final tentativeProgress =
-                lastProgress + currentExtraM * direction;
+            final tentativeProgress = lastProgress + currentExtraM * direction;
             final distanceToStop = _distanceToNextStopMeters(
               tripId: state.currentTripId,
               shapeId: shapeId,
@@ -510,6 +993,12 @@ class BusMotionEngine {
           extraSeconds > 0 &&
           extraSeconds <= _maxExtrapolationSeconds) {
         var speedKmh = _applyExtrapolationDecay(last.speed, extraSeconds);
+        final measurementAgeSeconds =
+            now.difference(last.measurementTime).inMilliseconds / 1000.0;
+        speedKmh = _applyMeasurementAgeConfidence(
+          speedKmh,
+          measurementAgeSeconds,
+        );
         final tentativeProgress =
             lastProgress + (speedKmh / 3.6) * extraSeconds;
         final distanceToStop = _distanceToNextStopMeters(
@@ -558,10 +1047,30 @@ class BusMotionEngine {
 
     if (progress >= previous) return progress;
 
-    // Allow backward movement up to the limit. The blend smoothing
-    // makes small corrections look natural. Better to overshoot and
-    // glide back than to freeze and teleport forward.
-    return math.max(progress, previous - _maxVisualBackwardMeters);
+    if (_hasRecentTripTransition(state)) return progress;
+
+    // Keep normal active movement monotonic to avoid "typewriter" jitter.
+    if (state.status == BusStatus.active || state.status == BusStatus.stopped) {
+      return previous;
+    }
+
+    // Allow limited backward correction only when status says we are likely
+    // backtracking/off-route.
+    if (state.status == BusStatus.backtracking) {
+      return math.max(progress, previous - _maxVisualBackwardMeters);
+    }
+    if (state.status == BusStatus.offRoute) {
+      return math.max(progress, previous - _maxOffRouteVisualBackwardMeters);
+    }
+    return previous;
+  }
+
+  bool _hasRecentTripTransition(BusTrackingState state) {
+    final good = state.observations.where((o) => !o.rejected).toList();
+    if (good.length < 2) return false;
+    final last = good[good.length - 1].gtfsTripId;
+    final prev = good[good.length - 2].gtfsTripId;
+    return last != prev && (last != null || prev != null);
   }
 
   SnapResult? _trySnap(double lat, double lon, String shapeId) {
@@ -709,9 +1218,185 @@ class BusMotionEngine {
     if (extraSeconds <= _decayOnsetSeconds) return speedKmh;
     final decayWindow = _maxExtrapolationSeconds - _decayOnsetSeconds;
     if (decayWindow <= 0) return speedKmh;
-    final t =
-        ((extraSeconds - _decayOnsetSeconds) / decayWindow).clamp(0.0, 1.0);
+    final t = ((extraSeconds - _decayOnsetSeconds) / decayWindow).clamp(
+      0.0,
+      1.0,
+    );
     final factor = 1.0 - (1.0 - _decayFloor) * t;
+    return speedKmh * factor;
+  }
+
+  double? _ingestProgressMeasurement({
+    required String key,
+    required String shapeId,
+    required double measuredProgressM,
+    required DateTime measurementTime,
+    required double measuredSpeedKmh,
+    required double? snapDistanceMeters,
+  }) {
+    final measuredSpeedMps = (measuredSpeedKmh / 3.6).clamp(-35.0, 35.0);
+    final dynamicMeasurementStd =
+        (_kalmanMeasurementStdMCurrent +
+                (snapDistanceMeters ?? 0.0) * _kalmanSnapDistanceWeight)
+            .clamp(_kalmanMinMeasurementStdM, _kalmanMaxMeasurementStdM);
+    final existing = _progressFilters[key];
+
+    if (existing == null || existing.shapeId != shapeId) {
+      _progressFilters[key] = _RouteProgressKalman(
+        shapeId: shapeId,
+        measurementTime: measurementTime,
+        positionMeters: measuredProgressM,
+        velocityMps: measuredSpeedMps,
+      );
+      return null;
+    }
+
+    return existing.ingest(
+      measurementTime: measurementTime,
+      measuredProgressM: measuredProgressM,
+      measuredSpeedMps: measuredSpeedMps,
+      accelStdMps2: _kalmanAccelStdMps2Current,
+      measurementStdM: dynamicMeasurementStd,
+    );
+  }
+
+  _ProgressProjection? _projectProgressFilter({
+    required String key,
+    required String shapeId,
+    required DateTime now,
+  }) {
+    final filter = _progressFilters[key];
+    if (filter == null || filter.shapeId != shapeId) return null;
+    return filter.project(
+      now: now,
+      maxProjectionSeconds: _kalmanMaxProjectionSeconds,
+    );
+  }
+
+  (double?, double?, double?) _summarizeSamples(List<double> samples) {
+    if (samples.isEmpty) return (null, null, null);
+    final sorted = List<double>.from(samples)..sort();
+    final p50 = sorted[((sorted.length - 1) * 0.50).round()];
+    final p90 = sorted[((sorted.length - 1) * 0.90).round()];
+    final mean = sorted.reduce((a, b) => a + b) / sorted.length;
+    return (p50, p90, mean);
+  }
+
+  void _autoAdjustParameters({
+    required int correctionSampleCount,
+    required double? correctionP90Meters,
+    required int innovationSampleCount,
+    required double? innovationP50Meters,
+  }) {
+    if (!_autoAdjustEnabled) return;
+
+    if (innovationSampleCount >= _autoAdjustMinSamples &&
+        innovationP50Meters != null) {
+      _innovationP50Ewma = _updateEwma(
+        current: _innovationP50Ewma,
+        sample: innovationP50Meters,
+        alpha: _autoAdjustEwmaAlpha,
+      );
+      final innovationError =
+          ((_innovationP50Ewma! - _targetInnovationP50Meters) /
+                  _targetInnovationP50Meters)
+              .clamp(-1.0, 1.0);
+
+      final accelScale = (1.0 + innovationError * 0.06).clamp(0.94, 1.06);
+      final measurementScale = (1.0 - innovationError * 0.04).clamp(0.96, 1.04);
+
+      _kalmanAccelStdMps2Current = (_kalmanAccelStdMps2Current * accelScale)
+          .clamp(_kalmanMinAccelStdMps2, _kalmanMaxAccelStdMps2);
+      _kalmanMeasurementStdMCurrent =
+          (_kalmanMeasurementStdMCurrent * measurementScale).clamp(
+            _kalmanMinMeasurementStdM,
+            _kalmanMaxMeasurementStdM,
+          );
+    }
+
+    if (correctionSampleCount >= _autoAdjustMinSamples &&
+        correctionP90Meters != null) {
+      _correctionP90Ewma = _updateEwma(
+        current: _correctionP90Ewma,
+        sample: correctionP90Meters,
+        alpha: _autoAdjustEwmaAlpha,
+      );
+      final correctionError =
+          ((_correctionP90Ewma! - _targetCorrectionP90Meters) /
+                  _targetCorrectionP90Meters)
+              .clamp(-1.0, 1.0);
+      final blendDeltaMs = (correctionError * 24.0).round();
+      _blendDurationMsCurrent = (_blendDurationMsCurrent + blendDeltaMs).clamp(
+        _blendDurationMinMs,
+        _blendDurationMaxMs,
+      );
+    }
+  }
+
+  double _updateEwma({
+    required double? current,
+    required double sample,
+    required double alpha,
+  }) {
+    if (current == null) return sample;
+    return current + (sample - current) * alpha;
+  }
+
+  DateTime _measurementTimeFromSeconds(int positionTimeSeconds, DateTime now) {
+    if (positionTimeSeconds <= 0 || positionTimeSeconds >= 86400) {
+      return now;
+    }
+
+    var measurement = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).add(Duration(seconds: positionTimeSeconds));
+
+    final diffSeconds = now.difference(measurement).inSeconds;
+    if (diffSeconds > 43200) {
+      measurement = measurement.add(const Duration(days: 1));
+    } else if (diffSeconds < -43200) {
+      measurement = measurement.subtract(const Duration(days: 1));
+    }
+    return measurement;
+  }
+
+  double _measurementDeltaSeconds(BusObservation older, BusObservation newer) {
+    return _secondsBetweenClockTimes(
+      older.measurementTime,
+      newer.measurementTime,
+    );
+  }
+
+  double _motionDeltaSeconds(BusObservation older, BusObservation newer) {
+    final measurementDelta = _measurementDeltaSeconds(older, newer);
+    if (measurementDelta > 0) return measurementDelta;
+    return newer.timestamp.difference(older.timestamp).inMilliseconds / 1000.0;
+  }
+
+  double _secondsBetweenClockTimes(DateTime earlier, DateTime later) {
+    var delta = later.difference(earlier).inMilliseconds / 1000.0;
+    if (delta < -43200.0) delta += 86400.0;
+    if (delta > 43200.0) delta -= 86400.0;
+    return delta;
+  }
+
+  double _applyMeasurementAgeConfidence(
+    double speedKmh,
+    double measurementAgeSeconds,
+  ) {
+    if (measurementAgeSeconds <= _freshMeasurementAgeSeconds) {
+      return speedKmh;
+    }
+    if (measurementAgeSeconds >= _staleMeasurementAgeSeconds) {
+      return speedKmh * _staleSpeedFloor;
+    }
+    final t =
+        ((measurementAgeSeconds - _freshMeasurementAgeSeconds) /
+                (_staleMeasurementAgeSeconds - _freshMeasurementAgeSeconds))
+            .clamp(0.0, 1.0);
+    final factor = 1.0 - (1.0 - _staleSpeedFloor) * t;
     return speedKmh * factor;
   }
 
@@ -772,8 +1457,7 @@ class BusMotionEngine {
     if (v.gtfsTripHeadsign.isNotEmpty) {
       final byHeadsign = candidates
           .where(
-            (e) =>
-                e.headsign.toLowerCase() == v.gtfsTripHeadsign.toLowerCase(),
+            (e) => e.headsign.toLowerCase() == v.gtfsTripHeadsign.toLowerCase(),
           )
           .toList();
       if (byHeadsign.isNotEmpty) filtered = byHeadsign;
@@ -781,8 +1465,9 @@ class BusMotionEngine {
 
     // Narrow by service ID if available
     if (v.gtfsServiceId.isNotEmpty) {
-      final byService =
-          filtered.where((e) => e.serviceId == v.gtfsServiceId).toList();
+      final byService = filtered
+          .where((e) => e.serviceId == v.gtfsServiceId)
+          .toList();
       if (byService.isNotEmpty) filtered = byService;
     }
 
