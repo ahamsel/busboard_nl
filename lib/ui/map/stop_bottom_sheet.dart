@@ -12,6 +12,8 @@ class StopBottomSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final selectedId = ref.watch(settingsProvider).selectedStopId;
+    final isSelected = stop.stopId == selectedId;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -87,20 +89,26 @@ class StopBottomSheet extends ConsumerWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    ref.read(settingsProvider.notifier).setSelectedStop(stop.stopId);
-                    Navigator.pop(context);
-                  },
-                  icon: const Icon(Icons.star_outline, size: 18),
-                  label: const Text('Set as Stop'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.colorScheme.primary,
-                    side: BorderSide(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                    ),
-                  ),
-                ),
+                child: isSelected
+                    ? OutlinedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.star, size: 18),
+                        label: const Text('Selected'),
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: () {
+                          ref.read(settingsProvider.notifier).setSelectedStop(stop.stopId);
+                          Navigator.pop(context);
+                        },
+                        icon: const Icon(Icons.star_outline, size: 18),
+                        label: const Text('Set as Stop'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: theme.colorScheme.primary,
+                          side: BorderSide(
+                            color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                      ),
               ),
             ],
           ),

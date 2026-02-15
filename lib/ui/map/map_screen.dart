@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:math' show Point;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -27,15 +27,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
   MapLibreMapController? _controller;
   Ticker? _ticker;
   bool _styleLoaded = false;
-  bool _busesSourceReady = false;
-  bool _useBusAnnotationFallback = false;
   final Map<String, Circle> _busAnnotations = {};
   Map<String, BusTrackingState>? _pendingAnnotationTracking;
   bool _annotationUpdateInFlight = false;
   DateTime? _lastAnnotationRenderAt;
-  DateTime? _lastGeoJsonRenderAt;
   static const _annotationFrameInterval = Duration(milliseconds: 120);
-  static const _geoJsonFrameInterval = Duration(milliseconds: 100);
   bool _myLocationEnabled = false;
   int _lastLoggedBusCount = -1;
 
@@ -50,8 +46,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
   static const _stopsSourceId = 'stops-source';
   static const _stopsLayerId = 'stops-layer';
   static const _stopsLabelLayerId = 'stops-label-layer';
-  static const _busesSourceId = 'buses-source';
-  static const _busesLayerId = 'buses-layer';
   static const _selectedStopSourceId = 'selected-stop-source';
   static const _selectedStopLayerId = 'selected-stop-layer';
   static const _routeShapeSourceId = 'route-shape-source';
@@ -102,7 +96,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
   Widget build(BuildContext context) {
     ref.listen(busTrackingStreamProvider, (prev, next) {
       if (_styleLoaded) {
-        _updateBuses(next.value ?? {});
+        _queueAnnotationUpdate(next.value ?? {});
       }
     });
     ref.listen<String?>(settingsProvider.select((s) => s.selectedStopId), (
@@ -169,8 +163,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'Buses: ${trackingAsync.asData?.value.length ?? 0}'
-                    '${_useBusAnnotationFallback ? " (ann)" : ""}',
+                    'B:${trackingAsync.asData?.value.length ?? 0}'
+                    ' A:${_busAnnotations.length}'
+                    ' sty=${_styleLoaded ? "Y" : "N"}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -192,14 +187,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
     if (controller == null) return;
 
     _styleLoaded = false;
-    _busesSourceReady = false;
-    _useBusAnnotationFallback = false;
-
     _busAnnotations.clear();
     _pendingAnnotationTracking = null;
     _annotationUpdateInFlight = false;
     _lastAnnotationRenderAt = null;
-    _lastGeoJsonRenderAt = null;
 
     final sw = Stopwatch()..start();
 
@@ -214,19 +205,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
     await _addSelectedStopLayer(controller);
     await _addRouteShapeLayer(controller);
 
-    try {
-      await _addBusesLayer(controller);
-      _log(
-        'Buses layer added (${sw.elapsedMilliseconds}ms)',
-      );
-    } catch (e) {
-      _useBusAnnotationFallback = true;
-      _busesSourceReady = false;
-      _log('Bus layer FAILED, annotation fallback: $e');
-    }
-
     _styleLoaded = true;
-    _log('Style ready, all layers added (${sw.elapsedMilliseconds}ms)');
+    // Buses use circle annotations (GeoJSON circle layers have a known
+    // re-render bug in maplibre_gl's setGeoJsonSource).
+    _log('Style ready (${sw.elapsedMilliseconds}ms), buses via annotations');
 
     // Start animation ticker
     _ticker?.dispose();
@@ -235,8 +217,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     // Initial bus update
     final tracking = ref.read(busTrackingStreamProvider).value ?? {};
-    _log('Initial tracking state: ${tracking.length} vehicles');
-    _updateBuses(tracking);
+    _log('Initial tracking: ${tracking.length} vehicles');
+    _queueAnnotationUpdate(tracking);
   }
 
 
@@ -398,124 +380,16 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
-  Future<void> _addBusesLayer(MapLibreMapController controller) async {
-    await controller.addGeoJsonSource(
-      _busesSourceId,
-      _emptyFeatureCollection(),
-    );
-
-    // Circle layer for bus markers — reliable across all platforms
-    _log('Adding bus circle layer');
-    await controller.addCircleLayer(
-      _busesSourceId,
-      _busesLayerId,
-      const CircleLayerProperties(
-        circleRadius: 10.0,
-        circleColor: '#1565C0',
-        circleStrokeWidth: 2.5,
-        circleStrokeColor: '#FFFFFF',
-      ),
-    );
-
-    // Route number label on top of each bus
-    await controller.addSymbolLayer(
-      _busesSourceId,
-      '$_busesLayerId-label',
-      const SymbolLayerProperties(
-        textField: [Expressions.get, 'routeNumber'],
-        textSize: 9.0,
-        textAllowOverlap: true,
-        textIgnorePlacement: true,
-        textColor: '#FFFFFF',
-        textHaloColor: '#1565C0',
-        textHaloWidth: 0.5,
-      ),
-    );
-
-    _busesSourceReady = true;
-    _useBusAnnotationFallback = false;
-    _log('Bus layer ready');
-  }
-
-  // ─── Bus Updates ────────────────────────────────────────────
-
-  void _updateBuses(Map<String, BusTrackingState> tracking) {
-    if (_controller == null) return;
-
-    if (_useBusAnnotationFallback) {
-      _queueAnnotationUpdate(tracking);
-      return;
-    }
-
-    if (!_busesSourceReady) {
-      _log('updateBuses: source not ready, skipping');
-      return;
-    }
-
-    final engine = ref.read(busMotionEngineProvider);
-    if (engine == null) {
-      _log('updateBuses: engine is null');
-      return;
-    }
-
-    final interpolated = engine.interpolate(DateTime.now());
-
-    final features = tracking.entries.map((entry) {
-      final state = entry.value;
-      final pos = interpolated[entry.key];
-      final lat = pos?.$1 ?? state.smoothedLat;
-      final lon = pos?.$2 ?? state.smoothedLon;
-
-      return {
-        'type': 'Feature',
-        'geometry': {
-          'type': 'Point',
-          'coordinates': [lon, lat],
-        },
-        'properties': {
-          'routeRun': state.routeRun,
-          'routeNumber': '${state.routeNumber}',
-          'vehicleId': state.vehicleId,
-          'headsign': state.headsign,
-          'status': state.status.name,
-        },
-      };
-    }).toList();
-
-    if (features.length != _lastLoggedBusCount) {
-      _lastLoggedBusCount = features.length;
-      _log('Rendering ${features.length} bus features');
-    }
-
-    _controller!
-        .setGeoJsonSource(_busesSourceId, {
-          'type': 'FeatureCollection',
-          'features': features,
-        })
-        .catchError((e) {
-          _log('setGeoJsonSource failed, switching to annotation fallback: $e');
-          _useBusAnnotationFallback = true;
-          _queueAnnotationUpdate(tracking);
-        });
-  }
+  // ─── Bus Updates (annotation-based) ─────────────────────────
 
   void _onTick(Duration elapsed) {
     if (!_styleLoaded) return;
     final now = DateTime.now();
-    final tracking = ref.read(busTrackingStreamProvider).value ?? {};
-    if (_useBusAnnotationFallback) {
-      final last = _lastAnnotationRenderAt;
-      if (last == null || now.difference(last) >= _annotationFrameInterval) {
-        _lastAnnotationRenderAt = now;
-        _queueAnnotationUpdate(tracking);
-      }
-      return;
-    }
-    // Throttle GeoJSON updates
-    final last = _lastGeoJsonRenderAt;
-    if (last == null || now.difference(last) >= _geoJsonFrameInterval) {
-      _lastGeoJsonRenderAt = now;
-      _updateBuses(tracking);
+    final last = _lastAnnotationRenderAt;
+    if (last == null || now.difference(last) >= _annotationFrameInterval) {
+      _lastAnnotationRenderAt = now;
+      final tracking = ref.read(busTrackingStreamProvider).value ?? {};
+      _queueAnnotationUpdate(tracking);
     }
   }
 
@@ -573,9 +447,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
           final circle = await controller.addCircle(
             CircleOptions(
               geometry: target,
-              circleRadius: 8.0,
-              circleColor: '#1565C0',
-              circleStrokeWidth: 2.0,
+              circleRadius: 9.0,
+              circleColor: '#E53935',
+              circleStrokeWidth: 2.5,
               circleStrokeColor: '#FFFFFF',
             ),
           );
@@ -616,7 +490,23 @@ class _MapScreenState extends ConsumerState<MapScreen>
     Annotation? annotation,
   ) {
     _log('FEATURE TAP: layer=$layerId id=$id');
-    // Route to the same distance-based handler
+
+    // Use layerId to know exactly what was tapped — no guessing
+    if (layerId == _stopsLayerId ||
+        layerId == _stopsLabelLayerId ||
+        layerId == _selectedStopLayerId) {
+      // Tapped a stop feature — find the nearest stop
+      final radius = _tapRadiusMeters();
+      final stop = _findNearestStop(coordinates, radius);
+      if (stop != null) {
+        _log('  HIT stop: ${stop.stopName} (#${stop.stopId})');
+        _showStopSheet(stop);
+        return;
+      }
+    }
+
+    // For any other layer or miss, fall back to distance-based search
+    // (buses are annotations, not GeoJSON layers, so they use _handleTap)
     _handleTap(coordinates);
   }
 
@@ -625,6 +515,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _handleTap(coordinates);
   }
 
+  /// Generic tap handler for empty-area taps — checks buses first, then stops.
   void _handleTap(LatLng coordinates) {
     if (_controller == null) {
       _log('Tap ignored: controller is null');
@@ -640,13 +531,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
 
     // Check buses first (they render on top)
-    final sw = Stopwatch()..start();
-    final tracking = ref.read(busTrackingStreamProvider).value ?? {};
-    final engine = ref.read(busMotionEngineProvider);
-    _log('  buses: ${tracking.length} tracked, engine=${engine != null}');
-
     final tappedBus = _findNearestBus(coordinates, radius);
-    _log('  bus search: ${sw.elapsedMilliseconds}ms');
     if (tappedBus != null) {
       _log('  HIT bus: route ${tappedBus.routeNumber} (${tappedBus.vehicleId})');
       _showBusSheet(tappedBus);
@@ -654,13 +539,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     }
 
     // Then check stops
-    sw.reset();
-    final repo = ref.read(gtfsRepositoryProvider).asData?.value;
-    final stopCount = repo?.stopsById.length ?? 0;
-    _log('  stops: $stopCount in repo');
-
     final tappedStop = _findNearestStop(coordinates, radius);
-    _log('  stop search: ${sw.elapsedMilliseconds}ms');
     if (tappedStop != null) {
       _log('  HIT stop: ${tappedStop.stopName} (#${tappedStop.stopId})');
       _showStopSheet(tappedStop);
