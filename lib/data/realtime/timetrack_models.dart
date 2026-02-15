@@ -54,41 +54,90 @@ class TimeTrackVehicle {
   });
 
   factory TimeTrackVehicle.fromJson(Map<String, dynamic> json) {
+    String readString(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value != null) return value.toString().trim();
+      }
+      return '';
+    }
+
+    int readInt(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value is int) return value;
+        if (value is num) return value.toInt();
+        final parsed = int.tryParse(value?.toString() ?? '');
+        if (parsed != null) return parsed;
+      }
+      return 0;
+    }
+
+    double readDouble(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+        if (value is double) return value;
+        if (value is num) return value.toDouble();
+        final parsed = double.tryParse(value?.toString() ?? '');
+        if (parsed != null) return parsed;
+      }
+      return 0.0;
+    }
+
     return TimeTrackVehicle(
-      routeRun: json['routerun'] as String? ?? '',
-      currentRoute: json['current_route'] as String? ?? '',
-      routeNumber: (json['routenumber'] as num?)?.toInt() ?? 0,
-      vehicle: json['vehicle'] as String? ?? '',
-      timeStamp: json['time_stamp'] as String? ?? '',
-      deviation: json['deviation'] as String? ?? '',
-      currentLocation: json['current_location'] as String? ?? '',
-      busLat: double.tryParse(json['bus_lat']?.toString() ?? '') ?? 0.0,
-      busLon: double.tryParse(json['bus_lon']?.toString() ?? '') ?? 0.0,
-      heading: json['heading'] as String? ?? '',
-      speed: (json['speed'] as num?)?.toDouble() ?? 0.0,
-      positionTime: json['position_time'] as String? ?? '',
-      positionTimeSeconds:
-          (json['position_time_seconds'] as num?)?.toInt() ?? 0,
-      gtfsTripHeadsign: json['gtfs_trip_headsign'] as String? ?? '',
-      gtfsServiceId: json['gtfs_service_id'] as String? ?? '',
-      gtfsStopSequenceStatus:
-          json['gtfs_stop_sequence_status'] as String? ?? '',
-      gtfsStopSequenceMinsFromStop:
-          (json['gtfs_stop_sequence_mins_from_stop'] as num?)?.toInt() ?? 0,
-      gtfsStopSequenceDeviation:
-          json['gtfs_stop_sequence_deviation'] as String? ?? '',
-      gtfsStopSequenceClosestStop:
-          json['gtfs_stop_sequence_closest_stop'] as String? ?? '',
-      gtfsStopSequenceSchedDifferenceMins:
-          (json['gtfs_stop_sequence_sched_difference_mins'] as num?)?.toInt() ??
-          0,
-      gtfsTripId: json['gtfs_trip_id'] as String? ?? '',
-      shortStatus: json['shortstatus'] as String? ?? '',
-      departureTimeAtClosestStop:
-          int.tryParse(
-            json['departure_time_at_closest_stop']?.toString() ?? '',
-          ) ??
-          0,
+      routeRun: readString(['routerun', 'route_run', 'routeRun']),
+      currentRoute: readString(['current_route', 'currentRoute', 'route']),
+      routeNumber: readInt(['routenumber', 'route_number', 'routeNumber']),
+      vehicle: readString(['vehicle', 'bus', 'vehicle_id', 'vehicleId']),
+      timeStamp: readString(['time_stamp', 'timeStamp']),
+      deviation: readString(['deviation']),
+      currentLocation: readString(['current_location', 'currentLocation']),
+      busLat: readDouble(['bus_lat', 'busLat', 'lat', 'latitude']),
+      busLon: readDouble(['bus_lon', 'busLon', 'lon', 'lng', 'longitude']),
+      heading: readString(['heading', 'bearing']),
+      speed: readDouble(['speed']),
+      positionTime: readString(['position_time', 'positionTime']),
+      positionTimeSeconds: readInt([
+        'position_time_seconds',
+        'positionTimeSeconds',
+      ]),
+      gtfsTripHeadsign: readString([
+        'gtfs_trip_headsign',
+        'gtfsTripHeadsign',
+        'headsign',
+      ]),
+      gtfsServiceId: readString(['gtfs_service_id', 'gtfsServiceId']),
+      gtfsStopSequenceStatus: readString([
+        'gtfs_stop_sequence_status',
+        'gtfsStopSequenceStatus',
+      ]),
+      gtfsStopSequenceMinsFromStop: readInt([
+        'gtfs_stop_sequence_mins_from_stop',
+        'gtfsStopSequenceMinsFromStop',
+      ]),
+      gtfsStopSequenceDeviation: readString([
+        'gtfs_stop_sequence_deviation',
+        'gtfsStopSequenceDeviation',
+      ]),
+      gtfsStopSequenceClosestStop: readString([
+        'gtfs_stop_sequence_closest_stop',
+        'gtfsStopSequenceClosestStop',
+      ]),
+      gtfsStopSequenceSchedDifferenceMins: readInt([
+        'gtfs_stop_sequence_sched_difference_mins',
+        'gtfsStopSequenceSchedDifferenceMins',
+      ]),
+      gtfsTripId: readString([
+        'gtfs_trip_id',
+        'gtfs_stop_sequence_trip_id',
+        'trip_id',
+        'gtfsTripId',
+      ]),
+      shortStatus: readString(['shortstatus', 'short_status', 'shortStatus']),
+      departureTimeAtClosestStop: readInt([
+        'departure_time_at_closest_stop',
+        'departureTimeAtClosestStop',
+      ]),
     );
   }
 
