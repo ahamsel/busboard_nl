@@ -54,7 +54,7 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
         Text(
           'Enter Stop ID',
           style: theme.textTheme.titleMedium?.copyWith(
-            color: Colors.white.withValues(alpha: 0.7),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
           ),
         ),
         const SizedBox(height: 10),
@@ -70,11 +70,11 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(4),
                 ],
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 6,
-                  color: Colors.white,
+                  color: theme.colorScheme.onSurface,
                 ),
                 textAlign: TextAlign.center,
                 decoration: InputDecoration(
@@ -83,7 +83,7 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 6,
-                    color: Colors.white.withValues(alpha: 0.15),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.15),
                   ),
                   counterText: '',
                   errorText: _errorText,

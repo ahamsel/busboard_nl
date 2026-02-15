@@ -109,12 +109,12 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   @override
   Widget build(BuildContext context) {
     // Restart timer when refresh interval changes in settings
-    ref.listen<int>(
-      settingsProvider.select((s) => s.refreshIntervalSeconds),
-      (prev, next) {
-        if (prev != next) _startTimer();
-      },
-    );
+    ref.listen<int>(settingsProvider.select((s) => s.refreshIntervalSeconds), (
+      prev,
+      next,
+    ) {
+      if (prev != next) _startTimer();
+    });
 
     final theme = Theme.of(context);
     final stopInfo = ref.watch(stopInfoProvider(widget.stopId));
@@ -136,7 +136,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               'Stop #${widget.stopId}',
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.white.withValues(alpha: 0.45),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
               ),
             ),
           ],
@@ -144,7 +144,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 20),
-            color: Colors.white.withValues(alpha: 0.5),
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
             onPressed: () => context.push('/settings'),
           ),
         ],
@@ -160,10 +160,12 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF252540).withValues(alpha: 0.5),
+                color: theme.colorScheme.surface.withValues(alpha: 0.5),
                 border: Border(
                   bottom: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.06),
+                    color:
+                        theme.dividerTheme.color ??
+                        theme.colorScheme.onSurface.withValues(alpha: 0.06),
                   ),
                 ),
               ),
@@ -173,14 +175,14 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                   Icon(
                     Icons.update,
                     size: 14,
-                    color: Colors.white.withValues(alpha: 0.35),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
                   ),
                   const SizedBox(width: 6),
                   Text(
                     'Updated ${timeFormat.format(_lastUpdate)}',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.35),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                   const Spacer(),
@@ -192,16 +194,20 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                         Container(
                           width: 6,
                           height: 6,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF81C784),
+                          decoration: BoxDecoration(
+                            color: theme.brightness == Brightness.light
+                                ? const Color(0xFF2E7D32)
+                                : const Color(0xFF81C784),
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 5),
-                        const Text(
+                        Text(
                           'LIVE',
                           style: TextStyle(
-                            color: Color(0xFF81C784),
+                            color: theme.brightness == Brightness.light
+                                ? const Color(0xFF2E7D32)
+                                : const Color(0xFF81C784),
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1,
@@ -214,7 +220,9 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                       'Live unavailable',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.white.withValues(alpha: 0.25),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.5,
+                        ),
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -243,7 +251,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
             Icon(
               Icons.error_outline,
               size: 48,
-              color: theme.colorScheme.error.withValues(alpha: 0.7),
+              color: theme.colorScheme.error.withValues(alpha: 0.9),
             ),
             const SizedBox(height: 16),
             Text(_error!, style: theme.textTheme.titleMedium),
@@ -262,20 +270,20 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                 Icon(
                   Icons.schedule,
                   size: 56,
-                  color: Colors.white.withValues(alpha: 0.15),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                 ),
                 const SizedBox(height: 16),
                 Text(
                   'No upcoming departures',
                   style: theme.textTheme.titleLarge?.copyWith(
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'There are no scheduled departures\nfrom this stop right now.',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.3),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                     fontSize: 13,
                   ),
                   textAlign: TextAlign.center,
@@ -293,7 +301,9 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
       separatorBuilder: (context, i) => Divider(
         height: 1,
         indent: 82,
-        color: Colors.white.withValues(alpha: 0.06),
+        color:
+            theme.dividerTheme.color ??
+            theme.colorScheme.onSurface.withValues(alpha: 0.06),
       ),
       itemBuilder: (context, index) {
         return ArrivalRowTile(arrival: _arrivals[index]);
