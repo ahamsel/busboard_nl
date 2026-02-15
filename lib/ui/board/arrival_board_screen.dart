@@ -108,6 +108,14 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Restart timer when refresh interval changes in settings
+    ref.listen<int>(
+      settingsProvider.select((s) => s.refreshIntervalSeconds),
+      (prev, next) {
+        if (prev != next) _startTimer();
+      },
+    );
+
     final theme = Theme.of(context);
     final stopInfo = ref.watch(stopInfoProvider(widget.stopId));
     final timeFormat = DateFormat('HH:mm:ss');

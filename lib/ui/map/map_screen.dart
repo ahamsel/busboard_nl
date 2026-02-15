@@ -3,8 +3,6 @@ import 'dart:math' show Point;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -35,12 +33,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
   bool _myLocationEnabled = false;
   int _lastLoggedBusCount = -1;
 
+  // Route filter: empty = show all
+  Set<int> _activeRouteFilter = {};
+  bool _legendExpanded = false;
+
   // St. John's fallback center
   static const _defaultLat = 47.5615;
   static const _defaultLon = -52.7126;
   static const _defaultZoom = 13.0;
-  static const _tileStyleUrl =
-      'https://tiles.openfreemap.org/styles/positron';
+  static const _tileStyleUrl = 'https://tiles.openfreemap.org/styles/positron';
 
   // Source/layer IDs
   static const _stopsSourceId = 'stops-source';
@@ -112,12 +113,26 @@ class _MapScreenState extends ConsumerState<MapScreen>
     });
 
     final gtfsAsync = ref.watch(gtfsRepositoryProvider);
-    final trackingAsync = ref.watch(busTrackingStreamProvider);
+    ref.watch(busTrackingStreamProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Live Map'),
         actions: [
+          IconButton(
+            icon: Icon(
+              Icons.filter_list,
+              color: _activeRouteFilter.isEmpty ? null : Colors.amber,
+            ),
+            onPressed: _showRouteFilter,
+          ),
+          if (ref.watch(settingsProvider.select((s) => s.selectedStopId)) !=
+              null)
+            IconButton(
+              icon: const Icon(Icons.place),
+              tooltip: 'Go to selected stop',
+              onPressed: _centerOnSelectedStop,
+            ),
           IconButton(
             icon: const Icon(Icons.my_location),
             onPressed: _goToMyLocation,
@@ -149,31 +164,56 @@ class _MapScreenState extends ConsumerState<MapScreen>
               myLocationRenderMode: MyLocationRenderMode.normal,
               logoEnabled: false,
             ),
-            if (kDebugMode)
-              Positioned(
-                top: 12,
-                right: 12,
+            // Legend
+            Positioned(
+              bottom: 16,
+              left: 12,
+              child: GestureDetector(
+                onTap: () => setState(() => _legendExpanded = !_legendExpanded),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
-                    vertical: 6,
+                    vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.7),
+                    color: Colors.white.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 4,
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    'B:${trackingAsync.asData?.value.length ?? 0}'
-                    ' A:${_busAnnotations.length}'
-                    ' sty=${_styleLoaded ? "Y" : "N"}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: _legendExpanded
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _legendRow(Colors.red, 'Bus'),
+                            const SizedBox(height: 4),
+                            _legendRow(const Color(0xFF4FC3F7), 'Stop'),
+                            const SizedBox(height: 4),
+                            _legendRow(
+                              const Color(0xFFFFD54F),
+                              'Selected stop',
+                            ),
+                            const SizedBox(height: 4),
+                            _legendRow(
+                              const Color(0xFFFFD54F),
+                              'Bus route',
+                              isLine: true,
+                            ),
+                          ],
+                        )
+                      : const Icon(
+                          Icons.info_outline,
+                          size: 20,
+                          color: Colors.black54,
+                        ),
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -206,8 +246,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     await _addRouteShapeLayer(controller);
 
     _styleLoaded = true;
-    // Buses use circle annotations (GeoJSON circle layers have a known
-    // re-render bug in maplibre_gl's setGeoJsonSource).
     _log('Style ready (${sw.elapsedMilliseconds}ms), buses via annotations');
 
     // Start animation ticker
@@ -220,7 +258,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     _log('Initial tracking: ${tracking.length} vehicles');
     _queueAnnotationUpdate(tracking);
   }
-
 
   Future<void> _addStopsLayer(MapLibreMapController controller) async {
     final repo = ref.read(gtfsRepositoryProvider).asData?.value;
@@ -254,18 +291,24 @@ class _MapScreenState extends ConsumerState<MapScreen>
           Expressions.interpolate,
           ['linear'],
           [Expressions.zoom],
-          11, 2.0,
-          14, 5.0,
-          16, 7.0,
+          11,
+          2.0,
+          14,
+          5.0,
+          16,
+          7.0,
         ],
         circleColor: '#4FC3F7',
         circleOpacity: [
           Expressions.interpolate,
           ['linear'],
           [Expressions.zoom],
-          11, 0.3,
-          13, 0.6,
-          15, 0.8,
+          11,
+          0.3,
+          13,
+          0.6,
+          15,
+          0.8,
         ],
         circleStrokeWidth: 1.0,
         circleStrokeColor: '#FFFFFF',
@@ -299,9 +342,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
-  Future<void> _addSelectedStopLayer(
-    MapLibreMapController controller,
-  ) async {
+  Future<void> _addSelectedStopLayer(MapLibreMapController controller) async {
     await controller.addGeoJsonSource(
       _selectedStopSourceId,
       _emptyFeatureCollection(),
@@ -422,9 +463,20 @@ class _MapScreenState extends ConsumerState<MapScreen>
     if (engine == null) return;
 
     final interpolated = engine.interpolate(DateTime.now());
-    final nextKeys = tracking.keys.toSet();
+
+    // Apply route filter
+    final filtered = _activeRouteFilter.isEmpty
+        ? tracking
+        : Map.fromEntries(
+            tracking.entries.where(
+              (e) => _activeRouteFilter.contains(e.value.routeNumber),
+            ),
+          );
+
+    final nextKeys = filtered.keys.toSet();
     final existingKeys = _busAnnotations.keys.toList();
 
+    // Remove stale annotations.
     for (final key in existingKeys) {
       if (nextKeys.contains(key)) continue;
       final circle = _busAnnotations.remove(key);
@@ -434,7 +486,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       } catch (_) {}
     }
 
-    for (final entry in tracking.entries) {
+    for (final entry in filtered.entries) {
       final state = entry.value;
       final pos = interpolated[entry.key];
       final lat = pos?.$1 ?? state.smoothedLat;
@@ -465,9 +517,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
       }
     }
 
-    if (tracking.length != _lastLoggedBusCount) {
-      _lastLoggedBusCount = tracking.length;
-      _log('Rendering ${tracking.length} bus annotations');
+    if (filtered.length != _lastLoggedBusCount) {
+      _lastLoggedBusCount = filtered.length;
+      _log('Rendering ${filtered.length} bus annotations');
     }
   }
 
@@ -533,10 +585,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
     // Check buses first (they render on top)
     final tappedBus = _findNearestBus(coordinates, radius);
     if (tappedBus != null) {
-      _log('  HIT bus: route ${tappedBus.routeNumber} (${tappedBus.vehicleId})');
+      _log(
+        '  HIT bus: route ${tappedBus.routeNumber} (${tappedBus.vehicleId})',
+      );
       _showBusSheet(tappedBus);
       return;
     }
+
+    // Clear any visible route shape when tapping non-bus
+    _clearRouteShape();
 
     // Then check stops
     final tappedStop = _findNearestStop(coordinates, radius);
@@ -576,7 +633,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
       final lat = pos?.$1 ?? entry.value.smoothedLat;
       final lon = pos?.$2 ?? entry.value.smoothedLon;
       final dist = NearestStopService.haversineDistance(
-        tap.latitude, tap.longitude, lat, lon,
+        tap.latitude,
+        tap.longitude,
+        lat,
+        lon,
       );
       if (dist < radiusMeters && dist < closestDist) {
         closestDist = dist;
@@ -595,7 +655,10 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     for (final stop in repo.stopsById.values) {
       final dist = NearestStopService.haversineDistance(
-        tap.latitude, tap.longitude, stop.stopLat, stop.stopLon,
+        tap.latitude,
+        tap.longitude,
+        stop.stopLat,
+        stop.stopLon,
       );
       if (dist < radiusMeters && dist < closestDist) {
         closestDist = dist;
@@ -650,6 +713,130 @@ class _MapScreenState extends ConsumerState<MapScreen>
     }
   }
 
+  // ─── Legend & Filter ──────────────────────────────────────────
+
+  Widget _legendRow(Color color, String label, {bool isLine = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isLine)
+          Container(width: 14, height: 3, color: color)
+        else
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: Colors.black87),
+        ),
+      ],
+    );
+  }
+
+  void _showRouteFilter() {
+    final tracking = ref.read(busTrackingStreamProvider).value ?? {};
+    final allRoutes = tracking.values.map((s) => s.routeNumber).toSet().toList()
+      ..sort();
+
+    if (allRoutes.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Text(
+                      'Filter Routes',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () {
+                        setState(() => _activeRouteFilter = {});
+                        setSheetState(() {});
+                      },
+                      child: const Text('Show All'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: allRoutes.map((route) {
+                    final active =
+                        _activeRouteFilter.isEmpty ||
+                        _activeRouteFilter.contains(route);
+                    return FilterChip(
+                      label: Text('$route'),
+                      selected: active && _activeRouteFilter.isNotEmpty,
+                      onSelected: (_) {
+                        setState(() {
+                          if (_activeRouteFilter.isEmpty) {
+                            // First tap: show only this route
+                            _activeRouteFilter = {route};
+                          } else if (_activeRouteFilter.contains(route)) {
+                            _activeRouteFilter = Set.from(_activeRouteFilter)
+                              ..remove(route);
+                            if (_activeRouteFilter.isEmpty) {
+                              // Removed last filter — show all
+                            }
+                          } else {
+                            _activeRouteFilter = Set.from(_activeRouteFilter)
+                              ..add(route);
+                          }
+                        });
+                        setSheetState(() {});
+                      },
+                      backgroundColor: Colors.grey.shade200,
+                      selectedColor: Colors.red.shade100,
+                      labelStyle: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: active ? Colors.red.shade700 : Colors.grey,
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // ─── Bottom Sheets ──────────────────────────────────────────
 
   void _showStopSheet(StopInfo stop) {
@@ -669,9 +856,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => BusBottomSheet(bus: bus),
-    ).then((_) {
-      _clearRouteShape();
-    });
+    );
+    // Route shape stays visible after sheet dismisses —
+    // cleared when tapping another bus, a stop, or empty space.
   }
 
   void _drawRouteShape(String shapeId) {
