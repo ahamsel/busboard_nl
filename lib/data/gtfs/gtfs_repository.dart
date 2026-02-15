@@ -16,6 +16,7 @@ class GtfsRepository {
   final List<CalendarDate> calendarDates = [];
   final Map<String, List<ShapePoint>> shapesById = {};
   final Map<String, List<double>> shapeCumulativeDistances = {};
+  final Map<String, List<TripShapeEntry>> tripsByRouteShortName = {};
 
   bool _loaded = false;
   bool get isLoaded => _loaded;
@@ -91,6 +92,23 @@ class GtfsRepository {
         cumDist.add(cumDist.last + d);
       }
       shapeCumulativeDistances[entry.key] = cumDist;
+    }
+
+    // Build route short name → trip/shape lookup for fallback matching
+    tripsByRouteShortName.clear();
+    for (final trip in trips) {
+      if (trip.shapeId == null || trip.shapeId!.isEmpty) continue;
+      final route = routesById[trip.routeId];
+      if (route == null) continue;
+      tripsByRouteShortName.putIfAbsent(route.routeShortName, () => []).add(
+        TripShapeEntry(
+          tripId: trip.tripId,
+          shapeId: trip.shapeId!,
+          headsign: trip.tripHeadsign,
+          directionId: trip.directionId,
+          serviceId: trip.serviceId,
+        ),
+      );
     }
 
     _loaded = true;

@@ -143,6 +143,24 @@ class CalendarDate {
   });
 }
 
+/// Lightweight entry linking a route's short name to a trip's shape.
+/// Used for fallback shape matching when gtfsTripId is unavailable.
+class TripShapeEntry {
+  final String tripId;
+  final String shapeId;
+  final String headsign;
+  final int directionId;
+  final String serviceId;
+
+  const TripShapeEntry({
+    required this.tripId,
+    required this.shapeId,
+    required this.headsign,
+    required this.directionId,
+    required this.serviceId,
+  });
+}
+
 class ShapePoint {
   final String shapeId;
   final double lat;

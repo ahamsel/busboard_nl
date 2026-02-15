@@ -6,6 +6,7 @@ class BusObservation {
   final double heading;
   final double speed;
   final String? gtfsTripId;
+  final double? progressAlongRoute;
   final bool rejected;
 
   const BusObservation({
@@ -15,10 +16,11 @@ class BusObservation {
     required this.heading,
     required this.speed,
     this.gtfsTripId,
+    this.progressAlongRoute,
     this.rejected = false,
   });
 
-  BusObservation copyWith({bool? rejected}) {
+  BusObservation copyWith({bool? rejected, double? progressAlongRoute}) {
     return BusObservation(
       timestamp: timestamp,
       lat: lat,
@@ -26,6 +28,7 @@ class BusObservation {
       heading: heading,
       speed: speed,
       gtfsTripId: gtfsTripId,
+      progressAlongRoute: progressAlongRoute ?? this.progressAlongRoute,
       rejected: rejected ?? this.rejected,
     );
   }

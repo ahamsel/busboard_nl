@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -199,7 +200,7 @@ final nearestStopsProvider = FutureProvider.autoDispose<List<NearbyStop>>((
 
 // ─── Bus Motion Engine ────────────────────────────────────
 
-final busMotionEngineProvider = Provider.autoDispose<BusMotionEngine?>((ref) {
+final busMotionEngineProvider = Provider<BusMotionEngine?>((ref) {
   final repoAsync = ref.watch(gtfsRepositoryProvider);
   final repo = repoAsync.asData?.value;
   if (repo == null) return null;
@@ -207,33 +208,54 @@ final busMotionEngineProvider = Provider.autoDispose<BusMotionEngine?>((ref) {
 });
 
 final busTrackingStreamProvider =
-    StreamProvider.autoDispose<Map<String, BusTrackingState>>((ref) async* {
-  final engine = ref.watch(busMotionEngineProvider);
-  if (engine == null) {
-    yield {};
-    return;
-  }
+    StreamProvider<Map<String, BusTrackingState>>((ref) async* {
+      final engine = ref.watch(busMotionEngineProvider);
+      if (engine == null) {
+        yield {};
+        return;
+      }
 
-  final api = ref.read(timetrackApiProvider);
-  final settings = ref.watch(settingsProvider);
-  final interval = Duration(seconds: settings.refreshIntervalSeconds);
+      final api = ref.read(timetrackApiProvider);
+      final refreshIntervalSeconds = ref.watch(
+        settingsProvider.select((s) => s.refreshIntervalSeconds),
+      );
+      final interval = Duration(seconds: refreshIntervalSeconds);
 
-  // Initial fetch
-  final vehicles = await api.fetchVehicles();
-  engine.processBatch(vehicles, DateTime.now());
-  yield Map.unmodifiable(engine.states);
-
-  // Poll at refresh interval
-  await for (final _ in Stream.periodic(interval)) {
-    try {
+      // Initial fetch
       final vehicles = await api.fetchVehicles();
       engine.processBatch(vehicles, DateTime.now());
+      if (kDebugMode) {
+        final snapped = engine.states.values
+            .where((s) => s.shapeId != null && s.progressAlongRoute != null)
+            .length;
+        debugPrint(
+          '[Map] TimeTrack initial fetch: vehicles=${vehicles.length}, states=${engine.states.length}, snapped=$snapped',
+        );
+      }
       yield Map.unmodifiable(engine.states);
-    } catch (_) {
-      // Continue on error
-    }
-  }
-});
+
+      // Poll at refresh interval
+      await for (final _ in Stream.periodic(interval)) {
+        try {
+          final vehicles = await api.fetchVehicles();
+          engine.processBatch(vehicles, DateTime.now());
+          if (kDebugMode) {
+            final snapped = engine.states.values
+                .where((s) => s.shapeId != null && s.progressAlongRoute != null)
+                .length;
+            debugPrint(
+              '[Map] TimeTrack poll: vehicles=${vehicles.length}, states=${engine.states.length}, snapped=$snapped',
+            );
+          }
+          yield Map.unmodifiable(engine.states);
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('[Map] TimeTrack poll error: $e');
+          }
+          // Continue on error
+        }
+      }
+    });
 
 // ─── Stop Info helper ──────────────────────────────────────
 
