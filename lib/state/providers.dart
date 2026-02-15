@@ -207,55 +207,96 @@ final busMotionEngineProvider = Provider<BusMotionEngine?>((ref) {
   return BusMotionEngine(repo);
 });
 
-final busTrackingStreamProvider =
-    StreamProvider<Map<String, BusTrackingState>>((ref) async* {
-      final engine = ref.watch(busMotionEngineProvider);
-      if (engine == null) {
-        yield {};
-        return;
-      }
+final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>((
+  ref,
+) async* {
+  final engine = ref.watch(busMotionEngineProvider);
+  if (engine == null) {
+    yield {};
+    return;
+  }
 
-      final api = ref.read(timetrackApiProvider);
-      final refreshIntervalSeconds = ref.watch(
-        settingsProvider.select((s) => s.refreshIntervalSeconds),
-      );
-      final interval = Duration(seconds: refreshIntervalSeconds);
+  final api = ref.read(timetrackApiProvider);
+  final refreshIntervalSeconds = ref.watch(
+    settingsProvider.select((s) => s.refreshIntervalSeconds),
+  );
+  final interval = Duration(seconds: refreshIntervalSeconds);
 
-      // Initial fetch
+  // Initial fetch
+  final vehicles = await api.fetchVehicles();
+  engine.processBatch(vehicles, DateTime.now());
+  if (kDebugMode) {
+    final snapped = engine.states.values
+        .where((s) => s.shapeId != null && s.progressAlongRoute != null)
+        .length;
+    final d = engine.diagnostics;
+    final correction = d.correctionP50Meters == null
+        ? 'n/a'
+        : 'p50=${d.correctionP50Meters!.toStringAsFixed(1)}m '
+              'p90=${(d.correctionP90Meters ?? 0).toStringAsFixed(1)}m '
+              'mean=${(d.correctionMeanMeters ?? 0).toStringAsFixed(1)}m';
+    final innovation = d.innovationP50Meters == null
+        ? 'n/a'
+        : 'p50=${d.innovationP50Meters!.toStringAsFixed(1)}m '
+              'p90=${(d.innovationP90Meters ?? 0).toStringAsFixed(1)}m '
+              'mean=${(d.innovationMeanMeters ?? 0).toStringAsFixed(1)}m';
+    final tuning =
+        'auto=${d.autoAdjustEnabled ? "on" : "off"} '
+        'accel=${d.kalmanAccelStdMps2.toStringAsFixed(2)} '
+        'meas=${d.kalmanMeasurementStdM.toStringAsFixed(1)} '
+        'blend=${d.blendDurationMs}ms';
+    debugPrint(
+      '[Map] TimeTrack initial fetch: vehicles=${vehicles.length}, '
+      'states=${engine.states.length}, snapped=$snapped, '
+      'accepted=${d.acceptedUpdates}, dup=${d.duplicateOrOutOfOrderUpdates}, '
+      'rejected=${d.rejectedOutliers}, correction=$correction, '
+      'innovation=$innovation, tuning=$tuning',
+    );
+  }
+  yield Map.unmodifiable(engine.states);
+
+  // Poll at refresh interval
+  await for (final _ in Stream.periodic(interval)) {
+    try {
       final vehicles = await api.fetchVehicles();
       engine.processBatch(vehicles, DateTime.now());
       if (kDebugMode) {
         final snapped = engine.states.values
             .where((s) => s.shapeId != null && s.progressAlongRoute != null)
             .length;
+        final d = engine.diagnostics;
+        final correction = d.correctionP50Meters == null
+            ? 'n/a'
+            : 'p50=${d.correctionP50Meters!.toStringAsFixed(1)}m '
+                  'p90=${(d.correctionP90Meters ?? 0).toStringAsFixed(1)}m '
+                  'mean=${(d.correctionMeanMeters ?? 0).toStringAsFixed(1)}m';
+        final innovation = d.innovationP50Meters == null
+            ? 'n/a'
+            : 'p50=${d.innovationP50Meters!.toStringAsFixed(1)}m '
+                  'p90=${(d.innovationP90Meters ?? 0).toStringAsFixed(1)}m '
+                  'mean=${(d.innovationMeanMeters ?? 0).toStringAsFixed(1)}m';
+        final tuning =
+            'auto=${d.autoAdjustEnabled ? "on" : "off"} '
+            'accel=${d.kalmanAccelStdMps2.toStringAsFixed(2)} '
+            'meas=${d.kalmanMeasurementStdM.toStringAsFixed(1)} '
+            'blend=${d.blendDurationMs}ms';
         debugPrint(
-          '[Map] TimeTrack initial fetch: vehicles=${vehicles.length}, states=${engine.states.length}, snapped=$snapped',
+          '[Map] TimeTrack poll: vehicles=${vehicles.length}, '
+          'states=${engine.states.length}, snapped=$snapped, '
+          'accepted=${d.acceptedUpdates}, dup=${d.duplicateOrOutOfOrderUpdates}, '
+          'rejected=${d.rejectedOutliers}, correction=$correction, '
+          'innovation=$innovation, tuning=$tuning',
         );
       }
       yield Map.unmodifiable(engine.states);
-
-      // Poll at refresh interval
-      await for (final _ in Stream.periodic(interval)) {
-        try {
-          final vehicles = await api.fetchVehicles();
-          engine.processBatch(vehicles, DateTime.now());
-          if (kDebugMode) {
-            final snapped = engine.states.values
-                .where((s) => s.shapeId != null && s.progressAlongRoute != null)
-                .length;
-            debugPrint(
-              '[Map] TimeTrack poll: vehicles=${vehicles.length}, states=${engine.states.length}, snapped=$snapped',
-            );
-          }
-          yield Map.unmodifiable(engine.states);
-        } catch (e) {
-          if (kDebugMode) {
-            debugPrint('[Map] TimeTrack poll error: $e');
-          }
-          // Continue on error
-        }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[Map] TimeTrack poll error: $e');
       }
-    });
+      // Continue on error
+    }
+  }
+});
 
 // ─── Stop Info helper ──────────────────────────────────────
 

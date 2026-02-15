@@ -114,6 +114,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     final gtfsAsync = ref.watch(gtfsRepositoryProvider);
     ref.watch(busTrackingStreamProvider);
+    final engine = ref.watch(busMotionEngineProvider);
+    final diagnostics = engine?.diagnostics;
 
     return Scaffold(
       appBar: AppBar(
@@ -204,6 +206,36 @@ class _MapScreenState extends ConsumerState<MapScreen>
                               'Bus route',
                               isLine: true,
                             ),
+                            if (kDebugMode) ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                width: 170,
+                                height: 1,
+                                color: Colors.black.withValues(alpha: 0.1),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Jump p50/p90: ${_metricPair(diagnostics?.correctionP50Meters, diagnostics?.correctionP90Meters)}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              Text(
+                                'Innovation p50/p90: ${_metricPair(diagnostics?.innovationP50Meters, diagnostics?.innovationP90Meters)}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              Text(
+                                'Tune: a=${_fmtNum(diagnostics?.kalmanAccelStdMps2, 2)} m=${_fmtNum(diagnostics?.kalmanMeasurementStdM, 1)} b=${diagnostics?.blendDurationMs ?? 0}ms',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ],
                           ],
                         )
                       : const Icon(
@@ -734,6 +766,16 @@ class _MapScreenState extends ConsumerState<MapScreen>
         ),
       ],
     );
+  }
+
+  String _metricPair(double? a, double? b) {
+    if (a == null || b == null) return 'n/a';
+    return '${a.toStringAsFixed(1)}m / ${b.toStringAsFixed(1)}m';
+  }
+
+  String _fmtNum(double? value, int decimals) {
+    if (value == null) return 'n/a';
+    return value.toStringAsFixed(decimals);
   }
 
   void _showRouteFilter() {
