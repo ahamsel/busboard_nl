@@ -221,15 +221,21 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
     settingsProvider.select((s) => s.refreshIntervalSeconds),
   );
   final interval = Duration(seconds: refreshIntervalSeconds);
+  final speedFidelityTracker = _SpeedFidelityTracker();
 
   // Initial fetch
+  final initialNow = DateTime.now();
   final vehicles = await api.fetchVehicles();
-  engine.processBatch(vehicles, DateTime.now());
+  engine.processBatch(vehicles, initialNow);
   if (kDebugMode) {
     final snapped = engine.states.values
         .where((s) => s.shapeId != null && s.progressAlongRoute != null)
         .length;
     final d = engine.diagnostics;
+    final speedFidelity = speedFidelityTracker.summarize(
+      engine: engine,
+      now: initialNow,
+    );
     final correction = d.correctionP50Meters == null
         ? 'n/a'
         : 'p50=${d.correctionP50Meters!.toStringAsFixed(1)}m '
@@ -250,7 +256,7 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
       'states=${engine.states.length}, snapped=$snapped, '
       'accepted=${d.acceptedUpdates}, dup=${d.duplicateOrOutOfOrderUpdates}, '
       'rejected=${d.rejectedOutliers}, correction=$correction, '
-      'innovation=$innovation, tuning=$tuning',
+      'innovation=$innovation, speedFidelity=$speedFidelity, tuning=$tuning',
     );
   }
   yield Map.unmodifiable(engine.states);
@@ -258,13 +264,18 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
   // Poll at refresh interval
   await for (final _ in Stream.periodic(interval)) {
     try {
+      final pollNow = DateTime.now();
       final vehicles = await api.fetchVehicles();
-      engine.processBatch(vehicles, DateTime.now());
+      engine.processBatch(vehicles, pollNow);
       if (kDebugMode) {
         final snapped = engine.states.values
             .where((s) => s.shapeId != null && s.progressAlongRoute != null)
             .length;
         final d = engine.diagnostics;
+        final speedFidelity = speedFidelityTracker.summarize(
+          engine: engine,
+          now: pollNow,
+        );
         final correction = d.correctionP50Meters == null
             ? 'n/a'
             : 'p50=${d.correctionP50Meters!.toStringAsFixed(1)}m '
@@ -285,7 +296,7 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
           'states=${engine.states.length}, snapped=$snapped, '
           'accepted=${d.acceptedUpdates}, dup=${d.duplicateOrOutOfOrderUpdates}, '
           'rejected=${d.rejectedOutliers}, correction=$correction, '
-          'innovation=$innovation, tuning=$tuning',
+          'innovation=$innovation, speedFidelity=$speedFidelity, tuning=$tuning',
         );
       }
       yield Map.unmodifiable(engine.states);
@@ -305,3 +316,69 @@ final stopInfoProvider = Provider.family<StopInfo?, String>((ref, stopId) {
   final repo = repoAsync.asData?.value;
   return repo?.stopsById[stopId];
 });
+
+class _SpeedFidelityTracker {
+  final Map<String, _SpeedFidelitySample> _previousByKey = {};
+
+  String summarize({required BusMotionEngine engine, required DateTime now}) {
+    final rendered = engine.interpolate(now);
+    final renderedProgress = engine.debugRenderedProgressByKey;
+    final liveKeys = <String>{};
+    final ratios = <double>[];
+
+    for (final key in rendered.keys) {
+      liveKeys.add(key);
+      final progress = renderedProgress[key];
+      final state = engine.states[key];
+      if (progress == null || state == null) continue;
+
+      final lastGood = state.observations.lastWhere(
+        (o) => !o.rejected,
+        orElse: () => state.observations.last,
+      );
+      final apiSpeedKmh = lastGood.speed.abs();
+      final previous = _previousByKey[key];
+      if (previous != null) {
+        final dt = now.difference(previous.time).inMilliseconds / 1000.0;
+        if (dt > 0.0 && apiSpeedKmh >= 2.0) {
+          final displayedKmh =
+              ((progress - previous.progressM).abs() / dt) * 3.6;
+          final ratio = displayedKmh / apiSpeedKmh;
+          if (ratio.isFinite && ratio >= 0.0) {
+            ratios.add(ratio.clamp(0.0, 8.0));
+          }
+        }
+      }
+
+      _previousByKey[key] = _SpeedFidelitySample(
+        time: now,
+        progressM: progress,
+      );
+    }
+
+    _previousByKey.removeWhere((key, _) => !liveKeys.contains(key));
+    if (ratios.isEmpty) return 'n/a';
+
+    final p50 = _percentile(ratios, 0.50);
+    final p90 = _percentile(ratios, 0.90);
+    final mean = ratios.reduce((a, b) => a + b) / ratios.length;
+    return 'p50=${p50.toStringAsFixed(2)} '
+        'p90=${p90.toStringAsFixed(2)} '
+        'mean=${mean.toStringAsFixed(2)} '
+        'n=${ratios.length}';
+  }
+}
+
+class _SpeedFidelitySample {
+  final DateTime time;
+  final double progressM;
+
+  const _SpeedFidelitySample({required this.time, required this.progressM});
+}
+
+double _percentile(List<double> values, double q) {
+  if (values.isEmpty) return 0.0;
+  final sorted = List<double>.from(values)..sort();
+  final idx = ((sorted.length - 1) * q).round().clamp(0, sorted.length - 1);
+  return sorted[idx];
+}

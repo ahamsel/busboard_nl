@@ -42,6 +42,7 @@ void main() {
       double? prevRenderedProgressForSpeed;
       final offShapeErrorsM = <double>[];
       final speedErrorsKmh = <double>[];
+      final speedFidelityRatios = <double>[];
       final correctionP90s = <double>[];
       final innovationP50s = <double>[];
 
@@ -135,6 +136,12 @@ void main() {
                 3.6;
             final truth = _sampleTruth(truthTimeline, t);
             speedErrorsKmh.add((displaySpeedKmh - truth.speedKmh).abs());
+            if (truth.speedKmh >= 2.0) {
+              final ratio = displaySpeedKmh / truth.speedKmh;
+              if (ratio.isFinite && ratio >= 0.0) {
+                speedFidelityRatios.add(ratio.clamp(0.0, 8.0));
+              }
+            }
           }
         }
         prevRenderedTime = t;
@@ -143,6 +150,8 @@ void main() {
 
       final offShapeP90 = _percentile(offShapeErrorsM, 0.90);
       final speedErrP50 = _percentile(speedErrorsKmh, 0.50);
+      final speedFidelityP50 = _percentile(speedFidelityRatios, 0.50);
+      final speedFidelityP90 = _percentile(speedFidelityRatios, 0.90);
       final correctionP90Median = _percentile(correctionP90s, 0.50);
       final innovationP50Median = _percentile(innovationP50s, 0.50);
 
@@ -151,6 +160,8 @@ void main() {
       print(
         '[Harness] offShapeP90=${offShapeP90.toStringAsFixed(2)}m '
         'speedErrP50=${speedErrP50.toStringAsFixed(2)}km/h '
+        'speedFidelity(p50/p90)='
+        '${speedFidelityP50.toStringAsFixed(2)}/${speedFidelityP90.toStringAsFixed(2)} '
         'activeBacksteps=$activeBackstepCount '
         'activeBackstepMeters=${activeBackstepMeters.toStringAsFixed(2)} '
         'corrP90Median=${correctionP90Median.toStringAsFixed(2)}m '
@@ -161,12 +172,15 @@ void main() {
         metrics: {
           'off_shape_p90_m': offShapeP90,
           'speed_error_p50_kmh': speedErrP50,
+          'speed_fidelity_ratio_p50': speedFidelityP50,
+          'speed_fidelity_ratio_p90': speedFidelityP90,
           'active_backsteps': activeBackstepCount,
           'active_backstep_meters': activeBackstepMeters,
           'correction_p90_median_m': correctionP90Median,
           'innovation_p50_median_m': innovationP50Median,
           'samples_off_shape': offShapeErrorsM.length,
           'samples_speed': speedErrorsKmh.length,
+          'samples_speed_fidelity': speedFidelityRatios.length,
         },
       );
 
