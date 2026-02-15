@@ -116,6 +116,8 @@ void main() {
 
       final offShapeP90 = _percentile(metrics.offShapeErrorsM, 0.90);
       final speedErrP50 = _percentile(metrics.speedErrorsKmh, 0.50);
+      final speedFidelityP50 = _percentile(metrics.speedFidelityRatios, 0.50);
+      final speedFidelityP90 = _percentile(metrics.speedFidelityRatios, 0.90);
       final correctionP90Median = _percentile(
         metrics.correctionP90Samples,
         0.50,
@@ -139,6 +141,8 @@ void main() {
         'snapped=${metrics.snappedSamples} rendered=${metrics.renderedProgressSamples} '
         'offShapeP90=${offShapeP90.toStringAsFixed(2)}m '
         'speedErrP50=${speedErrP50.toStringAsFixed(2)}km/h '
+        'speedFidelity(p50/p90)='
+        '${speedFidelityP50.toStringAsFixed(2)}/${speedFidelityP90.toStringAsFixed(2)} '
         'activeBacksteps=${metrics.activeBackstepCount} '
         'activeBackstepMeters=${metrics.activeBackstepMeters.toStringAsFixed(2)} '
         'backstepRate=${backstepRate.toStringAsFixed(4)} '
@@ -162,11 +166,14 @@ void main() {
           'rendered_samples': metrics.renderedProgressSamples,
           'off_shape_p90_m': offShapeP90,
           'speed_error_p50_kmh': speedErrP50,
+          'speed_fidelity_ratio_p50': speedFidelityP50,
+          'speed_fidelity_ratio_p90': speedFidelityP90,
           'active_backsteps': metrics.activeBackstepCount,
           'active_backstep_meters': metrics.activeBackstepMeters,
           'backstep_rate': backstepRate,
           'correction_p90_median_m': correctionP90Median,
           'innovation_p50_median_m': innovationP50Median,
+          'samples_speed_fidelity': metrics.speedFidelityRatios.length,
         },
       );
 
@@ -247,6 +254,7 @@ class _ReplayMetrics {
   double activeBackstepMeters = 0.0;
   final List<double> offShapeErrorsM = [];
   final List<double> speedErrorsKmh = [];
+  final List<double> speedFidelityRatios = [];
   final List<double> correctionP90Samples = [];
   final List<double> innovationP50Samples = [];
   final Map<String, double> previousProgressByKey = {};
@@ -669,6 +677,13 @@ void _collectRenderMetrics({
           metrics.speedErrorsKmh.add(
             (displaySpeedKmh - lastGood.speed.abs()).abs(),
           );
+          final apiSpeedKmh = lastGood.speed.abs();
+          if (apiSpeedKmh >= 2.0) {
+            final ratio = displaySpeedKmh / apiSpeedKmh;
+            if (ratio.isFinite && ratio >= 0.0) {
+              metrics.speedFidelityRatios.add(ratio.clamp(0.0, 8.0));
+            }
+          }
         }
       }
     }
