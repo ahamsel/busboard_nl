@@ -57,7 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Row(
                     children: [
                       Text(
-                        '15s',
+                        '5s',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.4),
                           fontSize: 12,
@@ -65,10 +65,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                       Expanded(
                         child: Slider(
-                          value: settings.refreshIntervalSeconds.toDouble(),
-                          min: 15,
-                          max: 120,
-                          divisions: 7,
+                          value: settings.refreshIntervalSeconds.toDouble().clamp(5, 60),
+                          min: 5,
+                          max: 60,
+                          divisions: 11,
                           label: '${settings.refreshIntervalSeconds}s',
                           onChanged: (val) {
                             ref
@@ -78,7 +78,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                       ),
                       Text(
-                        '120s',
+                        '60s',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.4),
                           fontSize: 12,

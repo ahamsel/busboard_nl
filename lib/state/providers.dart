@@ -22,7 +22,7 @@ class AppSettings {
 
   const AppSettings({
     this.selectedStopId,
-    this.refreshIntervalSeconds = 30,
+    this.refreshIntervalSeconds = 5,
     this.lastGtfsUpdate,
     this.forceGtfsRefresh = false,
   });
@@ -54,7 +54,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     state = AppSettings(
       selectedStopId: prefs.getString('selectedStopId'),
-      refreshIntervalSeconds: prefs.getInt('refreshInterval') ?? 30,
+      refreshIntervalSeconds: prefs.getInt('refreshInterval') ?? 5,
       lastGtfsUpdate: prefs.getString('lastGtfsUpdate') != null
           ? DateTime.tryParse(prefs.getString('lastGtfsUpdate')!)
           : null,
