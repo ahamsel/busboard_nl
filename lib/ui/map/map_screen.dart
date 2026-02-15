@@ -41,7 +41,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
   static const _defaultLat = 47.5615;
   static const _defaultLon = -52.7126;
   static const _defaultZoom = 13.0;
-  static const _tileStyleUrl = 'https://tiles.openfreemap.org/styles/positron';
+  static const _lightStyleUrl = 'https://tiles.openfreemap.org/styles/positron';
+  static const _darkStyleUrl = 'https://tiles.openfreemap.org/styles/dark';
 
   // Source/layer IDs
   static const _stopsSourceId = 'stops-source';
@@ -114,50 +115,23 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     final gtfsAsync = ref.watch(gtfsRepositoryProvider);
     ref.watch(busTrackingStreamProvider);
+    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Live Map'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              Icons.filter_list,
-              color: _activeRouteFilter.isEmpty ? null : Colors.amber,
-            ),
-            onPressed: _showRouteFilter,
-          ),
-          if (ref.watch(settingsProvider.select((s) => s.selectedStopId)) !=
-              null)
-            IconButton(
-              icon: const Icon(Icons.place),
-              tooltip: 'Go to selected stop',
-              onPressed: _centerOnSelectedStop,
-            ),
-          IconButton(
-            icon: const Icon(Icons.my_location),
-            onPressed: _goToMyLocation,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Live Map')),
       body: gtfsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (_) => Stack(
           children: [
             MapLibreMap(
+              styleString: _getStyleUrl(theme.brightness),
+              onStyleLoadedCallback: _onStyleLoaded,
               initialCameraPosition: CameraPosition(
                 target: _getInitialCenter(),
                 zoom: _defaultZoom,
               ),
-              styleString: _tileStyleUrl,
-              onMapCreated: (controller) {
-                _controller = controller;
-                _log('Map created');
-              },
-              onStyleLoadedCallback: () {
-                _log('Style loaded callback fired');
-                _onStyleReady();
-              },
+              onMapCreated: _onMapCreated,
               onMapClick: _onMapClick,
               trackCameraPosition: true,
               myLocationEnabled: _myLocationEnabled,
@@ -176,7 +150,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.92),
+                    color: theme.cardColor.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
                       BoxShadow(
@@ -190,28 +164,70 @@ class _MapScreenState extends ConsumerState<MapScreen>
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _legendRow(Colors.red, 'Bus'),
+                            _legendRow(Colors.red, 'Bus', theme),
                             const SizedBox(height: 4),
-                            _legendRow(const Color(0xFF4FC3F7), 'Stop'),
+                            _legendRow(const Color(0xFF4FC3F7), 'Stop', theme),
                             const SizedBox(height: 4),
                             _legendRow(
                               const Color(0xFFFFD54F),
                               'Selected stop',
+                              theme,
                             ),
                             const SizedBox(height: 4),
                             _legendRow(
                               const Color(0xFFFFD54F),
                               'Bus route',
+                              theme,
                               isLine: true,
                             ),
                           ],
                         )
-                      : const Icon(
+                      : Icon(
                           Icons.info_outline,
                           size: 20,
-                          color: Colors.black54,
+                          color: theme.iconTheme.color?.withValues(alpha: 0.7),
                         ),
                 ),
+              ),
+            ),
+            Positioned(
+              right: 16,
+              top: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _MapFloatButton(
+                    icon: Icons.layers_outlined,
+                    onPressed: _showMapThemeSheet,
+                    tooltip: 'Map Layers',
+                  ),
+                  const SizedBox(height: 12),
+                  _MapFloatButton(
+                    icon: _activeRouteFilter.isEmpty
+                        ? Icons.filter_alt_outlined
+                        : Icons.filter_alt,
+                    onPressed: _showRouteFilter,
+                    tooltip: 'Filter Routes',
+                    active: _activeRouteFilter.isNotEmpty,
+                  ),
+                  if (ref.watch(
+                        settingsProvider.select((s) => s.selectedStopId),
+                      ) !=
+                      null) ...[
+                    const SizedBox(height: 12),
+                    _MapFloatButton(
+                      icon: Icons.place,
+                      onPressed: _centerOnSelectedStop,
+                      tooltip: 'Selected Stop',
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  _MapFloatButton(
+                    icon: Icons.my_location,
+                    onPressed: _goToMyLocation,
+                    tooltip: 'My Location',
+                  ),
+                ],
               ),
             ),
           ],
@@ -222,41 +238,52 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   // ─── Style + Layer Setup ────────────────────────────────────
 
-  Future<void> _onStyleReady() async {
+  Future<void> _onStyleLoaded() async {
+    _styleLoaded = true;
+    _log('Style loaded');
+
+    // Re-add sources and layers because style reload clears them
+    await _initializeMapResources();
+
+    // Clear local annotation state because style reload wiped the native map content
+    // This forces _renderBusAnnotations to re-add all circles instead of trying to update non-existent ones
+    _busAnnotations.clear();
+
+    // Start animation ticker if not already running
+    if (_ticker == null) {
+      _ticker = Ticker(_onTick);
+      _ticker!.start();
+    } else if (!_ticker!.isActive) {
+      _ticker!.start();
+    }
+
+    // Trigger immediate bus update
+    final tracking = ref.read(busTrackingStreamProvider).value ?? {};
+    _queueAnnotationUpdate(tracking);
+  }
+
+  Future<void> _initializeMapResources() async {
     final controller = _controller;
     if (controller == null) return;
 
-    _styleLoaded = false;
-    _busAnnotations.clear();
-    _pendingAnnotationTracking = null;
-    _annotationUpdateInFlight = false;
-    _lastAnnotationRenderAt = null;
+    try {
+      // Register feature tap handler — on Android, tapping a GeoJSON feature
+      // sends feature#onTap instead of map#onMapClick, so we must handle both.
+      controller.onFeatureTapped.clear();
+      controller.onFeatureTapped.add(_onFeatureTapped);
 
-    final sw = Stopwatch()..start();
+      await _addStopsLayer(controller);
+      await _addSelectedStopLayer(controller);
+      await _addRouteShapeLayer(controller);
+    } catch (e) {
+      _log('Error initializing map resources: $e');
+    }
+  }
 
-    // Register feature tap handler — on Android, tapping a GeoJSON feature
-    // sends feature#onTap instead of map#onMapClick, so we must handle both.
-    controller.onFeatureTapped.clear();
-    controller.onFeatureTapped.add(_onFeatureTapped);
-
-    await _addStopsLayer(controller);
-    _log('Stops layer added (${sw.elapsedMilliseconds}ms)');
-
-    await _addSelectedStopLayer(controller);
-    await _addRouteShapeLayer(controller);
-
-    _styleLoaded = true;
-    _log('Style ready (${sw.elapsedMilliseconds}ms), buses via annotations');
-
-    // Start animation ticker
-    _ticker?.dispose();
-    _ticker = Ticker(_onTick);
-    _ticker!.start();
-
-    // Initial bus update
-    final tracking = ref.read(busTrackingStreamProvider).value ?? {};
-    _log('Initial tracking: ${tracking.length} vehicles');
-    _queueAnnotationUpdate(tracking);
+  void _onMapCreated(MapLibreMapController controller) {
+    _controller = controller;
+    _log('Map created');
+    // _onStyleLoaded will be called by the map widget itself
   }
 
   Future<void> _addStopsLayer(MapLibreMapController controller) async {
@@ -715,7 +742,12 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   // ─── Legend & Filter ──────────────────────────────────────────
 
-  Widget _legendRow(Color color, String label, {bool isLine = false}) {
+  Widget _legendRow(
+    Color color,
+    String label,
+    ThemeData theme, {
+    bool isLine = false,
+  }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -730,7 +762,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(fontSize: 11, color: Colors.black87),
+          style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface),
         ),
       ],
     );
@@ -765,7 +797,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade400,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -773,12 +807,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Text(
+                    Text(
                       'Filter Routes',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const Spacer(),
                     TextButton(
@@ -819,11 +850,15 @@ class _MapScreenState extends ConsumerState<MapScreen>
                         });
                         setSheetState(() {});
                       },
-                      backgroundColor: Colors.grey.shade200,
-                      selectedColor: Colors.red.shade100,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      selectedColor: Theme.of(context).colorScheme.error,
                       labelStyle: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: active ? Colors.red.shade700 : Colors.grey,
+                        color: (active && _activeRouteFilter.isNotEmpty)
+                            ? Theme.of(context).colorScheme.onError
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     );
                   }).toList(),
@@ -891,5 +926,108 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   Map<String, dynamic> _emptyFeatureCollection() {
     return {'type': 'FeatureCollection', 'features': <dynamic>[]};
+  }
+
+  String _getStyleUrl(Brightness appBrightness) {
+    final mapMode = ref.watch(settingsProvider.select((s) => s.mapThemeMode));
+    final effectiveBrightness = mapMode == null
+        ? appBrightness
+        : (mapMode == ThemeMode.dark ? Brightness.dark : Brightness.light);
+
+    return effectiveBrightness == Brightness.dark
+        ? _darkStyleUrl
+        : _lightStyleUrl;
+  }
+
+  void _showMapThemeSheet() {
+    final currentMode = ref.read(settingsProvider).mapThemeMode;
+    // null = auto, ThemeMode.light, ThemeMode.dark
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            Text('Map Theme', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.brightness_auto),
+              title: const Text('Match App Theme (Auto)'),
+              trailing: currentMode == null ? const Icon(Icons.check) : null,
+              onTap: () {
+                ref.read(settingsProvider.notifier).setMapThemeMode(null);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.light_mode),
+              title: const Text('Always Light'),
+              trailing: currentMode == ThemeMode.light
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setMapThemeMode(ThemeMode.light);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.dark_mode),
+              title: const Text('Always Dark'),
+              trailing: currentMode == ThemeMode.dark
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setMapThemeMode(ThemeMode.dark);
+                Navigator.pop(context);
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MapFloatButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  final String tooltip;
+  final bool active;
+
+  const _MapFloatButton({
+    required this.icon,
+    required this.onPressed,
+    required this.tooltip,
+    this.active = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: FloatingActionButton(
+        heroTag: null, // No animation hero needed for these
+        onPressed: onPressed,
+        tooltip: tooltip,
+        elevation: 2,
+        backgroundColor: active ? colorScheme.primary : theme.cardColor,
+        foregroundColor: active
+            ? colorScheme.onPrimary
+            : theme.iconTheme.color?.withValues(alpha: 0.8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, size: 22),
+      ),
+    );
   }
 }

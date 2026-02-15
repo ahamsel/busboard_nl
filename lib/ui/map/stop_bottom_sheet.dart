@@ -30,7 +30,9 @@ class StopBottomSheet extends ConsumerWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
+                color:
+                    theme.dividerTheme.color ??
+                    theme.colorScheme.onSurface.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -65,7 +67,9 @@ class StopBottomSheet extends ConsumerWidget {
                     Text(
                       'Stop #${stop.stopId}',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.45,
+                        ),
                         fontSize: 13,
                       ),
                     ),
@@ -97,7 +101,9 @@ class StopBottomSheet extends ConsumerWidget {
                       )
                     : OutlinedButton.icon(
                         onPressed: () {
-                          ref.read(settingsProvider.notifier).setSelectedStop(stop.stopId);
+                          ref
+                              .read(settingsProvider.notifier)
+                              .setSelectedStop(stop.stopId);
                           Navigator.pop(context);
                         },
                         icon: const Icon(Icons.star_outline, size: 18),
@@ -105,7 +111,9 @@ class StopBottomSheet extends ConsumerWidget {
                         style: OutlinedButton.styleFrom(
                           foregroundColor: theme.colorScheme.primary,
                           side: BorderSide(
-                            color: theme.colorScheme.primary.withValues(alpha: 0.3),
+                            color: theme.colorScheme.primary.withValues(
+                              alpha: 0.3,
+                            ),
                           ),
                         ),
                       ),

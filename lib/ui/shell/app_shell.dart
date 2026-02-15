@@ -15,18 +15,30 @@ class AppShell extends StatelessWidget {
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: (index) {
-          navigationShell.goBranch(index, initialLocation: index == navigationShell.currentIndex);
+          navigationShell.goBranch(
+            index,
+            initialLocation: index == navigationShell.currentIndex,
+          );
         },
         backgroundColor: theme.scaffoldBackgroundColor,
         indicatorColor: theme.colorScheme.primary.withValues(alpha: 0.15),
         destinations: [
           NavigationDestination(
-            icon: Icon(Icons.departure_board_outlined, color: Colors.white.withValues(alpha: 0.5)),
-            selectedIcon: Icon(Icons.departure_board, color: theme.colorScheme.primary),
-            label: 'Board',
+            icon: Icon(
+              Icons.departure_board_outlined,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
+            selectedIcon: Icon(
+              Icons.departure_board,
+              color: theme.colorScheme.primary,
+            ),
+            label: 'Bus Board',
           ),
           NavigationDestination(
-            icon: Icon(Icons.map_outlined, color: Colors.white.withValues(alpha: 0.5)),
+            icon: Icon(
+              Icons.map_outlined,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+            ),
             selectedIcon: Icon(Icons.map, color: theme.colorScheme.primary),
             label: 'Map',
           ),

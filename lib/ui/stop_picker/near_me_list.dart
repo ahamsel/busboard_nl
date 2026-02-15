@@ -23,7 +23,7 @@ class NearMeList extends ConsumerWidget {
             Text(
               'Near Me',
               style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.7),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
               ),
             ),
             const Spacer(),
@@ -37,7 +37,7 @@ class NearMeList extends ConsumerWidget {
               data: (_) => IconButton(
                 icon: const Icon(Icons.refresh, size: 20),
                 onPressed: () => ref.invalidate(nearestStopsProvider),
-                color: Colors.white.withValues(alpha: 0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                 tooltip: 'Refresh location',
               ),
             ),
@@ -45,7 +45,7 @@ class NearMeList extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         nearestAsync.when(
-          loading: () => const Padding(
+          loading: () => Padding(
             padding: EdgeInsets.all(32),
             child: Center(
               child: Column(
@@ -54,7 +54,11 @@ class NearMeList extends ConsumerWidget {
                   SizedBox(height: 12),
                   Text(
                     'Finding nearby stops...',
-                    style: TextStyle(color: Colors.white54),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.54,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -78,7 +82,7 @@ class NearMeList extends ConsumerWidget {
                 Text(
                   'Please enable location services and grant permission.',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                     fontSize: 13,
                   ),
                   textAlign: TextAlign.center,
@@ -94,12 +98,16 @@ class NearMeList extends ConsumerWidget {
           ),
           data: (stops) {
             if (stops.isEmpty) {
-              return const Padding(
+              return Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
                   child: Text(
                     'No stops found within 800m.',
-                    style: TextStyle(color: Colors.white54),
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.54,
+                      ),
+                    ),
                   ),
                 ),
               );
@@ -111,7 +119,7 @@ class NearMeList extends ConsumerWidget {
               itemCount: stops.length,
               separatorBuilder: (context, i) => Divider(
                 height: 1,
-                color: Colors.white.withValues(alpha: 0.06),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.06),
               ),
               itemBuilder: (context, index) {
                 final nearby = stops[index];
@@ -182,7 +190,9 @@ class _NearbyStopTile extends ConsumerWidget {
                     Text(
                       'Stop ${nearby.stop.stopId}',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.45,
+                        ),
                         fontSize: 12,
                       ),
                     ),
@@ -211,7 +221,7 @@ class _NearbyStopTile extends ConsumerWidget {
               const SizedBox(width: 4),
               Icon(
                 Icons.chevron_right,
-                color: Colors.white.withValues(alpha: 0.3),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                 size: 20,
               ),
             ],

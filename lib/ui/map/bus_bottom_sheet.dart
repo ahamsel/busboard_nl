@@ -25,7 +25,9 @@ class BusBottomSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
+                color:
+                    theme.dividerTheme.color ??
+                    theme.colorScheme.onSurface.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -48,8 +50,8 @@ class BusBottomSheet extends StatelessWidget {
                 child: Center(
                   child: Text(
                     '${bus.routeNumber}',
-                    style: const TextStyle(
-                      color: Colors.black,
+                    style: TextStyle(
+                      color: theme.colorScheme.onPrimary,
                       fontWeight: FontWeight.w800,
                       fontSize: 16,
                     ),
@@ -62,7 +64,9 @@ class BusBottomSheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      bus.headsign.isNotEmpty ? bus.headsign : 'Route ${bus.routeNumber}',
+                      bus.headsign.isNotEmpty
+                          ? bus.headsign
+                          : 'Route ${bus.routeNumber}',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -70,7 +74,9 @@ class BusBottomSheet extends StatelessWidget {
                     Text(
                       'Bus ${bus.vehicleId}',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.45,
+                        ),
                         fontSize: 13,
                       ),
                     ),
@@ -83,14 +89,17 @@ class BusBottomSheet extends StatelessWidget {
           const SizedBox(height: 16),
           Row(
             children: [
-              _InfoChip(label: 'Speed', value: '${bus.observations.last.speed.round()} km/h'),
-              const SizedBox(width: 12),
-              _InfoChip(label: 'Heading', value: '${bus.smoothedHeading.round()}°'),
+              _InfoChip(
+                label: 'Speed',
+                value: '${bus.observations.last.speed.round()} km/h',
+              ),
               const SizedBox(width: 12),
               _InfoChip(
-                label: 'Updated',
-                value: _timeAgo(bus.lastUpdateTime),
+                label: 'Heading',
+                value: '${bus.smoothedHeading.round()}°',
               ),
+              const SizedBox(width: 12),
+              _InfoChip(label: 'Updated', value: _timeAgo(bus.lastUpdateTime)),
             ],
           ),
         ],
@@ -152,7 +161,9 @@ class _InfoChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: Theme.of(
+            context,
+          ).colorScheme.onSurface.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
@@ -160,7 +171,9 @@ class _InfoChip extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.4),
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
               ),

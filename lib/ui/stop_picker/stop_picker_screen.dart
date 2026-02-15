@@ -20,129 +20,147 @@ class StopPickerScreen extends ConsumerWidget {
     final gtfsAsync = ref.watch(gtfsRepositoryProvider);
 
     return Scaffold(
-      body: SafeArea(
-        child: gtfsAsync.when(
-          loading: () => const _LoadingGtfs(),
-          error: (err, stack) => _GtfsError(error: err.toString()),
-          data: (repo) => CustomScrollView(
-            slivers: [
-              // Header
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          // Bus icon
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  theme.colorScheme.primary,
-                                  theme.colorScheme.primary.withValues(
-                                    alpha: 0.7,
+      body: GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: SafeArea(
+          child: gtfsAsync.when(
+            loading: () => const _LoadingGtfs(),
+            error: (err, stack) => _GtfsError(error: err.toString()),
+            data: (repo) => CustomScrollView(
+              slivers: [
+                // Header
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            // Bus icon
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    theme.colorScheme.primary,
+                                    theme.colorScheme.primary.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.directions_bus,
+                                color: theme.colorScheme.onPrimary,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'BusBoard NL',
+                                  style: theme.textTheme.headlineMedium,
+                                ),
+                                Text(
+                                  'Metrobus · St. John\'s',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface
+                                        .withValues(alpha: 0.45),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
                                   ),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
+                                ),
+                              ],
                             ),
-                            child: const Icon(
-                              Icons.directions_bus,
-                              color: Colors.black,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'BusBoard NL',
-                                style: theme.textTheme.headlineMedium,
+                            const Spacer(),
+                            IconButton(
+                              icon: const Icon(Icons.settings_outlined),
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.5,
                               ),
-                              Text(
-                                'Metrobus · St. John\'s',
+                              onPressed: () => context.push('/settings'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 28),
+
+                        // Last selected stop — quick access
+                        if (settings.selectedStopId != null)
+                          _LastStopCard(stopId: settings.selectedStopId!),
+
+                        if (settings.selectedStopId != null)
+                          const SizedBox(height: 24),
+
+                        // Stop ID Entry
+                        const StopIdEntry(),
+                        const SizedBox(height: 28),
+
+                        // Divider
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Divider(
+                                color:
+                                    theme.dividerTheme.color ??
+                                    theme.colorScheme.onSurface.withValues(
+                                      alpha: 0.1,
+                                    ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Text(
+                                'or',
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.45),
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.3,
+                                  ),
                                   fontSize: 13,
-                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                            ],
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            icon: const Icon(Icons.settings_outlined),
-                            color: Colors.white.withValues(alpha: 0.5),
-                            onPressed: () => context.push('/settings'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 28),
-
-                      // Last selected stop — quick access
-                      if (settings.selectedStopId != null)
-                        _LastStopCard(stopId: settings.selectedStopId!),
-
-                      if (settings.selectedStopId != null)
-                        const SizedBox(height: 24),
-
-                      // Stop ID Entry
-                      const StopIdEntry(),
-                      const SizedBox(height: 28),
-
-                      // Divider
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Divider(
-                              color: Colors.white.withValues(alpha: 0.1),
                             ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              'or',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.3),
-                                fontSize: 13,
+                            Expanded(
+                              child: Divider(
+                                color:
+                                    theme.dividerTheme.color ??
+                                    theme.colorScheme.onSurface.withValues(
+                                      alpha: 0.1,
+                                    ),
                               ),
                             ),
-                          ),
-                          Expanded(
-                            child: Divider(
-                              color: Colors.white.withValues(alpha: 0.1),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Near Me list
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: const NearMeList(),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                      ],
                     ),
                   ),
                 ),
-              ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 40)),
-            ],
+                // Near Me list
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: const NearMeList(),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SliverToBoxAdapter(child: SizedBox(height: 40)),
+              ],
+            ),
           ),
         ),
       ),
@@ -190,7 +208,9 @@ class _LastStopCard extends ConsumerWidget {
                     Text(
                       'Last Stop',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.45),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.45,
+                        ),
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 1,
@@ -219,7 +239,7 @@ class _LastStopCard extends ConsumerWidget {
               const SizedBox(width: 4),
               Icon(
                 Icons.chevron_right,
-                color: Colors.white.withValues(alpha: 0.3),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
               ),
             ],
           ),
@@ -235,6 +255,7 @@ class _LoadingGtfs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -253,7 +274,7 @@ class _LoadingGtfs extends StatelessWidget {
           Text(
             'Downloading GTFS feed from Metrobus',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.45),
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
               fontSize: 13,
             ),
           ),
@@ -288,7 +309,7 @@ class _GtfsError extends ConsumerWidget {
             Text(
               error,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                 fontSize: 13,
               ),
               textAlign: TextAlign.center,

@@ -34,8 +34,8 @@ class ArrivalRowTile extends StatelessWidget {
             child: Center(
               child: Text(
                 arrival.routeShortName,
-                style: const TextStyle(
-                  color: Colors.black,
+                style: TextStyle(
+                  color: theme.colorScheme.onPrimary,
                   fontWeight: FontWeight.w800,
                   fontSize: 16,
                   letterSpacing: -0.5,
@@ -72,7 +72,9 @@ class ArrivalRowTile extends StatelessWidget {
                       Text(
                         'Bus ${arrival.vehicleNumber}',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.3),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.5,
+                          ),
                           fontSize: 11,
                         ),
                       ),
@@ -103,7 +105,7 @@ class ArrivalRowTile extends StatelessWidget {
                     ? 'exp ${arrival.displayTime.toDisplayString()}'
                     : arrival.scheduledDisplay,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
                 ),
@@ -114,10 +116,12 @@ class ArrivalRowTile extends StatelessWidget {
                 Text(
                   'sched ${arrival.scheduledDisplay}',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                     fontSize: 10,
                     decoration: TextDecoration.lineThrough,
-                    decorationColor: Colors.white.withValues(alpha: 0.2),
+                    decorationColor: theme.colorScheme.onSurface.withValues(
+                      alpha: 0.3,
+                    ),
                   ),
                 ),
             ],
@@ -128,10 +132,17 @@ class ArrivalRowTile extends StatelessWidget {
   }
 
   Color _countdownColor(int minutes, ThemeData theme) {
-    if (minutes <= 2) return const Color(0xFFEF5350); // Red — imminent
-    if (minutes <= 5) return const Color(0xFFFFB74D); // Orange — soon
-    if (minutes <= 10) return theme.colorScheme.secondary; // Green — coming
-    return Colors.white.withValues(alpha: 0.7); // Default
+    final isLight = theme.brightness == Brightness.light;
+    if (minutes <= 2) {
+      return isLight ? const Color(0xFFD32F2F) : const Color(0xFFEF5350); // Red
+    }
+    if (minutes <= 5) {
+      return isLight
+          ? const Color(0xFFF57C00)
+          : const Color(0xFFFFB74D); // Orange
+    }
+    if (minutes <= 10) return theme.colorScheme.secondary; // Green
+    return theme.colorScheme.onSurface.withValues(alpha: 0.7); // Default
   }
 }
 
@@ -143,7 +154,8 @@ class _LiveBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor;
+    final theme = Theme.of(context);
+    final color = _statusColor(theme);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -175,16 +187,23 @@ class _LiveBadge extends StatelessWidget {
     );
   }
 
-  Color get _statusColor {
+  Color _statusColor(ThemeData theme) {
+    final isLight = theme.brightness == Brightness.light;
     switch (status) {
       case LiveStatus.ahead:
-        return const Color(0xFF81C784); // Green
+        return isLight
+            ? const Color(0xFF2E7D32)
+            : const Color(0xFF81C784); // Green
       case LiveStatus.onTime:
-        return const Color(0xFF4FC3F7); // Blue
+        return isLight
+            ? const Color(0xFF0277BD)
+            : const Color(0xFF4FC3F7); // Blue
       case LiveStatus.behind:
-        return const Color(0xFFFFB74D); // Orange
+        return isLight
+            ? const Color(0xFFF57C00)
+            : const Color(0xFFFFB74D); // Orange
       case null:
-        return const Color(0xFF4FC3F7);
+        return isLight ? const Color(0xFF0277BD) : const Color(0xFF4FC3F7);
     }
   }
 }

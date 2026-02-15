@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,12 +20,16 @@ class AppSettings {
   final int refreshIntervalSeconds;
   final DateTime? lastGtfsUpdate;
   final bool forceGtfsRefresh;
+  final ThemeMode themeMode;
+  final ThemeMode? mapThemeMode; // null = follow app theme
 
   const AppSettings({
     this.selectedStopId,
     this.refreshIntervalSeconds = 5,
     this.lastGtfsUpdate,
     this.forceGtfsRefresh = false,
+    this.themeMode = ThemeMode.system,
+    this.mapThemeMode,
   });
 
   AppSettings copyWith({
@@ -32,6 +37,8 @@ class AppSettings {
     int? refreshIntervalSeconds,
     DateTime? lastGtfsUpdate,
     bool? forceGtfsRefresh,
+    ThemeMode? themeMode,
+    ThemeMode? mapThemeMode,
   }) {
     return AppSettings(
       selectedStopId: selectedStopId ?? this.selectedStopId,
@@ -39,6 +46,8 @@ class AppSettings {
           refreshIntervalSeconds ?? this.refreshIntervalSeconds,
       lastGtfsUpdate: lastGtfsUpdate ?? this.lastGtfsUpdate,
       forceGtfsRefresh: forceGtfsRefresh ?? this.forceGtfsRefresh,
+      themeMode: themeMode ?? this.themeMode,
+      mapThemeMode: mapThemeMode ?? this.mapThemeMode,
     );
   }
 }
@@ -57,6 +66,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
       refreshIntervalSeconds: prefs.getInt('refreshInterval') ?? 5,
       lastGtfsUpdate: prefs.getString('lastGtfsUpdate') != null
           ? DateTime.tryParse(prefs.getString('lastGtfsUpdate')!)
+          : null,
+      themeMode: ThemeMode.values[prefs.getInt('themeMode') ?? 0],
+      mapThemeMode: prefs.getInt('mapThemeMode') != null
+          ? ThemeMode.values[prefs.getInt('mapThemeMode')!]
           : null,
     );
   }
@@ -77,6 +90,30 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('lastGtfsUpdate', time.toIso8601String());
     state = state.copyWith(lastGtfsUpdate: time);
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('themeMode', mode.index);
+    state = state.copyWith(themeMode: mode);
+  }
+
+  Future<void> setMapThemeMode(ThemeMode? mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mode == null) {
+      await prefs.remove('mapThemeMode');
+    } else {
+      await prefs.setInt('mapThemeMode', mode.index);
+    }
+    // Manually construct to allow setting null (copyWith ?? prevents null)
+    state = AppSettings(
+      selectedStopId: state.selectedStopId,
+      refreshIntervalSeconds: state.refreshIntervalSeconds,
+      lastGtfsUpdate: state.lastGtfsUpdate,
+      forceGtfsRefresh: state.forceGtfsRefresh,
+      themeMode: state.themeMode,
+      mapThemeMode: mode,
+    );
   }
 
   void requestForceRefresh() {

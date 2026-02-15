@@ -24,6 +24,64 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          // Appearance
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.palette_outlined,
+                        color: theme.colorScheme.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text('Appearance', style: theme.textTheme.titleMedium),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        label: Text('System'),
+                        icon: Icon(Icons.brightness_auto),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        label: Text('Light'),
+                        icon: Icon(Icons.wb_sunny),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        label: Text('Dark'),
+                        icon: Icon(Icons.nightlight_round),
+                      ),
+                    ],
+                    selected: {settings.themeMode},
+                    onSelectionChanged: (Set<ThemeMode> newSelection) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setThemeMode(newSelection.first);
+                    },
+                    style: ButtonStyle(
+                      padding: WidgetStateProperty.all(
+                        const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // Refresh interval
           Card(
             child: Padding(
@@ -49,7 +107,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Text(
                     'How often to refresh live data',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                       fontSize: 13,
                     ),
                   ),
@@ -59,13 +117,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       Text(
                         '5s',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.4,
+                          ),
                           fontSize: 12,
                         ),
                       ),
                       Expanded(
                         child: Slider(
-                          value: settings.refreshIntervalSeconds.toDouble().clamp(5, 60),
+                          value: settings.refreshIntervalSeconds
+                              .toDouble()
+                              .clamp(5, 60),
                           min: 5,
                           max: 60,
                           divisions: 11,
@@ -80,7 +142,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       Text(
                         '60s',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.4,
+                          ),
                           fontSize: 12,
                         ),
                       ),
@@ -129,7 +193,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       Text(
                         'Last updated:',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.4,
+                          ),
                           fontSize: 13,
                         ),
                       ),
@@ -151,7 +217,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Text(
                     'Auto-refreshes every 7 days',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.3),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                       fontSize: 12,
                     ),
                   ),
@@ -163,7 +229,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ? null
                           : () async {
                               setState(() => _refreshing = true);
-                              ref.read(settingsProvider.notifier).requestForceRefresh();
+                              ref
+                                  .read(settingsProvider.notifier)
+                                  .requestForceRefresh();
                               ref.invalidate(gtfsRepositoryProvider);
                               // Wait for the provider to complete
                               await ref.read(gtfsRepositoryProvider.future);
@@ -220,7 +288,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Text(
                     'BusBoard NL v1.0.0',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
@@ -230,7 +298,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Personalized arrival board for Metrobus\n'
                     'St. John\'s, Mount Pearl & Paradise, NL',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                       fontSize: 13,
                     ),
                   ),
@@ -238,7 +306,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   Text(
                     'Data: GTFS schedule + TimeTrack live tracking',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.3),
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
                       fontSize: 11,
                     ),
                   ),
