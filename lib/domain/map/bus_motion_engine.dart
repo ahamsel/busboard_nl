@@ -265,14 +265,19 @@ class BusMotionEngine {
   /// Minimum fraction of speed retained during decay (65%).
   static const _decayFloor = 0.65;
 
-  /// Keep full trust in reported speed while source data is fresh.
-  static const _freshMeasurementAgeSeconds = 20.0;
+  /// Maximum age (measurement time → now) for Kalman filter projection.
+  /// Much larger than [_maxExtrapolationSeconds] because network lag
+  /// inflates measurement age without reducing data quality.
+  static const _maxFilterProjectionSeconds = 120.0;
 
-  /// Beyond this age, prediction trust drops to [_staleSpeedFloor].
-  static const _staleMeasurementAgeSeconds = 120.0;
+  /// Data freshness: full trust window after last fetch (seconds).
+  static const _freshDataSeconds = 15.0;
 
-  /// Never trust stale measurements for more than this speed fraction.
-  static const _staleSpeedFloor = 0.2;
+  /// Data freshness: decay-to floor window (seconds since last fetch).
+  static const _staleDataSeconds = 60.0;
+
+  /// Data freshness: absolute floor (fraction of speed retained).
+  static const _staleDataSpeedFloor = 0.20;
   static const _kalmanAccelStdMps2 = 1.5;
   static const _kalmanMeasurementStdM = 20.0;
   static const _kalmanMinMeasurementStdM = 8.0;
@@ -303,6 +308,10 @@ class BusMotionEngine {
 
   /// Route-progress Kalman filter per bus key.
   final Map<String, _RouteProgressKalman> _progressFilters = {};
+
+  /// Last fetch (poll) time per bus key — tracks data freshness separately
+  /// from GPS measurement age.
+  final Map<String, DateTime> _lastFetchTimeByKey = {};
 
   BusMotionDiagnostics _lastDiagnostics = BusMotionDiagnostics.empty();
   final bool _autoAdjustEnabled = true;
@@ -371,11 +380,15 @@ class BusMotionEngine {
       if (existing == null) {
         // New bus
         _states[key] = _createNewState(v, obs, key);
+        _lastFetchTimeByKey[key] = fetchTime;
         acceptedUpdates++;
         continue;
       }
 
-      final result = _updateExisting(key, existing, obs, v);
+      final result = _updateExisting(key, existing, obs, v, fetchTime);
+      // Always update fetch time — even duplicates mean the API is still
+      // reporting this bus, so the data is fresh.
+      _lastFetchTimeByKey[key] = fetchTime;
       if (result.accepted) acceptedUpdates++;
       if (result.duplicateOrOutOfOrder) duplicateUpdates++;
       if (result.rejectedOutlier) rejectedOutliers++;
@@ -405,6 +418,7 @@ class BusMotionEngine {
       _renderProgressByKey.remove(key);
       _blendOrigins.remove(key);
       _progressFilters.remove(key);
+      _lastFetchTimeByKey.remove(key);
     }
 
     final correctionStats = _summarizeSamples(correctionSamples);
@@ -497,6 +511,7 @@ class BusMotionEngine {
     BusTrackingState state,
     BusObservation obs,
     TimeTrackVehicle v,
+    DateTime fetchTime,
   ) {
     var displayLat = obs.lat;
     var displayLon = obs.lon;
@@ -541,8 +556,9 @@ class BusMotionEngine {
 
     // Capture where this bus is currently rendered before we change state,
     // so we can blend smoothly from the predicted position to the new one.
-    final now = DateTime.now();
-    final currentVisual = _interpolateSingle(key, state, now);
+    // Use fetchTime (not DateTime.now()) so blending works deterministically
+    // in both production and test harnesses.
+    final currentVisual = _interpolateSingle(key, state, fetchTime);
     if (currentVisual != null) {
       final currentShapeId = state.shapeId;
       final currentProgress = currentShapeId == null
@@ -552,14 +568,14 @@ class BusMotionEngine {
                 _projectProgressFilter(
                   key: key,
                   shapeId: currentShapeId,
-                  now: now,
+                  now: fetchTime,
                 )?.progressMeters);
 
       _blendOrigins[key] = _BlendOrigin(
         lat: currentVisual.$1,
         lon: currentVisual.$2,
         heading: currentVisual.$3,
-        startTime: now,
+        startTime: fetchTime,
         shapeId: currentShapeId,
         progressAlongRoute: currentProgress,
       );
@@ -681,6 +697,18 @@ class BusMotionEngine {
             displayLat,
             displayLon,
           );
+
+    // When the correction is large (prediction overshot), reset render
+    // progress to the new observation so anti-typewriter clamping does
+    // not freeze the bus. We set it to the new progress rather than
+    // removing it, so the bus snaps to the corrected position instead of
+    // allowing unconstrained backward movement.
+    if (correctionMeters != null &&
+        correctionMeters > _maxVisualBackwardMeters &&
+        progress != null) {
+      _renderProgressByKey[key] = progress;
+    }
+
     return _UpdateResult.accepted(
       correctionMeters: correctionMeters,
       filterInnovationMeters: filterInnovationMeters,
@@ -722,17 +750,25 @@ class BusMotionEngine {
               blend.shapeId == targetShapeId;
 
           if (canBlendOnShape) {
-            final blendedProgress =
-                blend.progressAlongRoute! +
-                (targetProgress - blend.progressAlongRoute!) * eased;
-            final shapedPoint = _pointOnShape(targetShapeId, blendedProgress);
-            if (shapedPoint != null) {
-              lat = shapedPoint.$1;
-              lon = shapedPoint.$2;
-              heading =
-                  _headingAlongShape(targetShapeId, blendedProgress) ??
-                  _lerpAngle(blend.heading, heading, eased);
+            // Only blend forward: if the prediction overshot (blend origin
+            // is ahead of target), skip the blend so the bus teleports to
+            // the correct position rather than visibly reversing direction.
+            if (blend.progressAlongRoute! <= targetProgress) {
+              final blendedProgress =
+                  blend.progressAlongRoute! +
+                  (targetProgress - blend.progressAlongRoute!) * eased;
+              final shapedPoint =
+                  _pointOnShape(targetShapeId, blendedProgress);
+              if (shapedPoint != null) {
+                lat = shapedPoint.$1;
+                lon = shapedPoint.$2;
+                heading =
+                    _headingAlongShape(targetShapeId, blendedProgress) ??
+                    _lerpAngle(blend.heading, heading, eased);
+              }
             }
+            // else: overshot — use the raw (corrected) position from
+            // _interpolateSingle directly; no backward blend.
           } else if (blend.shapeId != null &&
               targetShapeId != null &&
               blend.shapeId != targetShapeId) {
@@ -817,16 +853,18 @@ class BusMotionEngine {
         } else if (segDistM <= 1e-3) {
           t = 1.0;
         } else {
-          // Compute t with speed decay applied
+          // Compute t with speed decay based on data freshness
+          final lastFetch = _lastFetchTimeByKey[key];
+          final freshness = lastFetch != null
+              ? now.difference(lastFetch).inMilliseconds / 1000.0
+              : extraSeconds;
           var decayedSpeed = _applyExtrapolationDecay(
             segSpeedKmh,
-            extraSeconds,
+            freshness,
           );
-          final measurementAgeSeconds =
-              now.difference(last.measurementTime).inMilliseconds / 1000.0;
-          decayedSpeed = _applyMeasurementAgeConfidence(
+          decayedSpeed = _applyDataFreshnessDecay(
             decayedSpeed,
-            measurementAgeSeconds,
+            freshness,
           );
           final extraM = (decayedSpeed / 3.6) * extraSeconds;
           t = 1.0 + (extraM / segDistM);
@@ -876,19 +914,28 @@ class BusMotionEngine {
         projected != null &&
         (state.status == BusStatus.active ||
             state.status == BusStatus.backtracking) &&
-        projected.ageSeconds <= _maxExtrapolationSeconds;
+        projected.ageSeconds <= _maxFilterProjectionSeconds;
 
     if (canProjectFromFilter) {
       var speedKmh = projected.velocityMps.abs() * 3.6;
-      speedKmh = _applyMeasurementAgeConfidence(speedKmh, projected.ageSeconds);
+
+      // Use data freshness (time since last poll) for decay, not measurement
+      // age which includes network lag.
+      final lastFetch = _lastFetchTimeByKey[key];
+      final freshness = lastFetch != null
+          ? now.difference(lastFetch).inMilliseconds / 1000.0
+          : projected.ageSeconds;
+      speedKmh = _applyExtrapolationDecay(speedKmh, freshness);
+      speedKmh = _applyDataFreshnessDecay(speedKmh, freshness);
 
       final predictedDelta = projected.progressMeters - lastProgress;
       final direction = predictedDelta < -1.0 ? -1.0 : 1.0;
       var deltaM = predictedDelta.abs();
 
-      final maxBySpeed =
-          (speedKmh / 3.6) *
-          projected.ageSeconds.clamp(0.0, _maxDeadReckoningSeconds);
+      // Clamp by speed × freshness (not full measurement age) to prevent
+      // overshoot during long periods without corrections.
+      final maxBySpeed = (speedKmh / 3.6) *
+          projected.ageSeconds.clamp(0.0, _maxFilterProjectionSeconds);
       deltaM = math.min(deltaM, maxBySpeed);
       var tentativeProgress = lastProgress + deltaM * direction;
 
@@ -903,9 +950,8 @@ class BusMotionEngine {
         distanceToNextStopM: distanceToStop,
       );
 
-      final maxAfterStop =
-          (speedKmh / 3.6) *
-          projected.ageSeconds.clamp(0.0, _maxDeadReckoningSeconds);
+      final maxAfterStop = (speedKmh / 3.6) *
+          projected.ageSeconds.clamp(0.0, _maxFilterProjectionSeconds);
       deltaM = math.min(deltaM, maxAfterStop);
       tentativeProgress = lastProgress + deltaM * direction;
       nextProgress = tentativeProgress;
@@ -942,15 +988,14 @@ class BusMotionEngine {
                 ? segAvgKmh
                 : (last.speed >= _minMovingSpeedKmh ? last.speed : 0.0);
 
-            // Apply speed decay: full speed for the first N seconds,
-            // then linearly decay to _decayFloor over the remaining window.
-            speedKmh = _applyExtrapolationDecay(speedKmh, extraSeconds);
-            final measurementAgeSeconds =
-                now.difference(last.measurementTime).inMilliseconds / 1000.0;
-            speedKmh = _applyMeasurementAgeConfidence(
-              speedKmh,
-              measurementAgeSeconds,
-            );
+            // Apply speed decay based on data freshness (time since last
+            // poll), not measurement age which includes network lag.
+            final lastFetch = _lastFetchTimeByKey[key];
+            final freshness = lastFetch != null
+                ? now.difference(lastFetch).inMilliseconds / 1000.0
+                : extraSeconds;
+            speedKmh = _applyExtrapolationDecay(speedKmh, freshness);
+            speedKmh = _applyDataFreshnessDecay(speedKmh, freshness);
 
             // Slow near upcoming stops using extrapolated progress,
             // not just the last GPS point.
@@ -992,13 +1037,12 @@ class BusMotionEngine {
           last.speed >= _minMovingSpeedKmh &&
           extraSeconds > 0 &&
           extraSeconds <= _maxExtrapolationSeconds) {
-        var speedKmh = _applyExtrapolationDecay(last.speed, extraSeconds);
-        final measurementAgeSeconds =
-            now.difference(last.measurementTime).inMilliseconds / 1000.0;
-        speedKmh = _applyMeasurementAgeConfidence(
-          speedKmh,
-          measurementAgeSeconds,
-        );
+        final lastFetch = _lastFetchTimeByKey[key];
+        final freshness = lastFetch != null
+            ? now.difference(lastFetch).inMilliseconds / 1000.0
+            : extraSeconds;
+        var speedKmh = _applyExtrapolationDecay(last.speed, freshness);
+        speedKmh = _applyDataFreshnessDecay(speedKmh, freshness);
         final tentativeProgress =
             lastProgress + (speedKmh / 3.6) * extraSeconds;
         final distanceToStop = _distanceToNextStopMeters(
@@ -1382,21 +1426,26 @@ class BusMotionEngine {
     return delta;
   }
 
-  double _applyMeasurementAgeConfidence(
+  /// Decay speed based on data freshness — how long since we last received
+  /// ANY data for this bus, regardless of how old the GPS measurement was.
+  ///
+  /// This replaces [_applyMeasurementAgeConfidence] which conflated network
+  /// lag with data staleness.
+  double _applyDataFreshnessDecay(
     double speedKmh,
-    double measurementAgeSeconds,
+    double secondsSinceLastFetch,
   ) {
-    if (measurementAgeSeconds <= _freshMeasurementAgeSeconds) {
+    if (secondsSinceLastFetch <= _freshDataSeconds) {
       return speedKmh;
     }
-    if (measurementAgeSeconds >= _staleMeasurementAgeSeconds) {
-      return speedKmh * _staleSpeedFloor;
+    if (secondsSinceLastFetch >= _staleDataSeconds) {
+      return speedKmh * _staleDataSpeedFloor;
     }
     final t =
-        ((measurementAgeSeconds - _freshMeasurementAgeSeconds) /
-                (_staleMeasurementAgeSeconds - _freshMeasurementAgeSeconds))
+        ((secondsSinceLastFetch - _freshDataSeconds) /
+                (_staleDataSeconds - _freshDataSeconds))
             .clamp(0.0, 1.0);
-    final factor = 1.0 - (1.0 - _staleSpeedFloor) * t;
+    final factor = 1.0 - (1.0 - _staleDataSpeedFloor) * t;
     return speedKmh * factor;
   }
 
