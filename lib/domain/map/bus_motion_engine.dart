@@ -23,10 +23,14 @@ class BusMotionEngine {
   static const _stoppedDistanceMeters = 15.0;
   static const _stoppedDuration = Duration(minutes: 2);
   static const _staleDuration = Duration(minutes: 5);
-  static const _maxExtrapolationSeconds = 12.0;
-  static const _maxDeadReckoningSeconds = 12.0;
+  static const _maxExtrapolationSeconds = 35.0;
+  static const _maxDeadReckoningSeconds = 35.0;
   static const _maxExtrapolationSpeedKmh = 80.0;
   static const _minMovingSpeedKmh = 2.0;
+  /// Seconds of extrapolation at full speed before decay begins.
+  static const _decayOnsetSeconds = 10.0;
+  /// Minimum fraction of speed retained during decay (65%).
+  static const _decayFloor = 0.65;
   static const _maxVisualBackwardMeters = 120.0;
 
   /// Counter for consecutive backward movements per bus.
@@ -34,6 +38,11 @@ class BusMotionEngine {
 
   /// Last rendered progress per bus key, used to prevent visual snap-backs.
   final Map<String, double> _renderProgressByKey = {};
+
+  /// Blend origin per bus: (lat, lon, heading, startTime).
+  /// Used to smoothly transition from predicted to actual position.
+  final Map<String, (double, double, double, DateTime)> _blendOrigins = {};
+  static const _blendDurationMs = 600;
 
   /// Trip -> stop_times rows sorted by stop_sequence.
   final Map<String, List<StopTimeRow>> _stopTimesByTripId = {};
@@ -101,6 +110,7 @@ class BusMotionEngine {
       _states.remove(key);
       _backwardCount.remove(key);
       _renderProgressByKey.remove(key);
+      _blendOrigins.remove(key);
     }
   }
 
@@ -156,6 +166,19 @@ class BusMotionEngine {
     BusObservation obs,
     TimeTrackVehicle v,
   ) {
+    // Capture where this bus is currently rendered before we change state,
+    // so we can blend smoothly from the predicted position to the new one.
+    final now = DateTime.now();
+    final currentVisual = _interpolateSingle(key, state, now);
+    if (currentVisual != null) {
+      _blendOrigins[key] = (
+        currentVisual.$1,
+        currentVisual.$2,
+        currentVisual.$3,
+        now,
+      );
+    }
+
     var displayLat = obs.lat;
     var displayLon = obs.lon;
     var displayHeading = obs.heading;
@@ -281,86 +304,112 @@ class BusMotionEngine {
     for (final entry in _states.entries) {
       final key = entry.key;
       final state = entry.value;
-      final good = state.observations.where((o) => !o.rejected).toList();
-      if (good.isEmpty) continue;
 
-      final prev = good.length >= 2 ? good[good.length - 2] : null;
-      final last = good.last;
+      final raw = _interpolateSingle(key, state, now);
+      if (raw == null) continue;
 
-      final shapeInterpolated = _interpolateOnShape(
-        key: key,
-        state: state,
-        prev: prev,
-        last: last,
-        now: now,
-      );
-      if (shapeInterpolated != null) {
-        result[key] = shapeInterpolated;
-        continue;
-      }
+      var (lat, lon, heading) = raw;
 
-      // Fallback interpolation when no usable shape progress is available.
-      if (good.length < 2) {
-        result[key] = (
-          state.smoothedLat,
-          state.smoothedLon,
-          state.smoothedHeading,
-        );
-        continue;
-      }
-
-      final prevObs = prev;
-      if (prevObs == null) {
-        result[key] = (last.lat, last.lon, last.heading);
-        continue;
-      }
-
-      final segmentMs = last.timestamp
-          .difference(prevObs.timestamp)
-          .inMilliseconds;
-      if (segmentMs <= 0) {
-        result[key] = (last.lat, last.lon, last.heading);
-        continue;
-      }
-
-      final elapsed = now.difference(prevObs.timestamp).inMilliseconds;
-      var t = elapsed / segmentMs;
-
-      // Allow slight extrapolation beyond last point
-      if (t > 1.0) {
-        final extraMs = now.difference(last.timestamp).inMilliseconds;
-        if (extraMs > _maxExtrapolationSeconds * 1000) {
-          t = 1.0;
+      // Apply blend smoothing: when new data just arrived, ease from the
+      // old predicted position to the new interpolation target.
+      final blend = _blendOrigins[key];
+      if (blend != null) {
+        final blendAge = now.difference(blend.$4).inMilliseconds;
+        if (blendAge < _blendDurationMs) {
+          // Ease-out cubic for natural deceleration feel
+          final t = blendAge / _blendDurationMs;
+          final eased = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
+          lat = blend.$1 + (lat - blend.$1) * eased;
+          lon = blend.$2 + (lon - blend.$2) * eased;
+          heading = _lerpAngle(blend.$3, heading, eased);
         } else {
-          final segDistM = NearestStopService.haversineDistance(
-            prevObs.lat,
-            prevObs.lon,
-            last.lat,
-            last.lon,
-          );
-          final segSpeedKmh = segmentMs > 0
-              ? (segDistM / (segmentMs / 1000.0)) * 3.6
-              : 0.0;
-          if (segSpeedKmh > _maxExtrapolationSpeedKmh) {
-            t = 1.0;
-          }
+          _blendOrigins.remove(key);
         }
       }
-
-      t = t.clamp(0.0, 1.5);
-
-      final lat = prevObs.lat + (last.lat - prevObs.lat) * t;
-      final lon = prevObs.lon + (last.lon - prevObs.lon) * t;
-      final heading = _lerpAngle(
-        prevObs.heading,
-        last.heading,
-        t.clamp(0.0, 1.0),
-      );
 
       result[key] = (lat, lon, heading);
     }
 
     return result;
+  }
+
+  /// Compute the interpolated position for a single bus without blend.
+  /// Used both by the render loop and to capture blend origins.
+  (double, double, double)? _interpolateSingle(
+    String key,
+    BusTrackingState state,
+    DateTime now,
+  ) {
+    final good = state.observations.where((o) => !o.rejected).toList();
+    if (good.isEmpty) return null;
+
+    final prev = good.length >= 2 ? good[good.length - 2] : null;
+    final last = good.last;
+
+    final shapeInterpolated = _interpolateOnShape(
+      key: key,
+      state: state,
+      prev: prev,
+      last: last,
+      now: now,
+    );
+    if (shapeInterpolated != null) return shapeInterpolated;
+
+    // Fallback interpolation when no usable shape progress is available.
+    if (good.length < 2) {
+      return (state.smoothedLat, state.smoothedLon, state.smoothedHeading);
+    }
+
+    final prevObs = prev;
+    if (prevObs == null) return (last.lat, last.lon, last.heading);
+
+    final segmentMs =
+        last.timestamp.difference(prevObs.timestamp).inMilliseconds;
+    if (segmentMs <= 0) return (last.lat, last.lon, last.heading);
+
+    final elapsed = now.difference(prevObs.timestamp).inMilliseconds;
+    var t = elapsed / segmentMs;
+
+    // Extrapolation beyond last GPS point (no shape available).
+    if (t > 1.0) {
+      final extraSeconds =
+          now.difference(last.timestamp).inMilliseconds / 1000.0;
+      if (extraSeconds > _maxExtrapolationSeconds) {
+        t = 1.0;
+      } else {
+        final segDistM = NearestStopService.haversineDistance(
+          prevObs.lat,
+          prevObs.lon,
+          last.lat,
+          last.lon,
+        );
+        final segSpeedKmh = segmentMs > 0
+            ? (segDistM / (segmentMs / 1000.0)) * 3.6
+            : 0.0;
+        if (segSpeedKmh > _maxExtrapolationSpeedKmh ||
+            segSpeedKmh < _minMovingSpeedKmh) {
+          t = 1.0;
+        } else {
+          // Compute t with speed decay applied
+          final decayedSpeed =
+              _applyExtrapolationDecay(segSpeedKmh, extraSeconds);
+          final extraM = (decayedSpeed / 3.6) * extraSeconds;
+          t = 1.0 + (extraM / segDistM);
+        }
+      }
+    }
+
+    t = t.clamp(0.0, 1.0 + (_maxExtrapolationSeconds / (segmentMs / 1000.0)));
+
+    final lat = prevObs.lat + (last.lat - prevObs.lat) * t;
+    final lon = prevObs.lon + (last.lon - prevObs.lon) * t;
+    final heading = _lerpAngle(
+      prevObs.heading,
+      last.heading,
+      t.clamp(0.0, 1.0),
+    );
+
+    return (lat, lon, heading);
   }
 
   (double, double, double)? _interpolateOnShape({
@@ -397,24 +446,40 @@ class BusMotionEngine {
         if (t <= 1.0) {
           nextProgress = prevProgress + delta * t.clamp(0.0, 1.0);
         } else {
+          // Extrapolation beyond the last GPS point.
           final extraSeconds =
               now.difference(last.timestamp).inMilliseconds / 1000.0;
           if (state.status != BusStatus.active &&
               state.status != BusStatus.backtracking) {
             nextProgress = lastProgress;
           } else if (extraSeconds <= _maxExtrapolationSeconds) {
+            // Prefer segment average speed — it reflects real-world
+            // conditions (stops, traffic) better than instantaneous speed.
             final segDistM = (lastProgress - prevProgress).abs();
-            final segSpeedKmh = segmentMs > 0
+            final segAvgKmh = segmentMs > 0
                 ? (segDistM / (segmentMs / 1000.0)) * 3.6
                 : 0.0;
-            var speedKmh = last.speed >= _minMovingSpeedKmh
-                ? last.speed
-                : segSpeedKmh;
+            // Use segment average if meaningful, else fall back to
+            // instantaneous. Both must clear the minimum threshold.
+            var speedKmh = segAvgKmh >= _minMovingSpeedKmh
+                ? segAvgKmh
+                : (last.speed >= _minMovingSpeedKmh ? last.speed : 0.0);
 
+            // Apply speed decay: full speed for the first N seconds,
+            // then linearly decay to _decayFloor over the remaining window.
+            speedKmh = _applyExtrapolationDecay(speedKmh, extraSeconds);
+
+            // Slow near upcoming stops using extrapolated progress,
+            // not just the last GPS point.
+            final currentExtraM = (speedKmh / 3.6) *
+                extraSeconds.clamp(0.0, _maxDeadReckoningSeconds);
+            final direction = delta < -1.0 ? -1.0 : 1.0;
+            final tentativeProgress =
+                lastProgress + currentExtraM * direction;
             final distanceToStop = _distanceToNextStopMeters(
               tripId: state.currentTripId,
               shapeId: shapeId,
-              progress: lastProgress,
+              progress: tentativeProgress,
             );
             speedKmh = _applyStopHeuristic(
               speedKmh: speedKmh,
@@ -424,7 +489,6 @@ class BusMotionEngine {
 
             if (speedKmh >= _minMovingSpeedKmh &&
                 speedKmh <= _maxExtrapolationSpeedKmh) {
-              final direction = delta < -1.0 ? -1.0 : 1.0;
               final extraM =
                   (speedKmh / 3.6) *
                   extraSeconds.clamp(0.0, _maxDeadReckoningSeconds);
@@ -438,19 +502,23 @@ class BusMotionEngine {
         }
       }
     } else {
-      // Single observation: small forward dead-reckoning while active.
+      // Single observation: dead-reckon forward using reported speed.
       final extraSeconds =
           now.difference(last.timestamp).inMilliseconds / 1000.0;
       if (state.status == BusStatus.active &&
           last.speed >= _minMovingSpeedKmh &&
-          extraSeconds > 0) {
+          extraSeconds > 0 &&
+          extraSeconds <= _maxExtrapolationSeconds) {
+        var speedKmh = _applyExtrapolationDecay(last.speed, extraSeconds);
+        final tentativeProgress =
+            lastProgress + (speedKmh / 3.6) * extraSeconds;
         final distanceToStop = _distanceToNextStopMeters(
           tripId: state.currentTripId,
           shapeId: shapeId,
-          progress: lastProgress,
+          progress: tentativeProgress,
         );
-        final speedKmh = _applyStopHeuristic(
-          speedKmh: last.speed,
+        speedKmh = _applyStopHeuristic(
+          speedKmh: speedKmh,
           status: state.status,
           distanceToNextStopM: distanceToStop,
         );
@@ -490,12 +558,10 @@ class BusMotionEngine {
 
     if (progress >= previous) return progress;
 
-    if (state.status == BusStatus.backtracking) {
-      return math.max(progress, previous - _maxVisualBackwardMeters);
-    }
-
-    // For active/on-time movement, do not visually move backward.
-    return previous;
+    // Allow backward movement up to the limit. The blend smoothing
+    // makes small corrections look natural. Better to overshoot and
+    // glide back than to freeze and teleport forward.
+    return math.max(progress, previous - _maxVisualBackwardMeters);
   }
 
   SnapResult? _trySnap(double lat, double lon, String shapeId) {
@@ -616,6 +682,9 @@ class BusMotionEngine {
     return unique;
   }
 
+  /// Gentle slow-down near stops. Most stops are skipped (nobody waiting),
+  /// so we never fully stop — just ease off slightly. The blend smoothing
+  /// handles correction when real data arrives.
   double _applyStopHeuristic({
     required double speedKmh,
     required BusStatus status,
@@ -624,12 +693,26 @@ class BusMotionEngine {
     if (status == BusStatus.stopped || status == BusStatus.stale) return 0.0;
     if (distanceToNextStopM == null) return speedKmh;
 
-    if (distanceToNextStopM <= 25.0) return 0.0;
-    if (distanceToNextStopM >= 180.0) return speedKmh;
+    // Only apply a gentle slowdown within 80m of a stop.
+    // Never go below 60% of current speed — just a hint, not a brake.
+    if (distanceToNextStopM >= 80.0) return speedKmh;
+    final factor = (distanceToNextStopM / 80.0).clamp(0.0, 1.0);
+    // At 0m: 60% speed. At 80m: 100% speed.
+    final scale = 0.6 + 0.4 * factor;
+    return speedKmh * scale;
+  }
 
-    final factor = ((distanceToNextStopM - 25.0) / 155.0).clamp(0.0, 1.0);
-    final approachCapKmh = 4.0 + 18.0 * factor;
-    return math.min(speedKmh, approachCapKmh);
+  /// Gradually reduce speed during extrapolation to avoid overshooting.
+  /// Full speed for the first [_decayOnsetSeconds], then linearly decays
+  /// to [_decayFloor] fraction by [_maxExtrapolationSeconds].
+  double _applyExtrapolationDecay(double speedKmh, double extraSeconds) {
+    if (extraSeconds <= _decayOnsetSeconds) return speedKmh;
+    final decayWindow = _maxExtrapolationSeconds - _decayOnsetSeconds;
+    if (decayWindow <= 0) return speedKmh;
+    final t =
+        ((extraSeconds - _decayOnsetSeconds) / decayWindow).clamp(0.0, 1.0);
+    final factor = 1.0 - (1.0 - _decayFloor) * t;
+    return speedKmh * factor;
   }
 
   List<BusObservation> _addObservation(
