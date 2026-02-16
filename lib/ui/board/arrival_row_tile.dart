@@ -63,8 +63,13 @@ class ArrivalRowTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
+                    // Enhanced badge
+                    if (arrival.isEnhanced) ...[
+                      _EnhancedBadge(),
+                      const SizedBox(width: 4),
+                    ],
                     // Live badge
-                    if (arrival.isLive) ...[
+                    if (arrival.isLive && !arrival.isEnhanced) ...[
                       _LiveBadge(status: arrival.liveStatus),
                     ],
                     if (arrival.isLive && arrival.vehicleNumber != null) ...[
@@ -143,6 +148,46 @@ class ArrivalRowTile extends StatelessWidget {
     }
     if (minutes <= 10) return theme.colorScheme.secondary; // Green
     return theme.colorScheme.onSurface.withValues(alpha: 0.7); // Default
+  }
+}
+
+/// ENHANCED badge for scraped prediction rows.
+class _EnhancedBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final color =
+        isLight ? const Color(0xFF7B1FA2) : const Color(0xFFCE93D8);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'ENHANCED',
+            style: TextStyle(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

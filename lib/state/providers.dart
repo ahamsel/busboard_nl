@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/gtfs/gtfs_models.dart';
 import '../data/gtfs/gtfs_repository.dart';
+import '../data/realtime/metrobus_mobile_api.dart';
 import '../data/realtime/timetrack_api.dart';
 import '../data/realtime/timetrack_models.dart';
 import '../domain/arrival/arrival_models.dart';
@@ -22,6 +23,7 @@ class AppSettings {
   final bool forceGtfsRefresh;
   final ThemeMode themeMode;
   final ThemeMode? mapThemeMode; // null = follow app theme
+  final bool useEnhancedPredictions;
 
   const AppSettings({
     this.selectedStopId,
@@ -30,6 +32,7 @@ class AppSettings {
     this.forceGtfsRefresh = false,
     this.themeMode = ThemeMode.system,
     this.mapThemeMode,
+    this.useEnhancedPredictions = false,
   });
 
   AppSettings copyWith({
@@ -39,6 +42,7 @@ class AppSettings {
     bool? forceGtfsRefresh,
     ThemeMode? themeMode,
     ThemeMode? mapThemeMode,
+    bool? useEnhancedPredictions,
   }) {
     return AppSettings(
       selectedStopId: selectedStopId ?? this.selectedStopId,
@@ -48,6 +52,8 @@ class AppSettings {
       forceGtfsRefresh: forceGtfsRefresh ?? this.forceGtfsRefresh,
       themeMode: themeMode ?? this.themeMode,
       mapThemeMode: mapThemeMode ?? this.mapThemeMode,
+      useEnhancedPredictions:
+          useEnhancedPredictions ?? this.useEnhancedPredictions,
     );
   }
 }
@@ -71,6 +77,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
       mapThemeMode: prefs.getInt('mapThemeMode') != null
           ? ThemeMode.values[prefs.getInt('mapThemeMode')!]
           : null,
+      useEnhancedPredictions:
+          prefs.getBool('useEnhancedPredictions') ?? false,
     );
   }
 
@@ -113,7 +121,14 @@ class SettingsNotifier extends Notifier<AppSettings> {
       forceGtfsRefresh: state.forceGtfsRefresh,
       themeMode: state.themeMode,
       mapThemeMode: mode,
+      useEnhancedPredictions: state.useEnhancedPredictions,
     );
+  }
+
+  Future<void> setUseEnhancedPredictions(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('useEnhancedPredictions', value);
+    state = state.copyWith(useEnhancedPredictions: value);
   }
 
   void requestForceRefresh() {
@@ -152,6 +167,14 @@ final gtfsRepositoryProvider = FutureProvider<GtfsRepository>((ref) async {
   });
 
   return repo;
+});
+
+// ─── Metrobus Mobile (Enhanced Predictions) ───────────────
+
+final metrobusMobileApiProvider = Provider<MetrobusMobileApi>((ref) {
+  final api = MetrobusMobileApi();
+  ref.onDispose(() => api.dispose());
+  return api;
 });
 
 // ─── TimeTrack Live Data ───────────────────────────────────

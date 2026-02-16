@@ -166,6 +166,70 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 16),
 
+          // Enhanced Predictions
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.rocket_launch_outlined,
+                        color: theme.brightness == Brightness.light
+                            ? const Color(0xFF7B1FA2)
+                            : const Color(0xFFCE93D8),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Enhanced Predictions',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ),
+                      Switch(
+                        value: settings.useEnhancedPredictions,
+                        onChanged: (val) {
+                          ref
+                              .read(settingsProvider.notifier)
+                              .setUseEnhancedPredictions(val);
+                        },
+                        activeTrackColor:
+                            (theme.brightness == Brightness.light
+                                    ? const Color(0xFF7B1FA2)
+                                    : const Color(0xFFCE93D8))
+                                .withValues(alpha: 0.4),
+                        activeThumbColor: theme.brightness == Brightness.light
+                            ? const Color(0xFF7B1FA2)
+                            : const Color(0xFFCE93D8),
+                      ),
+                    ],
+                  ),
+                  // const SizedBox(height: 4),
+                  // Text(
+                  //   'Use Metrobus Mobile for better departure predictions',
+                  //   style: TextStyle(
+                  //     color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                  //     fontSize: 13,
+                  //   ),
+                  // ),
+                  // const SizedBox(height: 8),
+                  // Text(
+                  //   'Scrapes metrobusmobile.com for agency-predicted times. '
+                  //   'Only active for the selected stop.',
+                  //   style: TextStyle(
+                  //     color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
+                  //     fontSize: 11,
+                  //   ),
+                  // ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // Schedule data
           Card(
             child: Padding(

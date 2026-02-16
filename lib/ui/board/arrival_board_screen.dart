@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../state/providers.dart';
+import '../../data/realtime/metrobus_mobile_api.dart';
 import '../../data/realtime/timetrack_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
@@ -29,6 +30,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   List<ArrivalRow> _arrivals = [];
   bool _loading = true;
   bool _liveAvailable = false;
+  bool _enhancedAvailable = false;
   String? _error;
 
   @override
@@ -89,10 +91,25 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
       liveOk = liveVehicles.isNotEmpty;
     } catch (_) {}
 
+    // Try enhanced predictions (scraped data)
+    List<MetrobusDeparture>? scraped;
+    bool enhancedOk = false;
+    if (ref.read(settingsProvider).useEnhancedPredictions) {
+      try {
+        final mobileApi = ref.read(metrobusMobileApiProvider);
+        final result = await mobileApi.fetchDepartures(widget.stopId);
+        if (result.isNotEmpty) {
+          scraped = result;
+          enhancedOk = true;
+        }
+      } catch (_) {}
+    }
+
     final arrivals = service.getUpcomingArrivals(
       stopId: widget.stopId,
       now: DateTime.now(),
       liveVehicles: liveVehicles,
+      scrapedDepartures: scraped,
     );
 
     if (mounted) {
@@ -100,6 +117,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         _arrivals = arrivals;
         _loading = false;
         _liveAvailable = liveOk;
+        _enhancedAvailable = enhancedOk;
         _lastUpdate = DateTime.now();
         _error = null;
       });
@@ -186,11 +204,36 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                     ),
                   ),
                   const Spacer(),
-                  // Live indicator
-                  if (_liveAvailable)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+                  // Status indicators
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_enhancedAvailable) ...[
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: theme.brightness == Brightness.light
+                                ? const Color(0xFF7B1FA2)
+                                : const Color(0xFFCE93D8),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'ENHANCED',
+                          style: TextStyle(
+                            color: theme.brightness == Brightness.light
+                                ? const Color(0xFF7B1FA2)
+                                : const Color(0xFFCE93D8),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      if (_liveAvailable) ...[
                         Container(
                           width: 6,
                           height: 6,
@@ -213,19 +256,19 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                             letterSpacing: 1,
                           ),
                         ),
-                      ],
-                    )
-                  else
-                    Text(
-                      'Live unavailable',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.5,
+                      ] else
+                        Text(
+                          'Live unavailable',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
+                            fontStyle: FontStyle.italic,
+                          ),
                         ),
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
+                    ],
+                  ),
                 ],
               ),
             ),
