@@ -6,9 +6,12 @@ import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/timetrack_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
+import 'package:busboard_nl/domain/map/bus_journey_tracer.dart';
 import 'package:busboard_nl/domain/map/bus_motion_engine.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'bus_journey_renderer.dart';
 
 void main() {
   test(
@@ -18,6 +21,12 @@ void main() {
       final engine = BusMotionEngine(repo);
       final random = math.Random(42);
       const routeRun = 'Rt 1-1';
+      final traceEnv = Platform.environment['BUS_MOTION_TRACE'] ?? '';
+      final tracerEnabled = traceEnv.isNotEmpty;
+      final baseTime0 = DateTime(2026, 2, 15, 12, 0, 0);
+      final tracer = tracerEnabled
+          ? BusJourneyTracer(startTime: baseTime0)
+          : null;
       final shapePoints = repo.shapesById['shape_main']!;
       final shapeDists = repo.shapeCumulativeDistances['shape_main']!;
       final routeLengthM = shapeDists.last;
@@ -88,7 +97,9 @@ void main() {
             measurementTime: measurementTime,
           );
 
+          tracer?.beforeBatch(engine);
           engine.processBatch([vehicle], fetchTime);
+          tracer?.afterBatch(engine, fetchTime);
           final d = engine.diagnostics;
           if (d.correctionP90Meters != null) {
             correctionP90s.add(d.correctionP90Meters!);
@@ -101,7 +112,29 @@ void main() {
         }
 
         final now = baseTime.add(Duration(milliseconds: (t * 1000).round()));
-        final rendered = engine.interpolate(now)[routeRun];
+        final allRendered = engine.interpolate(now);
+        if (tracer != null) {
+          final truth = _sampleTruth(truthTimeline, t);
+          final truthPoint = _pointOnShape(
+            points: shapePoints,
+            cumulativeDistances: shapeDists,
+            progressMeters: truth.progressM,
+          );
+          tracer.recordFrame(
+            now: now,
+            engine: engine,
+            rendered: allRendered,
+            groundTruth: {
+              routeRun: GroundTruth(
+                lat: truthPoint.$1,
+                lon: truthPoint.$2,
+                progressM: truth.progressM,
+                speedKmh: truth.speedKmh,
+              ),
+            },
+          );
+        }
+        final rendered = allRendered[routeRun];
         if (rendered == null) continue;
 
         final snap = _snapProgressWithContinuity(
@@ -167,6 +200,13 @@ void main() {
         'corrP90Median=${correctionP90Median.toStringAsFixed(2)}m '
         'innovP50Median=${innovationP50Median.toStringAsFixed(2)}m',
       );
+      if (tracer != null) {
+        BusJourneyRenderer.printReport(
+          tracer,
+          onlyAnomalous: false,
+          verbose: traceEnv == 'verbose',
+        );
+      }
       _maybeWriteMetrics(
         harness: 'synthetic',
         metrics: {

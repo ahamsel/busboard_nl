@@ -343,6 +343,18 @@ class BusMotionEngine {
   Map<String, double> get debugRenderedProgressByKey =>
       Map.unmodifiable(_renderProgressByKey);
 
+  /// Whether a blend animation is currently active for [key].
+  bool isBlending(String key) => _blendOrigins.containsKey(key);
+
+  /// The blend progress fraction (0..1) for [key], or null if not blending.
+  double? blendFraction(String key, DateTime now) {
+    final blend = _blendOrigins[key];
+    if (blend == null) return null;
+    final age = now.difference(blend.startTime).inMilliseconds;
+    if (age >= _blendDurationMsCurrent) return null;
+    return age / _blendDurationMsCurrent;
+  }
+
   /// Process a batch of vehicles from the TimeTrack API.
   void processBatch(List<TimeTrackVehicle> vehicles, DateTime fetchTime) {
     final seenKeys = <String>{};
@@ -379,6 +391,21 @@ class BusMotionEngine {
 
       if (existing == null) {
         // New bus
+        _states[key] = _createNewState(v, obs, key);
+        _lastFetchTimeByKey[key] = fetchTime;
+        acceptedUpdates++;
+        continue;
+      }
+
+      // Vehicle swap detection: if the physical bus changed for this
+      // routeRun (e.g. breakdown replacement or shift change), treat it
+      // as a brand-new bus so we don't blend/clamp against the old one's
+      // position.
+      if (v.vehicle.isNotEmpty && v.vehicle != existing.vehicleId) {
+        _renderProgressByKey.remove(key);
+        _blendOrigins.remove(key);
+        _backwardCount.remove(key);
+        _progressFilters.remove(key);
         _states[key] = _createNewState(v, obs, key);
         _lastFetchTimeByKey[key] = fetchTime;
         acceptedUpdates++;
@@ -698,14 +725,12 @@ class BusMotionEngine {
             displayLon,
           );
 
-    // When the correction is large (prediction overshot), reset render
-    // progress to the new observation so anti-typewriter clamping does
-    // not freeze the bus. We set it to the new progress rather than
-    // removing it, so the bus snaps to the corrected position instead of
-    // allowing unconstrained backward movement.
-    if (correctionMeters != null &&
-        correctionMeters > _maxVisualBackwardMeters &&
-        progress != null) {
+    // When a blend origin was captured, reset render progress to the new
+    // observation so anti-typewriter clamping does not freeze the bus at
+    // the stale prediction-era high-water mark. The blend itself smooths
+    // the visual transition from old to new position, so the clamp
+    // baseline should track the corrected value, not the predicted one.
+    if (correctionMeters != null && progress != null) {
       _renderProgressByKey[key] = progress;
     }
 
@@ -750,25 +775,22 @@ class BusMotionEngine {
               blend.shapeId == targetShapeId;
 
           if (canBlendOnShape) {
-            // Only blend forward: if the prediction overshot (blend origin
-            // is ahead of target), skip the blend so the bus teleports to
-            // the correct position rather than visibly reversing direction.
-            if (blend.progressAlongRoute! <= targetProgress) {
-              final blendedProgress =
-                  blend.progressAlongRoute! +
-                  (targetProgress - blend.progressAlongRoute!) * eased;
-              final shapedPoint =
-                  _pointOnShape(targetShapeId, blendedProgress);
-              if (shapedPoint != null) {
-                lat = shapedPoint.$1;
-                lon = shapedPoint.$2;
-                heading =
-                    _headingAlongShape(targetShapeId, blendedProgress) ??
-                    _lerpAngle(blend.heading, heading, eased);
-              }
+            // Blend along the shape in either direction. When the
+            // prediction overshot, the origin is ahead of the target —
+            // the easing will smoothly move the bus backward to the
+            // corrected position instead of teleporting.
+            final blendedProgress =
+                blend.progressAlongRoute! +
+                (targetProgress - blend.progressAlongRoute!) * eased;
+            final shapedPoint =
+                _pointOnShape(targetShapeId, blendedProgress);
+            if (shapedPoint != null) {
+              lat = shapedPoint.$1;
+              lon = shapedPoint.$2;
+              heading =
+                  _headingAlongShape(targetShapeId, blendedProgress) ??
+                  _lerpAngle(blend.heading, heading, eased);
             }
-            // else: overshot — use the raw (corrected) position from
-            // _interpolateSingle directly; no backward blend.
           } else if (blend.shapeId != null &&
               targetShapeId != null &&
               blend.shapeId != targetShapeId) {

@@ -5,9 +5,12 @@ import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/timetrack_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
+import 'package:busboard_nl/domain/map/bus_journey_tracer.dart';
 import 'package:busboard_nl/domain/map/bus_motion_engine.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'bus_journey_renderer.dart';
 
 void main() {
   test(
@@ -60,6 +63,11 @@ void main() {
       final repo = _buildRepoFromFrames(frames);
       final engine = BusMotionEngine(repo);
       final metrics = _ReplayMetrics();
+      final traceEnv = Platform.environment['BUS_MOTION_TRACE'] ?? '';
+      final tracerEnabled = traceEnv.isNotEmpty;
+      final tracer = tracerEnabled
+          ? BusJourneyTracer(startTime: frames.first.fetchTime)
+          : null;
 
       final renderStep = const Duration(milliseconds: 120);
       var cursor = frames.first.fetchTime;
@@ -75,13 +83,16 @@ void main() {
               engine: engine,
               repo: repo,
               metrics: metrics,
+              tracer: tracer,
             );
           }
         } else {
           cursor = pollTime;
         }
 
+        tracer?.beforeBatch(engine);
         engine.processBatch(frame.vehicles, pollTime);
+        tracer?.afterBatch(engine, pollTime);
         metrics.totalPolls++;
         if (frame.statusCode != 200) {
           metrics.non200Polls++;
@@ -111,6 +122,15 @@ void main() {
           engine: engine,
           repo: repo,
           metrics: metrics,
+          tracer: tracer,
+        );
+      }
+
+      if (tracer != null) {
+        BusJourneyRenderer.printReport(
+          tracer,
+          onlyAnomalous: traceEnv != 'verbose',
+          verbose: traceEnv == 'verbose',
         );
       }
 
@@ -608,8 +628,10 @@ void _collectRenderMetrics({
   required BusMotionEngine engine,
   required GtfsRepository repo,
   required _ReplayMetrics metrics,
+  BusJourneyTracer? tracer,
 }) {
   final rendered = engine.interpolate(now);
+  tracer?.recordFrame(now: now, engine: engine, rendered: rendered);
   final renderedKeys = rendered.keys.toSet();
 
   for (final entry in rendered.entries) {
