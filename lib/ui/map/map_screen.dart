@@ -190,44 +190,46 @@ class _MapScreenState extends ConsumerState<MapScreen>
                 ),
               ),
             ),
-            Positioned(
-              right: 16,
-              top: 16,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _MapFloatButton(
-                    icon: Icons.layers_outlined,
-                    onPressed: _showMapThemeSheet,
-                    tooltip: 'Map Layers',
-                  ),
-                  const SizedBox(height: 12),
-                  _MapFloatButton(
-                    icon: _activeRouteFilter.isEmpty
-                        ? Icons.filter_alt_outlined
-                        : Icons.filter_alt,
-                    onPressed: _showRouteFilter,
-                    tooltip: 'Filter Routes',
-                    active: _activeRouteFilter.isNotEmpty,
-                  ),
-                  if (ref.watch(
-                        settingsProvider.select((s) => s.selectedStopId),
-                      ) !=
-                      null) ...[
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _MapFloatButton(
+                      icon: Icons.layers_outlined,
+                      onPressed: _showMapThemeSheet,
+                      tooltip: 'Map Layers',
+                    ),
                     const SizedBox(height: 12),
                     _MapFloatButton(
-                      icon: Icons.place,
-                      onPressed: _centerOnSelectedStop,
-                      tooltip: 'Selected Stop',
+                      icon: _activeRouteFilter.isEmpty
+                          ? Icons.filter_alt_outlined
+                          : Icons.filter_alt,
+                      onPressed: _showRouteFilter,
+                      tooltip: 'Filter Routes',
+                      active: _activeRouteFilter.isNotEmpty,
+                    ),
+                    if (ref.watch(
+                          settingsProvider.select((s) => s.selectedStopId),
+                        ) !=
+                        null) ...[
+                      const SizedBox(height: 12),
+                      _MapFloatButton(
+                        icon: Icons.place,
+                        onPressed: _centerOnSelectedStop,
+                        tooltip: 'Selected Stop',
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    _MapFloatButton(
+                      icon: Icons.my_location,
+                      onPressed: _goToMyLocation,
+                      tooltip: 'My Location',
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  _MapFloatButton(
-                    icon: Icons.my_location,
-                    onPressed: _goToMyLocation,
-                    tooltip: 'My Location',
-                  ),
-                ],
+                ),
               ),
             ),
           ],
