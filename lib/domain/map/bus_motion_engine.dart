@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import '../../data/gtfs/gtfs_models.dart';
 import '../../data/gtfs/gtfs_repository.dart';
+import '../../data/gtfs/gtfs_time.dart';
 import '../../data/realtime/timetrack_models.dart';
 import '../location/nearest_stop_service.dart';
 import 'bus_observation.dart';
@@ -504,7 +505,23 @@ class BusMotionEngine {
       }
     }
 
-    final obsWithProgress = obs.copyWith(progressAlongRoute: progress);
+    // Resolve stop anchor for new buses too.
+    double? closestStopProgressM;
+    if (shapeId != null &&
+        obs.gtfsTripId != null &&
+        v.departureTimeAtClosestStop > 0) {
+      closestStopProgressM = _closestStopProgress(
+        tripId: obs.gtfsTripId!,
+        shapeId: shapeId,
+        departureTimeSeconds: v.departureTimeAtClosestStop,
+      );
+    }
+
+    final obsWithProgress = obs.copyWith(
+      progressAlongRoute: progress,
+      closestStopProgressM: closestStopProgressM,
+      minsFromClosestStop: v.gtfsStopSequenceMinsFromStop,
+    );
     if (shapeId != null && progress != null) {
       _ingestProgressMeasurement(
         key: key,
@@ -687,7 +704,25 @@ class BusMotionEngine {
       }
     }
 
-    final obsWithProgress = obs.copyWith(progressAlongRoute: progress);
+    // Resolve stop anchor: which stop is the bus approaching and where is it
+    // on the route shape?
+    double? closestStopProgressM;
+    final minsFromStop = v.gtfsStopSequenceMinsFromStop;
+    if (shapeId != null &&
+        obs.gtfsTripId != null &&
+        v.departureTimeAtClosestStop > 0) {
+      closestStopProgressM = _closestStopProgress(
+        tripId: obs.gtfsTripId!,
+        shapeId: shapeId,
+        departureTimeSeconds: v.departureTimeAtClosestStop,
+      );
+    }
+
+    final obsWithProgress = obs.copyWith(
+      progressAlongRoute: progress,
+      closestStopProgressM: closestStopProgressM,
+      minsFromClosestStop: minsFromStop,
+    );
     final newObs = _addObservation(state.observations, obsWithProgress);
 
     if (shapeId != null &&
@@ -1084,6 +1119,43 @@ class BusMotionEngine {
       }
     }
 
+    // Stop anchor: constrain prediction using the stop the bus is approaching.
+    final stopCapM = last.closestStopProgressM;
+    final minsFromStop = last.minsFromClosestStop;
+    if (stopCapM != null && minsFromStop != null) {
+      if (minsFromStop > 0) {
+        // Still approaching — cap at this stop and pace the approach.
+        if (nextProgress > stopCapM) {
+          nextProgress = stopCapM;
+        }
+        final distToStop = stopCapM - lastProgress;
+        if (distToStop > 0) {
+          final lastFetch = _lastFetchTimeByKey[key];
+          final elapsed = lastFetch != null
+              ? now.difference(lastFetch).inMilliseconds / 1000.0
+              : 0.0;
+          final fraction =
+              (elapsed / (minsFromStop * 60.0)).clamp(0.0, 1.0);
+          final pacedProgress = lastProgress + distToStop * fraction;
+          final proximity = (1.0 - distToStop / 500.0).clamp(0.0, 0.7);
+          nextProgress = nextProgress * (1.0 - proximity) +
+              pacedProgress * proximity;
+          if (nextProgress > stopCapM) nextProgress = stopCapM;
+        }
+      } else {
+        // minsFromStop == 0: bus is at/past this stop. Cap at the NEXT
+        // stop so the bus keeps moving but can't race past two stops.
+        final nextStopCap = _nextStopAfter(
+          tripId: state.currentTripId,
+          shapeId: shapeId,
+          afterProgress: stopCapM,
+        );
+        if (nextStopCap != null && nextProgress > nextStopCap) {
+          nextProgress = nextStopCap;
+        }
+      }
+    }
+
     final clampedProgress = _clampVisualBackward(
       key: key,
       progress: nextProgress,
@@ -1220,6 +1292,46 @@ class BusMotionEngine {
     for (final stopProgress in stopProgresses) {
       if (stopProgress >= progress) {
         return stopProgress - progress;
+      }
+    }
+    return null;
+  }
+
+  /// Find the first stop after [afterProgress] on the shape.
+  double? _nextStopAfter({
+    required String? tripId,
+    required String shapeId,
+    required double afterProgress,
+  }) {
+    if (tripId == null) return null;
+    final stops = _tripStopProgresses(tripId: tripId, shapeId: shapeId);
+    for (final p in stops) {
+      if (p > afterProgress + 5.0) return p;
+    }
+    return null;
+  }
+
+  /// Resolve the shape progress of the stop the bus is approaching, using
+  /// the trip ID and departure-time-at-closest-stop from the API.
+  double? _closestStopProgress({
+    required String tripId,
+    required String shapeId,
+    required int departureTimeSeconds,
+  }) {
+    final rows = _stopTimesByTripId[tripId];
+    if (rows == null) return null;
+    for (final row in rows) {
+      final int rowSeconds;
+      try {
+        rowSeconds = GtfsTime.parse(row.departureTime).totalSeconds;
+      } catch (_) {
+        continue;
+      }
+      if ((rowSeconds - departureTimeSeconds).abs() <= 30) {
+        final stop = _repo.stopsById[row.stopId];
+        if (stop == null) continue;
+        final snap = _trySnap(stop.stopLat, stop.stopLon, shapeId);
+        if (snap != null) return snap.distanceAlongRoute;
       }
     }
     return null;

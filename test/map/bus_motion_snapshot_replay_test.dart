@@ -495,6 +495,10 @@ GtfsRepository _buildRepoFromFrames(List<_ReplayFrame> frames) {
         );
   }
 
+  // Synthesize stops and stop_times from captured closest-stop data so the
+  // stop-anchor prediction cap works in replay tests.
+  _synthesizeStops(repo, frames);
+
   return repo;
 }
 
@@ -963,4 +967,55 @@ void _maybeWriteMetrics({
   file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(payload));
   // ignore: avoid_print
   print('[Replay] wrote metrics JSON to ${file.path}');
+}
+
+/// Create synthetic stops and stop_times from the captured closest-stop data.
+///
+/// For each unique (tripId, departureTimeSeconds) pair, uses the GPS position
+/// from the **last** frame where that stop was reported (closest to the bus
+/// actually reaching the stop). This gives better stop placement than using
+/// the first sighting when the bus is still far away.
+void _synthesizeStops(GtfsRepository repo, List<_ReplayFrame> frames) {
+  // Collect last-seen GPS for each (trip, depTime) pair.
+  final lastSeen = <String, TimeTrackVehicle>{};
+  for (final frame in frames) {
+    for (final v in frame.vehicles) {
+      if (v.departureTimeAtClosestStop <= 0) continue;
+      final tripId = v.gtfsTripId.trim();
+      if (tripId.isEmpty) continue;
+      if (!repo.tripsById.containsKey(tripId)) continue;
+      final depKey = '$tripId|${v.departureTimeAtClosestStop}';
+      lastSeen[depKey] = v;
+    }
+  }
+
+  var stopIndex = 0;
+  for (final entry in lastSeen.entries) {
+    final v = entry.value;
+    final tripId = v.gtfsTripId.trim();
+
+    final stopId = 'syn_stop_${stopIndex++}';
+    repo.stopsById[stopId] = StopInfo(
+      stopId: stopId,
+      stopName: v.gtfsStopSequenceClosestStop,
+      stopLat: v.busLat,
+      stopLon: v.busLon,
+    );
+
+    final depSec = v.departureTimeAtClosestStop;
+    final h = depSec ~/ 3600;
+    final m = (depSec % 3600) ~/ 60;
+    final s = depSec % 60;
+    final timeStr =
+        '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+
+    final row = StopTimeRow(
+      tripId: tripId,
+      arrivalTime: timeStr,
+      departureTime: timeStr,
+      stopId: stopId,
+      stopSequence: depSec,
+    );
+    repo.stopTimesByStopId.putIfAbsent(stopId, () => []).add(row);
+  }
 }
