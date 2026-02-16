@@ -167,6 +167,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
 
           // Enhanced Predictions
+          /* // TEMPORARILY DISABLED SCRAPING
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -229,6 +230,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          */
 
           // Schedule data
           Card(

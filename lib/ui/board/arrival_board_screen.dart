@@ -94,6 +94,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     // Try enhanced predictions (scraped data)
     List<MetrobusDeparture>? scraped;
     bool enhancedOk = false;
+    /* // TEMPORARILY DISABLED SCRAPING
     if (ref.read(settingsProvider).useEnhancedPredictions) {
       try {
         final mobileApi = ref.read(metrobusMobileApiProvider);
@@ -104,6 +105,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         }
       } catch (_) {}
     }
+    */
 
     final arrivals = service.getUpcomingArrivals(
       stopId: widget.stopId,
