@@ -72,10 +72,7 @@ class ArrivalService {
       }
       if (!isActive) continue;
 
-      // Check if departure is in the future
-      if (departureTime <= nowTime) continue;
-
-      // Calculate minutes away
+      // Calculate minutes away (raw scheduled — may be in the past for late buses)
       final minutesAway = departureTime.minutesFrom(nowTime);
       // Skip if more than 3 hours away
       if (minutesAway > 180) continue;

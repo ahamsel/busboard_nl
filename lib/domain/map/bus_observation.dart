@@ -10,6 +10,13 @@ class BusObservation {
   final double? progressAlongRoute;
   final bool rejected;
 
+  /// Shape progress (meters) of the stop the bus is approaching,
+  /// resolved from the API's departureTimeAtClosestStop + trip ID.
+  final double? closestStopProgressM;
+
+  /// Minutes until the bus reaches the closest stop (from API).
+  final int? minsFromClosestStop;
+
   const BusObservation({
     required this.timestamp,
     required this.measurementTime,
@@ -20,9 +27,16 @@ class BusObservation {
     this.gtfsTripId,
     this.progressAlongRoute,
     this.rejected = false,
+    this.closestStopProgressM,
+    this.minsFromClosestStop,
   });
 
-  BusObservation copyWith({bool? rejected, double? progressAlongRoute}) {
+  BusObservation copyWith({
+    bool? rejected,
+    double? progressAlongRoute,
+    double? closestStopProgressM,
+    int? minsFromClosestStop,
+  }) {
     return BusObservation(
       timestamp: timestamp,
       measurementTime: measurementTime,
@@ -33,6 +47,10 @@ class BusObservation {
       gtfsTripId: gtfsTripId,
       progressAlongRoute: progressAlongRoute ?? this.progressAlongRoute,
       rejected: rejected ?? this.rejected,
+      closestStopProgressM:
+          closestStopProgressM ?? this.closestStopProgressM,
+      minsFromClosestStop:
+          minsFromClosestStop ?? this.minsFromClosestStop,
     );
   }
 }
