@@ -50,6 +50,9 @@ class ArrivalRow {
   /// Schedule difference in minutes from live (positive=ahead, negative=behind).
   final int? schedDiffMins;
 
+  /// Whether this row's prediction came from enhanced (scraped) data.
+  final bool isEnhanced;
+
   const ArrivalRow({
     required this.routeShortName,
     required this.headsign,
@@ -61,6 +64,7 @@ class ArrivalRow {
     required this.tripId,
     this.vehicleNumber,
     this.schedDiffMins,
+    this.isEnhanced = false,
   });
 
   /// The display time (predicted if available, otherwise scheduled).
