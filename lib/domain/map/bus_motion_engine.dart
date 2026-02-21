@@ -398,11 +398,10 @@ class BusMotionEngine {
         continue;
       }
 
-      // Vehicle swap detection: if the physical bus changed for this
-      // routeRun (e.g. breakdown replacement or shift change), treat it
-      // as a brand-new bus so we don't blend/clamp against the old one's
-      // position.
-      if (v.vehicle.isNotEmpty && v.vehicle != existing.vehicleId) {
+      // Route change detection: if the route changed for this vehicle
+      // (e.g. bus finishing one run and starting another), reset shape
+      // matching state so we don't blend/clamp across different routes.
+      if (v.routeRun.isNotEmpty && v.routeRun != existing.routeRun) {
         _renderProgressByKey.remove(key);
         _blendOrigins.remove(key);
         _backwardCount.remove(key);
@@ -777,7 +776,7 @@ class BusMotionEngine {
 
   /// Interpolate bus positions for smooth animation at render time.
   ///
-  /// Returns a map of routeRun → (lat, lon, heading).
+  /// Returns a map of busKey → (lat, lon, heading).
   Map<String, (double, double, double)> interpolate(DateTime now) {
     final result = <String, (double, double, double)>{};
 
@@ -817,8 +816,7 @@ class BusMotionEngine {
             final blendedProgress =
                 blend.progressAlongRoute! +
                 (targetProgress - blend.progressAlongRoute!) * eased;
-            final shapedPoint =
-                _pointOnShape(targetShapeId, blendedProgress);
+            final shapedPoint = _pointOnShape(targetShapeId, blendedProgress);
             if (shapedPoint != null) {
               lat = shapedPoint.$1;
               lon = shapedPoint.$2;
@@ -915,14 +913,8 @@ class BusMotionEngine {
           final freshness = lastFetch != null
               ? now.difference(lastFetch).inMilliseconds / 1000.0
               : extraSeconds;
-          var decayedSpeed = _applyExtrapolationDecay(
-            segSpeedKmh,
-            freshness,
-          );
-          decayedSpeed = _applyDataFreshnessDecay(
-            decayedSpeed,
-            freshness,
-          );
+          var decayedSpeed = _applyExtrapolationDecay(segSpeedKmh, freshness);
+          decayedSpeed = _applyDataFreshnessDecay(decayedSpeed, freshness);
           final extraM = (decayedSpeed / 3.6) * extraSeconds;
           t = 1.0 + (extraM / segDistM);
         }
@@ -991,7 +983,8 @@ class BusMotionEngine {
 
       // Clamp by speed × freshness (not full measurement age) to prevent
       // overshoot during long periods without corrections.
-      final maxBySpeed = (speedKmh / 3.6) *
+      final maxBySpeed =
+          (speedKmh / 3.6) *
           projected.ageSeconds.clamp(0.0, _maxFilterProjectionSeconds);
       deltaM = math.min(deltaM, maxBySpeed);
       var tentativeProgress = lastProgress + deltaM * direction;
@@ -1007,7 +1000,8 @@ class BusMotionEngine {
         distanceToNextStopM: distanceToStop,
       );
 
-      final maxAfterStop = (speedKmh / 3.6) *
+      final maxAfterStop =
+          (speedKmh / 3.6) *
           projected.ageSeconds.clamp(0.0, _maxFilterProjectionSeconds);
       deltaM = math.min(deltaM, maxAfterStop);
       tentativeProgress = lastProgress + deltaM * direction;
@@ -1134,12 +1128,11 @@ class BusMotionEngine {
           final elapsed = lastFetch != null
               ? now.difference(lastFetch).inMilliseconds / 1000.0
               : 0.0;
-          final fraction =
-              (elapsed / (minsFromStop * 60.0)).clamp(0.0, 1.0);
+          final fraction = (elapsed / (minsFromStop * 60.0)).clamp(0.0, 1.0);
           final pacedProgress = lastProgress + distToStop * fraction;
           final proximity = (1.0 - distToStop / 500.0).clamp(0.0, 0.7);
-          nextProgress = nextProgress * (1.0 - proximity) +
-              pacedProgress * proximity;
+          nextProgress =
+              nextProgress * (1.0 - proximity) + pacedProgress * proximity;
           if (nextProgress > stopCapM) nextProgress = stopCapM;
         }
       } else {
@@ -1620,9 +1613,11 @@ class BusMotionEngine {
     return (bearing + 360.0) % 360.0;
   }
 
+  /// Key by physical vehicle ID so each map dot tracks one real bus.
+  /// Falls back to routeRun or tripId for rare cases where vehicle is empty.
   String? _resolveBusKey(TimeTrackVehicle v) {
+    if (v.vehicle.isNotEmpty) return v.vehicle;
     if (v.routeRun.isNotEmpty) return v.routeRun;
-    if (v.vehicle.isNotEmpty) return 'vehicle:${v.vehicle}';
     if (v.gtfsTripId.isNotEmpty) return 'trip:${v.gtfsTripId}';
     return null;
   }
