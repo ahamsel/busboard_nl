@@ -21,6 +21,7 @@ void main() {
       final engine = BusMotionEngine(repo);
       final random = math.Random(42);
       const routeRun = 'Rt 1-1';
+      const vehicleKey = 'harness_bus';
       final traceEnv = Platform.environment['BUS_MOTION_TRACE'] ?? '';
       final tracerEnabled = traceEnv.isNotEmpty;
       final baseTime0 = DateTime(2026, 2, 15, 12, 0, 0);
@@ -125,7 +126,7 @@ void main() {
             engine: engine,
             rendered: allRendered,
             groundTruth: {
-              routeRun: GroundTruth(
+              vehicleKey: GroundTruth(
                 lat: truthPoint.$1,
                 lon: truthPoint.$2,
                 progressM: truth.progressM,
@@ -134,7 +135,7 @@ void main() {
             },
           );
         }
-        final rendered = allRendered[routeRun];
+        final rendered = allRendered[vehicleKey];
         if (rendered == null) continue;
 
         final snap = _snapProgressWithContinuity(
@@ -147,9 +148,9 @@ void main() {
         if (snap == null) continue;
         offShapeErrorsM.add(snap.perpendicularDistanceMeters);
         final renderedProgress =
-            engine.debugRenderedProgressByKey[routeRun] ?? snap.progressM;
+            engine.debugRenderedProgressByKey[vehicleKey] ?? snap.progressM;
 
-        final state = engine.states[routeRun];
+        final state = engine.states[vehicleKey];
         if (state?.status == BusStatus.active && prevRenderedProgress != null) {
           final previousProgress = prevRenderedProgress;
           if (renderedProgress + 1e-3 < previousProgress) {

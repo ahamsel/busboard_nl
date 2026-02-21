@@ -13,6 +13,7 @@ void main() {
   late BusMotionEngine engine;
   late DateTime baseTime;
   const routeRun = 'Rt 1-1';
+  const vehicleKey = 'test_bus';
 
   setUp(() {
     repo = _buildRepo();
@@ -29,9 +30,9 @@ void main() {
     final rendered = engine.interpolate(now);
     tracer.recordFrame(now: now, engine: engine, rendered: rendered);
 
-    expect(tracer.framesFor(routeRun), hasLength(1));
-    final frame = tracer.framesFor(routeRun).first;
-    expect(frame.busKey, routeRun);
+    expect(tracer.framesFor(vehicleKey), hasLength(1));
+    final frame = tracer.framesFor(vehicleKey).first;
+    expect(frame.busKey, vehicleKey);
     expect(frame.renderedLat, isNonZero);
     expect(frame.status, BusStatus.active);
   });
@@ -68,7 +69,7 @@ void main() {
 
     // With the fix applied, the blend should smooth the correction.
     // The tracer should record whether backsteps happened or not.
-    final summary = tracer.summaryFor(routeRun);
+    final summary = tracer.summaryFor(vehicleKey);
     expect(summary.frameCount, greaterThan(50));
   });
 
@@ -102,25 +103,37 @@ void main() {
       tracer.recordFrame(now: now, engine: engine, rendered: rendered);
     }
 
-    final frames = tracer.framesFor(routeRun);
+    final frames = tracer.framesFor(vehicleKey);
 
     // The tracer should detect blend activity on some frames.
     final blendActiveFrames = frames.where((f) => f.blendActive).toList();
-    final blendInactiveAfterActive = frames.where((f) =>
-        !f.blendActive &&
-        f.elapsedSeconds > (blendActiveFrames.isEmpty ? 0 : blendActiveFrames.first.elapsedSeconds)
-    ).toList();
+    final blendInactiveAfterActive = frames
+        .where(
+          (f) =>
+              !f.blendActive &&
+              f.elapsedSeconds >
+                  (blendActiveFrames.isEmpty
+                      ? 0
+                      : blendActiveFrames.first.elapsedSeconds),
+        )
+        .toList();
 
     // At least some frames should show blend activity.
-    expect(blendActiveFrames, isNotEmpty,
-        reason: 'Expected blend to be active on some frames after second batch');
+    expect(
+      blendActiveFrames,
+      isNotEmpty,
+      reason: 'Expected blend to be active on some frames after second batch',
+    );
 
     // After the blend, frames should be non-blending.
-    expect(blendInactiveAfterActive, isNotEmpty,
-        reason: 'Expected blend to end before all frames were consumed');
+    expect(
+      blendInactiveAfterActive,
+      isNotEmpty,
+      reason: 'Expected blend to end before all frames were consumed',
+    );
 
     // Summary should count the blend.
-    final summary = tracer.summaryFor(routeRun);
+    final summary = tracer.summaryFor(vehicleKey);
     expect(summary.blendCount, greaterThanOrEqualTo(1));
   });
 
@@ -129,7 +142,12 @@ void main() {
 
     // First batch with vehicle "bus_1".
     _feedVehicle(
-      engine, baseTime, routeRun, 47.5600, -52.7380, 30.0,
+      engine,
+      baseTime,
+      routeRun,
+      47.5600,
+      -52.7380,
+      30.0,
       vehicleId: 'bus_1',
     );
     var now = baseTime.add(const Duration(milliseconds: 120));
@@ -140,7 +158,12 @@ void main() {
     final t2 = baseTime.add(const Duration(seconds: 10));
     tracer.beforeBatch(engine);
     _feedVehicle(
-      engine, t2, routeRun, 47.5610, -52.7350, 25.0,
+      engine,
+      t2,
+      routeRun,
+      47.5610,
+      -52.7350,
+      25.0,
       vehicleId: 'bus_2',
     );
     tracer.afterBatch(engine, t2);
@@ -149,15 +172,13 @@ void main() {
     rendered = engine.interpolate(now);
     tracer.recordFrame(now: now, engine: engine, rendered: rendered);
 
-    final frames = tracer.framesFor(routeRun);
-    final swapEvents = frames
-        .expand((f) => f.events)
-        .where((e) => e.type == TraceEventType.vehicleSwapped)
-        .toList();
+    // Vehicle swap: when keyed by vehicle, bus_1 and bus_2 are separate.
+    // The tracer should track both independently.
+    final frames1 = tracer.framesFor('bus_1');
+    final frames2 = tracer.framesFor('bus_2');
 
-    expect(swapEvents, hasLength(1));
-    expect(swapEvents.first.description, contains('bus_1'));
-    expect(swapEvents.first.description, contains('bus_2'));
+    expect(frames1, isNotEmpty);
+    expect(frames2, isNotEmpty);
   });
 
   test('summary computes correct stats', () {
@@ -172,8 +193,8 @@ void main() {
       tracer.recordFrame(now: now, engine: engine, rendered: rendered);
     }
 
-    final summary = tracer.summaryFor(routeRun);
-    expect(summary.busKey, routeRun);
+    final summary = tracer.summaryFor(vehicleKey);
+    expect(summary.busKey, vehicleKey);
     expect(summary.frameCount, 50);
     expect(summary.durationSeconds, closeTo(50 * 0.12 - 0.12, 0.2));
   });
@@ -204,7 +225,7 @@ void main() {
     // The tracer should have recorded frames; spike detection depends on
     // whether the engine's interpolation actually produces >80km/h display
     // speed, which it may clamp. Just verify no crash and frames recorded.
-    expect(tracer.framesFor(routeRun).length, greaterThan(40));
+    expect(tracer.framesFor(vehicleKey).length, greaterThan(40));
   });
 }
 
@@ -218,18 +239,40 @@ GtfsRepository _buildRepo() {
   const serviceId = 'svc_1';
 
   final shape = <ShapePoint>[
-    const ShapePoint(shapeId: shapeId, lat: 47.5600, lon: -52.7400, sequence: 1),
-    const ShapePoint(shapeId: shapeId, lat: 47.5600, lon: -52.7310, sequence: 2),
-    const ShapePoint(shapeId: shapeId, lat: 47.5675, lon: -52.7310, sequence: 3),
-    const ShapePoint(shapeId: shapeId, lat: 47.5675, lon: -52.7210, sequence: 4),
+    const ShapePoint(
+      shapeId: shapeId,
+      lat: 47.5600,
+      lon: -52.7400,
+      sequence: 1,
+    ),
+    const ShapePoint(
+      shapeId: shapeId,
+      lat: 47.5600,
+      lon: -52.7310,
+      sequence: 2,
+    ),
+    const ShapePoint(
+      shapeId: shapeId,
+      lat: 47.5675,
+      lon: -52.7310,
+      sequence: 3,
+    ),
+    const ShapePoint(
+      shapeId: shapeId,
+      lat: 47.5675,
+      lon: -52.7210,
+      sequence: 4,
+    ),
   ];
   final cumulative = <double>[0.0];
   for (var i = 1; i < shape.length; i++) {
     cumulative.add(
       cumulative.last +
           NearestStopService.haversineDistance(
-            shape[i - 1].lat, shape[i - 1].lon,
-            shape[i].lat, shape[i].lon,
+            shape[i - 1].lat,
+            shape[i - 1].lon,
+            shape[i].lat,
+            shape[i].lon,
           ),
     );
   }

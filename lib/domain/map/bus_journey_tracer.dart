@@ -173,12 +173,10 @@ class BusJourneyTracer {
   Iterable<String> get trackedKeys => _frames.keys;
 
   /// Get all frames for a bus.
-  List<FrameRecord> framesFor(String busKey) =>
-      _frames[busKey] ?? const [];
+  List<FrameRecord> framesFor(String busKey) => _frames[busKey] ?? const [];
 
   /// Get all anomalies for a bus.
-  List<Anomaly> anomaliesFor(String busKey) =>
-      _anomalies[busKey] ?? const [];
+  List<Anomaly> anomaliesFor(String busKey) => _anomalies[busKey] ?? const [];
 
   /// Get all anomalies across all buses.
   List<Anomaly> get allAnomalies =>
@@ -202,35 +200,51 @@ class BusJourneyTracer {
 
       // Detect vehicle swap.
       if (pre != null && post.vehicleId != pre.vehicleId) {
-        _addEvent(key, elapsed, TraceEvent(
-          TraceEventType.vehicleSwapped,
-          '${pre.vehicleId} -> ${post.vehicleId}',
-        ));
+        _addEvent(
+          key,
+          elapsed,
+          TraceEvent(
+            TraceEventType.vehicleSwapped,
+            '${pre.vehicleId} -> ${post.vehicleId}',
+          ),
+        );
       }
 
       // Detect trip change.
       if (pre != null &&
           post.currentTripId != null &&
           post.currentTripId != pre.currentTripId) {
-        _addEvent(key, elapsed, TraceEvent(
-          TraceEventType.tripChanged,
-          '${pre.currentTripId} -> ${post.currentTripId}',
-        ));
+        _addEvent(
+          key,
+          elapsed,
+          TraceEvent(
+            TraceEventType.tripChanged,
+            '${pre.currentTripId} -> ${post.currentTripId}',
+          ),
+        );
       }
 
       // Detect status change.
       if (pre != null && post.status != pre.status) {
-        _addEvent(key, elapsed, TraceEvent(
-          TraceEventType.statusChanged,
-          '${pre.status.name} -> ${post.status.name}',
-        ));
+        _addEvent(
+          key,
+          elapsed,
+          TraceEvent(
+            TraceEventType.statusChanged,
+            '${pre.status.name} -> ${post.status.name}',
+          ),
+        );
       }
 
       // Record poll.
-      _addEvent(key, elapsed, TraceEvent(
-        TraceEventType.pollReceived,
-        'obs=${post.observations.length}',
-      ));
+      _addEvent(
+        key,
+        elapsed,
+        TraceEvent(
+          TraceEventType.pollReceived,
+          'obs=${post.observations.length}',
+        ),
+      );
 
       bs.previousTripId = post.currentTripId;
       bs.previousVehicleId = post.vehicleId;
@@ -281,7 +295,8 @@ class BusJourneyTracer {
           progressM != null &&
           bs.previousProgressM != null &&
           bs.previousTimestamp != null) {
-        final dt = now.difference(bs.previousTimestamp!).inMilliseconds / 1000.0;
+        final dt =
+            now.difference(bs.previousTimestamp!).inMilliseconds / 1000.0;
         if (dt > 0.01) {
           final deltaM = progressM - bs.previousProgressM!;
           displaySpeedKmh = (deltaM / dt) * 3.6;
@@ -303,7 +318,10 @@ class BusJourneyTracer {
       // Position error vs ground truth.
       if (truth != null) {
         final err = NearestStopService.haversineDistance(
-          lat, lon, truth.lat, truth.lon,
+          lat,
+          lon,
+          truth.lat,
+          truth.lon,
         );
         bs.positionErrors.add(err);
       }
@@ -317,33 +335,46 @@ class BusJourneyTracer {
           final mag = delta.abs();
           bs.backstepCount++;
           bs.backstepTotalMeters += mag;
-          events.add(TraceEvent(
-            TraceEventType.backstepOccurred,
-            '${delta.toStringAsFixed(1)}m at progress=${progressM.toStringAsFixed(1)}m',
-          ));
-          _addAnomaly(key, Anomaly(
-            type: AnomalyType.backwardJump,
-            elapsedSeconds: elapsed,
-            busKey: key,
-            description: 'Progress decreased by ${mag.toStringAsFixed(1)}m to ${progressM.toStringAsFixed(1)}m',
-            magnitudeMeters: mag,
-          ));
+          events.add(
+            TraceEvent(
+              TraceEventType.backstepOccurred,
+              '${delta.toStringAsFixed(1)}m at progress=${progressM.toStringAsFixed(1)}m',
+            ),
+          );
+          _addAnomaly(
+            key,
+            Anomaly(
+              type: AnomalyType.backwardJump,
+              elapsedSeconds: elapsed,
+              busKey: key,
+              description:
+                  'Progress decreased by ${mag.toStringAsFixed(1)}m to ${progressM.toStringAsFixed(1)}m',
+              magnitudeMeters: mag,
+            ),
+          );
         }
       }
 
       // Teleport.
       if (bs.previousLat != null && bs.previousLon != null) {
         final dist = NearestStopService.haversineDistance(
-          bs.previousLat!, bs.previousLon!, lat, lon,
+          bs.previousLat!,
+          bs.previousLon!,
+          lat,
+          lon,
         );
         if (dist > thresholds.teleportMeters) {
-          _addAnomaly(key, Anomaly(
-            type: AnomalyType.teleport,
-            elapsedSeconds: elapsed,
-            busKey: key,
-            description: 'Position jumped ${dist.toStringAsFixed(1)}m in one frame',
-            magnitudeMeters: dist,
-          ));
+          _addAnomaly(
+            key,
+            Anomaly(
+              type: AnomalyType.teleport,
+              elapsedSeconds: elapsed,
+              busKey: key,
+              description:
+                  'Position jumped ${dist.toStringAsFixed(1)}m in one frame',
+              magnitudeMeters: dist,
+            ),
+          );
         }
       }
 
@@ -355,14 +386,17 @@ class BusJourneyTracer {
           final frozenFor =
               now.difference(bs.freezeStartTime!).inMilliseconds / 1000.0;
           if (frozenFor > thresholds.freezeSeconds) {
-            _addAnomaly(key, Anomaly(
-              type: AnomalyType.freeze,
-              elapsedSeconds: elapsed,
-              busKey: key,
-              description:
-                  'Frozen for ${frozenFor.toStringAsFixed(1)}s at progress=${progressM.toStringAsFixed(1)}m (api_speed=${apiSpeed.toStringAsFixed(0)}km/h)',
-              magnitudeMeters: frozenFor,
-            ));
+            _addAnomaly(
+              key,
+              Anomaly(
+                type: AnomalyType.freeze,
+                elapsedSeconds: elapsed,
+                busKey: key,
+                description:
+                    'Frozen for ${frozenFor.toStringAsFixed(1)}s at progress=${progressM.toStringAsFixed(1)}m (api_speed=${apiSpeed.toStringAsFixed(0)}km/h)',
+                magnitudeMeters: frozenFor,
+              ),
+            );
             // Reset to avoid spamming.
             bs.freezeStartTime = now;
           }
@@ -379,14 +413,17 @@ class BusJourneyTracer {
       // Speed spike.
       if (displaySpeedKmh != null &&
           displaySpeedKmh > thresholds.speedSpikeKmh) {
-        _addAnomaly(key, Anomaly(
-          type: AnomalyType.speedSpike,
-          elapsedSeconds: elapsed,
-          busKey: key,
-          description:
-              'Displayed speed ${displaySpeedKmh.toStringAsFixed(1)}km/h',
-          magnitudeMeters: displaySpeedKmh,
-        ));
+        _addAnomaly(
+          key,
+          Anomaly(
+            type: AnomalyType.speedSpike,
+            elapsedSeconds: elapsed,
+            busKey: key,
+            description:
+                'Displayed speed ${displaySpeedKmh.toStringAsFixed(1)}km/h',
+            magnitudeMeters: displaySpeedKmh,
+          ),
+        );
       }
 
       // Collect pending events from afterBatch.
