@@ -43,6 +43,7 @@ void main() {
     );
 
     expect(find.text('47.50000, -52.70000'), findsOneWidget);
+    expect(find.text('Bus 1311'), findsOneWidget);
 
     controller.add({
       '1311': _busState(

@@ -466,8 +466,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
 
     // Use the font stack advertised by the OpenFreeMap style. Labels live in
-    // their own layer so every physical vehicle ID can be rendered above its
-    // red dot without depending on the native annotation manager.
+    // their own layer so each route number can be rendered above its red dot
+    // without depending on the native annotation manager.
     await controller.addSymbolLayer(
       _busesSourceId,
       _busLabelsLayerId,
@@ -552,9 +552,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
       final lat = pos?.$1 ?? state.smoothedLat;
       final lon = pos?.$2 ?? state.smoothedLon;
 
-      final vehicleLabel = state.vehicleId.isNotEmpty
-          ? state.vehicleId
-          : entry.key;
       features.add({
         'type': 'Feature',
         'id': entry.key,
@@ -565,8 +562,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
         'properties': {
           'trackingKey': entry.key,
           'route': state.routeNumber,
-          'vehicle': vehicleLabel,
-          'label': '${state.routeNumber} · $vehicleLabel',
+          'label': '${state.routeNumber}',
         },
       });
     }
