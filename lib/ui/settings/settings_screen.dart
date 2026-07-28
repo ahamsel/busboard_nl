@@ -107,7 +107,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'How often to refresh live data',
+                      'How often to check for new live coordinates',
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withValues(
                           alpha: 0.4,
@@ -164,77 +164,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Metrobus currently refreshes GPS snapshots about every '
+                      '10 seconds. The map animates smoothly between them.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.4,
+                        ),
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 16),
-
-            // Enhanced Predictions
-            /* // TEMPORARILY DISABLED SCRAPING
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.rocket_launch_outlined,
-                        color: theme.brightness == Brightness.light
-                            ? const Color(0xFF7B1FA2)
-                            : const Color(0xFFCE93D8),
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Enhanced Predictions',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ),
-                      Switch(
-                        value: settings.useEnhancedPredictions,
-                        onChanged: (val) {
-                          ref
-                              .read(settingsProvider.notifier)
-                              .setUseEnhancedPredictions(val);
-                        },
-                        activeTrackColor:
-                            (theme.brightness == Brightness.light
-                                    ? const Color(0xFF7B1FA2)
-                                    : const Color(0xFFCE93D8))
-                                .withValues(alpha: 0.4),
-                        activeThumbColor: theme.brightness == Brightness.light
-                            ? const Color(0xFF7B1FA2)
-                            : const Color(0xFFCE93D8),
-                      ),
-                    ],
-                  ),
-                  // const SizedBox(height: 4),
-                  // Text(
-                  //   'Use Metrobus Mobile for better departure predictions',
-                  //   style: TextStyle(
-                  //     color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                  //     fontSize: 13,
-                  //   ),
-                  // ),
-                  // const SizedBox(height: 8),
-                  // Text(
-                  //   'Scrapes metrobusmobile.com for agency-predicted times. '
-                  //   'Only active for the selected stop.',
-                  //   style: TextStyle(
-                  //     color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
-                  //     fontSize: 11,
-                  //   ),
-                  // ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          */
 
             // Schedule data
             Card(
@@ -362,7 +308,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'BusBoard NL v1.0.0',
+                      'BusBoard NL v1.1.0',
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withValues(
                           alpha: 0.7,
@@ -384,7 +330,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Data: GTFS schedule + TimeTrack live tracking',
+                      'Data: Metrobus public GTFS, GTFS-Realtime and '
+                      'TimeTrack JSON feeds. No webpage scraping.',
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withValues(
                           alpha: 0.3,

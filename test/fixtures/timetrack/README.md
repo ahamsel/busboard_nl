@@ -1,8 +1,8 @@
 # TimeTrack Capture Fixtures
 
-This folder is for local replay fixtures captured from:
-
-- `https://www.metrobus.co.ca/api/timetrack/json/`
+This folder is for local replay fixtures captured from the same production
+live-data chain as the app: GTFS-Realtime first, then the public Fleet View and
+legacy TimeTrack fallbacks.
 
 Capture command:
 
@@ -16,6 +16,9 @@ dart run tool/capture_timetrack_snapshots.dart \
 Replay command:
 
 ```bash
+dart run tool/analyze_live_vehicle_trace.dart \
+  test/fixtures/timetrack/capture.json
+
 BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
 flutter test test/map/bus_motion_snapshot_replay_test.dart
 ```

@@ -1,7 +1,5 @@
-/// TimeTrack live vehicle data model.
-///
-/// Based on the JSON response from:
-/// https://www.metrobus.co.ca/api/timetrack/json/
+/// Normalized Metrobus live vehicle data from GTFS-Realtime, Fleet View, or
+/// the legacy TimeTrack fallback.
 class TimeTrackVehicle {
   final String routeRun;
   final String currentRoute;
@@ -139,6 +137,37 @@ class TimeTrackVehicle {
         'departureTimeAtClosestStop',
       ]),
     );
+  }
+
+  /// Serialize the normalized model for diagnostic capture and deterministic
+  /// replay through the same motion engine used by the map.
+  Map<String, dynamic> toJson() {
+    return {
+      'routeRun': routeRun,
+      'currentRoute': currentRoute,
+      'routeNumber': routeNumber,
+      'vehicle': vehicle,
+      'timeStamp': timeStamp,
+      'deviation': deviation,
+      'currentLocation': currentLocation,
+      'busLat': busLat,
+      'busLon': busLon,
+      'heading': heading,
+      'speed': speed,
+      'positionTime': positionTime,
+      'positionTimeSeconds': positionTimeSeconds,
+      'gtfsTripHeadsign': gtfsTripHeadsign,
+      'gtfsServiceId': gtfsServiceId,
+      'gtfsStopSequenceStatus': gtfsStopSequenceStatus,
+      'gtfsStopSequenceMinsFromStop': gtfsStopSequenceMinsFromStop,
+      'gtfsStopSequenceDeviation': gtfsStopSequenceDeviation,
+      'gtfsStopSequenceClosestStop': gtfsStopSequenceClosestStop,
+      'gtfsStopSequenceSchedDifferenceMins':
+          gtfsStopSequenceSchedDifferenceMins,
+      'gtfsTripId': gtfsTripId,
+      'shortStatus': shortStatus,
+      'departureTimeAtClosestStop': departureTimeAtClosestStop,
+    };
   }
 
   /// Human-readable status: AHEAD, BEHIND, ON TIME, or empty.

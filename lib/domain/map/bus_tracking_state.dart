@@ -2,7 +2,10 @@ import 'bus_observation.dart';
 
 enum BusStatus { active, stopped, stale, offRoute, backtracking }
 
-/// Smoothed tracking state for a single bus, keyed by routeRun.
+/// Smoothed tracking state for a single physical bus.
+///
+/// The map engine keys by [vehicleId] when Metrobus supplies it, with
+/// route-run and trip identifiers used only as fallbacks.
 class BusTrackingState {
   final String routeRun;
   final String vehicleId;
@@ -35,6 +38,10 @@ class BusTrackingState {
   });
 
   BusTrackingState copyWith({
+    String? routeRun,
+    String? vehicleId,
+    int? routeNumber,
+    String? headsign,
     String? currentTripId,
     String? shapeId,
     List<BusObservation>? observations,
@@ -46,10 +53,10 @@ class BusTrackingState {
     DateTime? lastUpdateTime,
   }) {
     return BusTrackingState(
-      routeRun: routeRun,
-      vehicleId: vehicleId,
-      routeNumber: routeNumber,
-      headsign: headsign,
+      routeRun: routeRun ?? this.routeRun,
+      vehicleId: vehicleId ?? this.vehicleId,
+      routeNumber: routeNumber ?? this.routeNumber,
+      headsign: headsign ?? this.headsign,
       currentTripId: currentTripId ?? this.currentTripId,
       shapeId: shapeId ?? this.shapeId,
       observations: observations ?? this.observations,

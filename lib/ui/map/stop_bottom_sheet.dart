@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/gtfs/gtfs_models.dart';
 import '../../state/providers.dart';
+import '../alerts/service_alert_card.dart';
 
 class StopBottomSheet extends ConsumerWidget {
   final StopInfo stop;
@@ -14,6 +15,17 @@ class StopBottomSheet extends ConsumerWidget {
     final theme = Theme.of(context);
     final selectedId = ref.watch(settingsProvider).selectedStopId;
     final isSelected = stop.stopId == selectedId;
+    final stopAlerts =
+        ref
+            .watch(serviceUpdatesProvider)
+            .value
+            ?.activeAlertsAt(DateTime.now())
+            .where(
+              (alert) =>
+                  alert.appliesTo(routeIds: const {}, stopId: stop.stopId),
+            )
+            .toList() ??
+        const [];
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -78,6 +90,18 @@ class StopBottomSheet extends ConsumerWidget {
               ),
             ],
           ),
+          if (stopAlerts.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            ServiceAlertCard(
+              alert: stopAlerts.first,
+              stopNames: {stop.stopId: stop.stopName},
+              compact: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/alerts');
+              },
+            ),
+          ],
           const SizedBox(height: 20),
           Row(
             children: [

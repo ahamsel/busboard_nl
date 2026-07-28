@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:http/http.dart' as http;
 
 void main(List<String> args) async {
@@ -9,12 +10,14 @@ void main(List<String> args) async {
   await outFile.parent.create(recursive: true);
 
   final client = http.Client();
+  final api = TimeTrackApi();
   final frames = <Map<String, dynamic>>[];
   final startedAt = DateTime.now().toUtc();
   final endAt = startedAt.add(Duration(seconds: config.durationSeconds));
 
   stdout.writeln(
-    '[Capture] url=${config.url} interval=${config.intervalSeconds}s '
+    '[Capture] source=${config.url ?? "app production live-data chain"} '
+    'interval=${config.intervalSeconds}s '
     'duration=${config.durationSeconds}s out=${outFile.path}',
   );
 
@@ -24,19 +27,43 @@ void main(List<String> args) async {
     Map<String, dynamic> frame;
 
     try {
-      final response = await client
-          .get(Uri.parse(config.url))
-          .timeout(const Duration(seconds: 12));
-
-      final vehicles = _decodeVehicles(response.body);
-      frame = {
-        'fetch_time': fetchTime.toIso8601String(),
-        'status_code': response.statusCode,
-        'vehicles': vehicles,
-      };
-      stdout.writeln(
-        '[Capture] #$index status=${response.statusCode} vehicles=${vehicles.length}',
-      );
+      if (config.url != null) {
+        final response = await client
+            .get(Uri.parse(config.url!))
+            .timeout(const Duration(seconds: 12));
+        final vehicles = _decodeVehicles(response.body);
+        frame = {
+          'fetch_time': fetchTime.toIso8601String(),
+          'status_code': response.statusCode,
+          'source': 'custom-json',
+          'vehicles': vehicles,
+        };
+        stdout.writeln(
+          '[Capture] #$index source=custom-json '
+          'status=${response.statusCode} vehicles=${vehicles.length}',
+        );
+      } else {
+        final result = await api.fetchVehiclesResult();
+        final physicalIds = result.vehicles
+            .map((vehicle) => vehicle.vehicle.trim())
+            .where((vehicle) => vehicle.isNotEmpty)
+            .toSet();
+        frame = {
+          'fetch_time': fetchTime.toIso8601String(),
+          'status_code': result.succeeded ? 200 : result.statusCode ?? -1,
+          'source': result.source?.name,
+          'vehicles': result.vehicles
+              .map((vehicle) => vehicle.toJson())
+              .toList(),
+          if (!result.succeeded) 'error': result.error,
+        };
+        stdout.writeln(
+          '[Capture] #$index source=${result.source?.label ?? "failed"} '
+          'status=${frame['status_code']} rows=${result.vehicles.length} '
+          'physical=${physicalIds.length} '
+          'duplicateAssignments=${result.vehicles.length - physicalIds.length}',
+        );
+      }
     } catch (e) {
       frame = {
         'fetch_time': fetchTime.toIso8601String(),
@@ -60,6 +87,9 @@ void main(List<String> args) async {
   final payload = {
     'captured_at': startedAt.toIso8601String(),
     'source_url': config.url,
+    'source_mode': config.url == null
+        ? 'app-production-fallback-chain'
+        : 'custom-json',
     'interval_seconds': config.intervalSeconds,
     'duration_seconds': config.durationSeconds,
     'frames': frames,
@@ -68,12 +98,13 @@ void main(List<String> args) async {
   final encoder = const JsonEncoder.withIndent('  ');
   await outFile.writeAsString(encoder.convert(payload));
   client.close();
+  api.dispose();
 
   stdout.writeln('[Capture] wrote ${frames.length} frames to ${outFile.path}');
 }
 
 class _CaptureConfig {
-  final String url;
+  final String? url;
   final int intervalSeconds;
   final int durationSeconds;
   final String outPath;
@@ -87,7 +118,7 @@ class _CaptureConfig {
 }
 
 _CaptureConfig _parseArgs(List<String> args) {
-  String url = 'https://www.metrobus.co.ca/api/timetrack/json/';
+  String? url;
   var intervalSeconds = 5;
   var durationSeconds = 300;
   var outPath = 'test/fixtures/timetrack/capture.json';
@@ -130,8 +161,13 @@ Never _printUsageAndExit() {
   stdout.writeln('Usage:');
   stdout.writeln(
     '  dart run tool/capture_timetrack_snapshots.dart '
-    '[--url <endpoint>] [--interval <seconds>] [--duration <seconds>] '
+    '[--url <custom-json-endpoint>] [--interval <seconds>] '
+    '[--duration <seconds>] '
     '[--out <path>]',
+  );
+  stdout.writeln(
+    '  Without --url, captures the same GTFS-Realtime/Fleet View/legacy '
+    'fallback chain used by the app.',
   );
   exit(0);
 }

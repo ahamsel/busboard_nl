@@ -1,14 +1,43 @@
 import 'package:flutter/material.dart';
-import '../../domain/map/bus_tracking_state.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
-class BusBottomSheet extends StatelessWidget {
+import '../../domain/map/bus_tracking_state.dart';
+import '../../state/providers.dart';
+import '../alerts/service_alert_card.dart';
+
+class BusBottomSheet extends ConsumerWidget {
   final BusTrackingState bus;
 
   const BusBottomSheet({super.key, required this.bus});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    var liveBus = bus;
+    final tracking = ref.watch(busTrackingStreamProvider).value;
+    if (tracking != null) {
+      for (final state in tracking.values) {
+        if (state.vehicleId == bus.vehicleId) {
+          liveBus = state;
+          break;
+        }
+      }
+    }
+    final lastObservation = liveBus.observations.lastWhere(
+      (observation) => !observation.rejected,
+      orElse: () => liveBus.observations.last,
+    );
+    final routeAlerts =
+        ref
+            .watch(serviceUpdatesProvider)
+            .value
+            ?.activeAlertsAt(DateTime.now())
+            .where(
+              (alert) => alert.appliesTo(routeIds: {'${liveBus.routeNumber}'}),
+            )
+            .toList() ??
+        const [];
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -64,15 +93,15 @@ class BusBottomSheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      bus.headsign.isNotEmpty
-                          ? bus.headsign
-                          : 'Route ${bus.routeNumber}',
+                      liveBus.headsign.isNotEmpty
+                          ? liveBus.headsign
+                          : 'Route ${liveBus.routeNumber}',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
-                      'Bus ${bus.vehicleId}',
+                      'Bus ${liveBus.vehicleId}',
                       style: TextStyle(
                         color: theme.colorScheme.onSurface.withValues(
                           alpha: 0.45,
@@ -83,7 +112,7 @@ class BusBottomSheet extends StatelessWidget {
                   ],
                 ),
               ),
-              _StatusBadge(status: bus.status),
+              _StatusBadge(status: liveBus.status),
             ],
           ),
           const SizedBox(height: 16),
@@ -91,24 +120,87 @@ class BusBottomSheet extends StatelessWidget {
             children: [
               _InfoChip(
                 label: 'Speed',
-                value: '${bus.observations.last.speed.round()} km/h',
+                value: '${lastObservation.speed.round()} km/h',
               ),
               const SizedBox(width: 12),
               _InfoChip(
                 label: 'Heading',
-                value: '${bus.smoothedHeading.round()}°',
+                value: '${liveBus.smoothedHeading.round()}°',
               ),
               const SizedBox(width: 12),
-              _InfoChip(label: 'Updated', value: _timeAgo(bus.lastUpdateTime)),
+              _InfoChip(
+                label: 'GPS fix',
+                value: _timeAgo(lastObservation.measurementTime),
+              ),
             ],
           ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.045),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.my_location,
+                  size: 16,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${lastObservation.lat.toStringAsFixed(5)}, '
+                    '${lastObservation.lon.toStringAsFixed(5)}',
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'LIVE GPS',
+                  style: TextStyle(
+                    color: theme.colorScheme.secondary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (routeAlerts.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ServiceAlertCard(
+              alert: routeAlerts.first,
+              compact: true,
+              onTap: () {
+                Navigator.pop(context);
+                context.go('/alerts');
+              },
+            ),
+          ],
         ],
       ),
     );
   }
 
   String _timeAgo(DateTime time) {
-    final diff = DateTime.now().difference(time);
+    final rawDiff = DateTime.now().difference(time);
+    final diff = rawDiff.isNegative ? Duration.zero : rawDiff;
     if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
     return '${diff.inMinutes}m ago';
   }

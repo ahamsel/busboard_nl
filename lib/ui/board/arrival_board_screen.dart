@@ -5,9 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../state/providers.dart';
 import '../../data/realtime/metrobus_mobile_api.dart';
+import '../../data/realtime/service_alert_models.dart';
 import '../../data/realtime/timetrack_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
+import '../alerts/service_alert_card.dart';
 import 'arrival_row_tile.dart';
 
 /// Arrival board screen for a selected stop.
@@ -30,7 +32,8 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   List<ArrivalRow> _arrivals = [];
   bool _loading = true;
   bool _liveAvailable = false;
-  bool _enhancedAvailable = false;
+  bool _refreshInProgress = false;
+  String? _liveIssue;
   String? _error;
 
   @override
@@ -68,61 +71,72 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   }
 
   Future<void> _refreshData() async {
-    final repoAsync = ref.read(gtfsRepositoryProvider);
-    final repo = repoAsync.asData?.value;
-    if (repo == null) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = 'Schedule data not loaded';
-        });
-      }
-      return;
-    }
+    if (_refreshInProgress) return;
+    _refreshInProgress = true;
 
-    final service = ArrivalService(repo);
-
-    // Try live data
-    List<TimeTrackVehicle>? liveVehicles;
-    bool liveOk = false;
     try {
-      final api = ref.read(timetrackApiProvider);
-      liveVehicles = await api.fetchVehicles();
-      liveOk = liveVehicles.isNotEmpty;
-    } catch (_) {}
+      final repoAsync = ref.read(gtfsRepositoryProvider);
+      final repo = repoAsync.asData?.value;
+      if (repo == null) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _error = 'Schedule data not loaded';
+          });
+        }
+        return;
+      }
 
-    // Try enhanced predictions (scraped data)
-    List<MetrobusDeparture>? scraped;
-    bool enhancedOk = false;
-    /* // TEMPORARILY DISABLED SCRAPING
-    if (ref.read(settingsProvider).useEnhancedPredictions) {
+      final service = ArrivalService(repo);
+
+      // Try live data while preserving the difference between a valid empty
+      // response and an upstream failure.
+      List<TimeTrackVehicle>? liveVehicles;
+      bool liveOk = false;
+      String? liveIssue;
+      try {
+        final api = ref.read(timetrackApiProvider);
+        final result = await api.fetchVehiclesResult();
+        if (result.succeeded) {
+          liveVehicles = result.vehicles;
+          liveOk = liveVehicles.isNotEmpty;
+          if (!liveOk) {
+            liveIssue = 'No live vehicles';
+          }
+        } else {
+          liveIssue = 'Live feed error';
+        }
+      } catch (_) {
+        liveIssue = 'Live feed error';
+      }
+
+      // Try Metrobus's official stop-specific prediction endpoint.
+      List<MetrobusDeparture>? stopPredictions;
       try {
         final mobileApi = ref.read(metrobusMobileApiProvider);
-        final result = await mobileApi.fetchDepartures(widget.stopId);
-        if (result.isNotEmpty) {
-          scraped = result;
-          enhancedOk = true;
-        }
+        final result = await mobileApi.fetchDeparturesResult(widget.stopId);
+        stopPredictions = result.departures;
       } catch (_) {}
-    }
-    */
 
-    final arrivals = service.getUpcomingArrivals(
-      stopId: widget.stopId,
-      now: DateTime.now(),
-      liveVehicles: liveVehicles,
-      scrapedDepartures: scraped,
-    );
+      final arrivals = service.getUpcomingArrivals(
+        stopId: widget.stopId,
+        now: DateTime.now(),
+        liveVehicles: liveVehicles,
+        stopPredictions: stopPredictions,
+      );
 
-    if (mounted) {
-      setState(() {
-        _arrivals = arrivals;
-        _loading = false;
-        _liveAvailable = liveOk;
-        _enhancedAvailable = enhancedOk;
-        _lastUpdate = DateTime.now();
-        _error = null;
-      });
+      if (mounted) {
+        setState(() {
+          _arrivals = arrivals;
+          _loading = false;
+          _liveAvailable = liveOk;
+          _liveIssue = liveIssue;
+          _lastUpdate = DateTime.now();
+          _error = null;
+        });
+      }
+    } finally {
+      _refreshInProgress = false;
     }
   }
 
@@ -138,6 +152,9 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
 
     final theme = Theme.of(context);
     final stopInfo = ref.watch(stopInfoProvider(widget.stopId));
+    final relevantAlerts = _relevantAlerts(
+      ref.watch(serviceUpdatesProvider).value,
+    );
     final timeFormat = DateFormat('HH:mm:ss');
 
     return Scaffold(
@@ -210,31 +227,6 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_enhancedAvailable) ...[
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: theme.brightness == Brightness.light
-                                ? const Color(0xFF7B1FA2)
-                                : const Color(0xFFCE93D8),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          'ENHANCED',
-                          style: TextStyle(
-                            color: theme.brightness == Brightness.light
-                                ? const Color(0xFF7B1FA2)
-                                : const Color(0xFFCE93D8),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
                       if (_liveAvailable) ...[
                         Container(
                           width: 6,
@@ -248,7 +240,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          'LIVE',
+                          'GPS FEED',
                           style: TextStyle(
                             color: theme.brightness == Brightness.light
                                 ? const Color(0xFF2E7D32)
@@ -260,7 +252,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                         ),
                       ] else
                         Text(
-                          'Live unavailable',
+                          _liveIssue ?? 'Live unavailable',
                           style: TextStyle(
                             fontSize: 11,
                             color: theme.colorScheme.onSurface.withValues(
@@ -275,12 +267,56 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               ),
             ),
 
+            if (relevantAlerts.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+                child: Column(
+                  children: [
+                    ServiceAlertCard(
+                      alert: relevantAlerts.first,
+                      stopNames: stopInfo == null
+                          ? const {}
+                          : {widget.stopId: stopInfo.stopName},
+                      compact: true,
+                      onTap: () => context.go('/alerts'),
+                    ),
+                    if (relevantAlerts.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5),
+                        child: TextButton(
+                          onPressed: () => context.go('/alerts'),
+                          child: Text(
+                            '${relevantAlerts.length - 1} more relevant '
+                            '${relevantAlerts.length == 2 ? "alert" : "alerts"}',
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
             // Arrivals list
             Expanded(child: _buildArrivalsList(theme)),
           ],
         ),
       ),
     );
+  }
+
+  List<ServiceAlert> _relevantAlerts(ServiceUpdates? updates) {
+    if (updates == null) return const [];
+    final routes = _arrivals.map((arrival) => arrival.routeShortName).toSet();
+    final trips = _arrivals.map((arrival) => arrival.tripId).toSet();
+    return updates
+        .activeAlertsAt(DateTime.now())
+        .where(
+          (alert) => alert.appliesTo(
+            routeIds: routes,
+            stopId: widget.stopId,
+            tripIds: trips,
+          ),
+        )
+        .toList();
   }
 
   Widget _buildArrivalsList(ThemeData theme) {
