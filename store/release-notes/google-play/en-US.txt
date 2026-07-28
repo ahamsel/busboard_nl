@@ -1,0 +1,7 @@
+New in 1.1.0:
+• Service alerts with stop and route impacts
+• Better live arrival predictions
+• More reliable individual-bus tracking and smoother map movement
+• Cleaner route-number map markers, with bus IDs kept in details
+• Live refresh while arrival and map sheets are open
+• Reliability and layout improvements

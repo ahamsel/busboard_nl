@@ -1,0 +1,24 @@
+BusBoard NL is a focused transit companion for Metrobus riders in St. John's, Mount Pearl, and Paradise.
+
+See what is happening now
+
+• View current bus locations on an interactive map.
+• Track each physical bus separately, with smooth movement between Metrobus position updates.
+• Filter the map by route, then tap a bus for its vehicle and trip details.
+
+Plan from any stop
+
+• Enter a four-digit stop ID or choose a nearby stop.
+• Compare Metrobus live predictions with scheduled departures.
+• See run and vehicle details when Metrobus provides them.
+• Pull to refresh for the latest available information.
+
+Stay informed
+
+• Read current Metrobus service alerts and route or stop impacts.
+• See alerts that apply to the stop or bus you are viewing.
+• Use light or dark mode with a clean interface built for quick checks.
+
+BusBoard NL uses Metrobus public schedule, GTFS-Realtime, and stop-prediction data. Vehicle positions and predictions update periodically and can be delayed or unavailable. Please be at your stop early.
+
+BusBoard NL is an independent app and is not affiliated with Metrobus Transit.
