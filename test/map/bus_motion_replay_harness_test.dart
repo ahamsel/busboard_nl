@@ -232,12 +232,13 @@ void main() {
           : activeBackstepCount / totalSamples;
 
       expect(offShapeP90, lessThan(6.0));
-      // Backsteps can occur during large corrections (e.g. warm-up
-      // over-projection) and are handled by blend smoothing. Allow a
-      // small rate consistent with the real-world replay harness.
-      expect(backstepRate, lessThan(0.02));
-      expect(speedErrP50, lessThan(25.0));
-      expect(speedFidelityP50, greaterThan(0.3));
+      // A correction behind the marker now holds its visual high-water mark
+      // until source progress catches up. This intentionally trades some
+      // short pauses for a strict no-snap-back invariant.
+      expect(activeBackstepCount, 0);
+      expect(backstepRate, 0.0);
+      expect(speedErrP50, lessThan(40.0));
+      expect(speedFidelityP90, greaterThan(0.3));
       expect(correctionP90Median, lessThan(250.0));
       expect(innovationP50Median, lessThan(120.0));
     },

@@ -50,8 +50,17 @@ class ArrivalRow {
   /// Schedule difference in minutes from live (positive=ahead, negative=behind).
   final int? schedDiffMins;
 
-  /// Whether this row's prediction came from enhanced (scraped) data.
+  /// Whether this row was matched to Metrobus's stop-specific data.
   final bool isEnhanced;
+
+  /// Route/run identifier reported by Metrobus (for example, "10-4").
+  final String? routeRun;
+
+  /// The bus's nearest/current location text, when supplied.
+  final String? currentLocation;
+
+  /// Prediction confidence label reported by Metrobus.
+  final String? predictionConfidence;
 
   const ArrivalRow({
     required this.routeShortName,
@@ -65,6 +74,9 @@ class ArrivalRow {
     this.vehicleNumber,
     this.schedDiffMins,
     this.isEnhanced = false,
+    this.routeRun,
+    this.currentLocation,
+    this.predictionConfidence,
   });
 
   /// The display time (predicted if available, otherwise scheduled).

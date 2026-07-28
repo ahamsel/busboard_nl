@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/gtfs/gtfs_models.dart';
 import '../data/gtfs/gtfs_repository.dart';
 import '../data/realtime/metrobus_mobile_api.dart';
+import '../data/realtime/service_alert_models.dart';
+import '../data/realtime/service_alerts_api.dart';
 import '../data/realtime/timetrack_api.dart';
 import '../data/realtime/timetrack_models.dart';
 import '../domain/arrival/arrival_models.dart';
@@ -23,7 +27,6 @@ class AppSettings {
   final bool forceGtfsRefresh;
   final ThemeMode themeMode;
   final ThemeMode? mapThemeMode; // null = follow app theme
-  final bool useEnhancedPredictions;
 
   const AppSettings({
     this.selectedStopId,
@@ -32,7 +35,6 @@ class AppSettings {
     this.forceGtfsRefresh = false,
     this.themeMode = ThemeMode.system,
     this.mapThemeMode,
-    this.useEnhancedPredictions = false,
   });
 
   AppSettings copyWith({
@@ -42,7 +44,6 @@ class AppSettings {
     bool? forceGtfsRefresh,
     ThemeMode? themeMode,
     ThemeMode? mapThemeMode,
-    bool? useEnhancedPredictions,
   }) {
     return AppSettings(
       selectedStopId: selectedStopId ?? this.selectedStopId,
@@ -52,8 +53,6 @@ class AppSettings {
       forceGtfsRefresh: forceGtfsRefresh ?? this.forceGtfsRefresh,
       themeMode: themeMode ?? this.themeMode,
       mapThemeMode: mapThemeMode ?? this.mapThemeMode,
-      useEnhancedPredictions:
-          useEnhancedPredictions ?? this.useEnhancedPredictions,
     );
   }
 }
@@ -77,8 +76,6 @@ class SettingsNotifier extends Notifier<AppSettings> {
       mapThemeMode: prefs.getInt('mapThemeMode') != null
           ? ThemeMode.values[prefs.getInt('mapThemeMode')!]
           : null,
-      useEnhancedPredictions:
-          prefs.getBool('useEnhancedPredictions') ?? false,
     );
   }
 
@@ -121,14 +118,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       forceGtfsRefresh: state.forceGtfsRefresh,
       themeMode: state.themeMode,
       mapThemeMode: mode,
-      useEnhancedPredictions: state.useEnhancedPredictions,
     );
-  }
-
-  Future<void> setUseEnhancedPredictions(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('useEnhancedPredictions', value);
-    state = state.copyWith(useEnhancedPredictions: value);
   }
 
   void requestForceRefresh() {
@@ -169,12 +159,49 @@ final gtfsRepositoryProvider = FutureProvider<GtfsRepository>((ref) async {
   return repo;
 });
 
-// ─── Metrobus Mobile (Enhanced Predictions) ───────────────
+// ─── Metrobus Stop Predictions ────────────────────────────
 
 final metrobusMobileApiProvider = Provider<MetrobusMobileApi>((ref) {
   final api = MetrobusMobileApi();
   ref.onDispose(() => api.dispose());
   return api;
+});
+
+// ─── Service Alerts + Network Status ─────────────────────
+
+final serviceAlertsApiProvider = Provider<ServiceAlertsApi>((ref) {
+  final api = ServiceAlertsApi();
+  ref.onDispose(api.dispose);
+  return api;
+});
+
+final serviceUpdatesProvider = StreamProvider<ServiceUpdates>((ref) {
+  final api = ref.watch(serviceAlertsApiProvider);
+  final controller = StreamController<ServiceUpdates>();
+  var disposed = false;
+
+  Future<void> refresh() async {
+    try {
+      final updates = await api.fetchUpdates();
+      if (!disposed) controller.add(updates);
+    } catch (error, stackTrace) {
+      // A transient outage should surface as an error but must not terminate
+      // the polling stream; the next minute gets another clean attempt.
+      if (!disposed) controller.addError(error, stackTrace);
+    }
+  }
+
+  unawaited(refresh());
+  final timer = Timer.periodic(
+    const Duration(seconds: 60),
+    (_) => unawaited(refresh()),
+  );
+  ref.onDispose(() {
+    disposed = true;
+    timer.cancel();
+    unawaited(controller.close());
+  });
+  return controller.stream;
 });
 
 // ─── TimeTrack Live Data ───────────────────────────────────
@@ -211,7 +238,10 @@ final arrivalsProvider = FutureProvider.autoDispose<List<ArrivalRow>>((
   List<TimeTrackVehicle>? liveVehicles;
   try {
     final api = ref.read(timetrackApiProvider);
-    liveVehicles = await api.fetchVehicles();
+    final result = await api.fetchVehiclesResult();
+    if (result.succeeded) {
+      liveVehicles = result.vehicles;
+    }
   } catch (_) {
     // Live data unavailable — continue with schedule only
   }
@@ -285,8 +315,13 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
 
   // Initial fetch
   final initialNow = DateTime.now();
-  final vehicles = await api.fetchVehicles();
-  engine.processBatch(vehicles, initialNow);
+  final initialResult = await api.fetchVehiclesResult();
+  final vehicles = initialResult.vehicles;
+  if (initialResult.succeeded) {
+    engine.processBatch(vehicles, initialNow);
+  } else if (kDebugMode) {
+    debugPrint('[Map] Live-data initial fetch failed: ${initialResult.error}');
+  }
   if (kDebugMode) {
     final snapped = engine.states.values
         .where((s) => s.shapeId != null && s.progressAlongRoute != null)
@@ -312,9 +347,13 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
         'meas=${d.kalmanMeasurementStdM.toStringAsFixed(1)} '
         'blend=${d.blendDurationMs}ms';
     debugPrint(
-      '[Map] TimeTrack initial fetch: vehicles=${vehicles.length}, '
+      '[Map] Live-data initial fetch: '
+      'source=${initialResult.source?.label ?? "unknown"}, '
+      'vehicles=${vehicles.length}, '
       'states=${engine.states.length}, snapped=$snapped, '
-      'accepted=${d.acceptedUpdates}, dup=${d.duplicateOrOutOfOrderUpdates}, '
+      'assignDup=${d.duplicateVehicleAssignments}, '
+      'accepted=${d.acceptedUpdates}, '
+      'obsDup=${d.duplicateOrOutOfOrderUpdates}, '
       'rejected=${d.rejectedOutliers}, correction=$correction, '
       'innovation=$innovation, speedFidelity=$speedFidelity, tuning=$tuning',
     );
@@ -325,7 +364,14 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
   await for (final _ in Stream.periodic(interval)) {
     try {
       final pollNow = DateTime.now();
-      final vehicles = await api.fetchVehicles();
+      final result = await api.fetchVehiclesResult();
+      if (!result.succeeded) {
+        if (kDebugMode) {
+          debugPrint('[Map] Live-data poll failed: ${result.error}');
+        }
+        continue;
+      }
+      final vehicles = result.vehicles;
       engine.processBatch(vehicles, pollNow);
       if (kDebugMode) {
         final snapped = engine.states.values
@@ -352,9 +398,12 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
             'meas=${d.kalmanMeasurementStdM.toStringAsFixed(1)} '
             'blend=${d.blendDurationMs}ms';
         debugPrint(
-          '[Map] TimeTrack poll: vehicles=${vehicles.length}, '
+          '[Map] Live-data poll: source=${result.source?.label ?? "unknown"}, '
+          'vehicles=${vehicles.length}, '
           'states=${engine.states.length}, snapped=$snapped, '
-          'accepted=${d.acceptedUpdates}, dup=${d.duplicateOrOutOfOrderUpdates}, '
+          'assignDup=${d.duplicateVehicleAssignments}, '
+          'accepted=${d.acceptedUpdates}, '
+          'obsDup=${d.duplicateOrOutOfOrderUpdates}, '
           'rejected=${d.rejectedOutliers}, correction=$correction, '
           'innovation=$innovation, speedFidelity=$speedFidelity, tuning=$tuning',
         );
@@ -362,7 +411,7 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
       yield Map.unmodifiable(engine.states);
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('[Map] TimeTrack poll error: $e');
+        debugPrint('[Map] Live-data poll error: $e');
       }
       // Continue on error
     }

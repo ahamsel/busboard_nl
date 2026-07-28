@@ -13,6 +13,7 @@ import 'shape_matcher.dart';
 class BusMotionDiagnostics {
   final DateTime timestamp;
   final int processedVehicles;
+  final int duplicateVehicleAssignments;
   final int acceptedUpdates;
   final int duplicateOrOutOfOrderUpdates;
   final int rejectedOutliers;
@@ -30,6 +31,7 @@ class BusMotionDiagnostics {
   const BusMotionDiagnostics({
     required this.timestamp,
     required this.processedVehicles,
+    this.duplicateVehicleAssignments = 0,
     required this.acceptedUpdates,
     required this.duplicateOrOutOfOrderUpdates,
     required this.rejectedOutliers,
@@ -48,6 +50,7 @@ class BusMotionDiagnostics {
   BusMotionDiagnostics.empty()
     : timestamp = DateTime.fromMillisecondsSinceEpoch(0),
       processedVehicles = 0,
+      duplicateVehicleAssignments = 0,
       acceptedUpdates = 0,
       duplicateOrOutOfOrderUpdates = 0,
       rejectedOutliers = 0,
@@ -293,8 +296,6 @@ class BusMotionEngine {
   static const _autoAdjustEwmaAlpha = 0.2;
   static const _blendDurationMinMs = 420;
   static const _blendDurationMaxMs = 1100;
-  static const _maxVisualBackwardMeters = 120.0;
-  static const _maxOffRouteVisualBackwardMeters = 60.0;
 
   /// Counter for consecutive backward movements per bus.
   final Map<String, int> _backwardCount = {};
@@ -358,6 +359,7 @@ class BusMotionEngine {
 
   /// Process a batch of vehicles from the TimeTrack API.
   void processBatch(List<TimeTrackVehicle> vehicles, DateTime fetchTime) {
+    final canonicalVehicles = _selectCanonicalVehicles(vehicles);
     final seenKeys = <String>{};
     final correctionSamples = <double>[];
     final innovationSamples = <double>[];
@@ -366,9 +368,10 @@ class BusMotionEngine {
     var duplicateUpdates = 0;
     var rejectedOutliers = 0;
 
-    for (final v in vehicles) {
-      final key = _resolveBusKey(v);
-      if (key == null || v.busLat == 0.0 || v.busLon == 0.0) continue;
+    for (final entry in canonicalVehicles.entries) {
+      final key = entry.key;
+      final v = entry.value;
+      if (v.busLat == 0.0 || v.busLon == 0.0) continue;
       processedVehicles++;
 
       seenKeys.add(key);
@@ -459,6 +462,9 @@ class BusMotionEngine {
     _lastDiagnostics = BusMotionDiagnostics(
       timestamp: fetchTime,
       processedVehicles: processedVehicles,
+      duplicateVehicleAssignments:
+          vehicles.where((vehicle) => _resolveBusKey(vehicle) != null).length -
+          canonicalVehicles.length,
       acceptedUpdates: acceptedUpdates,
       duplicateOrOutOfOrderUpdates: duplicateUpdates,
       rejectedOutliers: rejectedOutliers,
@@ -602,6 +608,7 @@ class BusMotionEngine {
     // Use fetchTime (not DateTime.now()) so blending works deterministically
     // in both production and test harnesses.
     final currentVisual = _interpolateSingle(key, state, fetchTime);
+    final visualProgressBeforeUpdate = _renderProgressByKey[key];
     if (currentVisual != null) {
       final currentShapeId = state.shapeId;
       final currentProgress = currentShapeId == null
@@ -635,6 +642,10 @@ class BusMotionEngine {
       // Trip changed — re-resolve shape
       final trip = _repo.tripsById[obs.gtfsTripId];
       shapeId = trip?.shapeId;
+      // Route progress belongs to one directed shape. Carrying the outgoing
+      // trip's distance into an incoming trip can place the same physical bus
+      // kilometres down the new shape at a terminal turnaround.
+      progress = null;
     }
     // Fallback: match by route number + headsign when no shape resolved
     shapeId ??= _resolveShapeFallback(v);
@@ -645,6 +656,7 @@ class BusMotionEngine {
       _renderProgressByKey.remove(key);
       _blendOrigins.remove(key);
       _backwardCount.remove(key);
+      _progressFilters.remove(key);
     }
 
     if (shapeId != null) {
@@ -722,7 +734,11 @@ class BusMotionEngine {
       closestStopProgressM: closestStopProgressM,
       minsFromClosestStop: minsFromStop,
     );
-    final newObs = _addObservation(state.observations, obsWithProgress);
+    // Observations from the previous trip reference its directed shape and
+    // progress coordinate. Do not interpolate across that incompatible axis.
+    final newObs = tripChanged
+        ? <BusObservation>[obsWithProgress]
+        : _addObservation(state.observations, obsWithProgress);
 
     if (shapeId != null &&
         progress != null &&
@@ -739,6 +755,10 @@ class BusMotionEngine {
     }
 
     _states[key] = state.copyWith(
+      routeRun: v.routeRun.isNotEmpty ? v.routeRun : state.routeRun,
+      vehicleId: v.vehicle.isNotEmpty ? v.vehicle : state.vehicleId,
+      routeNumber: v.routeNumber,
+      headsign: v.gtfsTripHeadsign,
       currentTripId: obs.gtfsTripId,
       shapeId: shapeId,
       observations: newObs,
@@ -759,13 +779,38 @@ class BusMotionEngine {
             displayLon,
           );
 
-    // When a blend origin was captured, reset render progress to the new
-    // observation so anti-typewriter clamping does not freeze the bus at
-    // the stale prediction-era high-water mark. The blend itself smooths
-    // the visual transition from old to new position, so the clamp
-    // baseline should track the corrected value, not the predicted one.
+    // Do not move a marker backward to meet a correction. Keep its visual
+    // high-water mark until later GPS progress catches up. Trip boundaries
+    // clear the old progress axis above and may start a short geographic
+    // terminal blend instead.
     if (correctionMeters != null && progress != null) {
-      _renderProgressByKey[key] = progress;
+      final correctionIsBehind =
+          !tripChanged &&
+          visualProgressBeforeUpdate != null &&
+          progress < visualProgressBeforeUpdate;
+      _renderProgressByKey[key] = correctionIsBehind
+          ? visualProgressBeforeUpdate
+          : progress;
+    }
+
+    if (tripChanged && currentVisual != null) {
+      final transitionDistance = NearestStopService.haversineDistance(
+        currentVisual.$1,
+        currentVisual.$2,
+        displayLat,
+        displayLon,
+      );
+      // At a normal terminal handoff the two trip shapes meet. A short
+      // geographic blend removes the correction without interpolating their
+      // unrelated progress coordinates.
+      if (transitionDistance <= 300.0) {
+        _blendOrigins[key] = _BlendOrigin(
+          lat: currentVisual.$1,
+          lon: currentVisual.$2,
+          heading: currentVisual.$3,
+          startTime: fetchTime,
+        );
+      }
     }
 
     return _UpdateResult.accepted(
@@ -1178,30 +1223,10 @@ class BusMotionEngine {
 
     if (progress >= previous) return progress;
 
-    if (_hasRecentTripTransition(state)) return progress;
-
-    // Keep normal active movement monotonic to avoid "typewriter" jitter.
-    if (state.status == BusStatus.active || state.status == BusStatus.stopped) {
-      return previous;
-    }
-
-    // Allow limited backward correction only when status says we are likely
-    // backtracking/off-route.
-    if (state.status == BusStatus.backtracking) {
-      return math.max(progress, previous - _maxVisualBackwardMeters);
-    }
-    if (state.status == BusStatus.offRoute) {
-      return math.max(progress, previous - _maxOffRouteVisualBackwardMeters);
-    }
+    // Route progress for one physical vehicle on one directed trip is
+    // visually monotonic. Genuine direction changes arrive as a new GTFS
+    // trip/shape and reset this high-water mark in _updateExisting.
     return previous;
-  }
-
-  bool _hasRecentTripTransition(BusTrackingState state) {
-    final good = state.observations.where((o) => !o.rejected).toList();
-    if (good.length < 2) return false;
-    final last = good[good.length - 1].gtfsTripId;
-    final prev = good[good.length - 2].gtfsTripId;
-    return last != prev && (last != null || prev != null);
   }
 
   SnapResult? _trySnap(double lat, double lon, String shapeId) {
@@ -1620,6 +1645,105 @@ class BusMotionEngine {
     if (v.routeRun.isNotEmpty) return v.routeRun;
     if (v.gtfsTripId.isNotEmpty) return 'trip:${v.gtfsTripId}';
     return null;
+  }
+
+  /// TimeTrack can publish two route assignments for one physical vehicle
+  /// during interlining. Processing both records would reset the same tracking
+  /// state twice and can make its red dot appear to jump backward. Keep one
+  /// deterministic, best-supported assignment for each physical key.
+  Map<String, TimeTrackVehicle> _selectCanonicalVehicles(
+    List<TimeTrackVehicle> vehicles,
+  ) {
+    final selected = <String, TimeTrackVehicle>{};
+    for (final vehicle in vehicles) {
+      final key = _resolveBusKey(vehicle);
+      if (key == null) continue;
+
+      final current = selected[key];
+      if (current == null ||
+          _preferAssignment(
+            candidate: vehicle,
+            current: current,
+            existingState: _states[key],
+          )) {
+        selected[key] = vehicle;
+      }
+    }
+    return selected;
+  }
+
+  bool _preferAssignment({
+    required TimeTrackVehicle candidate,
+    required TimeTrackVehicle current,
+    required BusTrackingState? existingState,
+  }) {
+    final candidateHasPosition =
+        candidate.busLat != 0.0 && candidate.busLon != 0.0;
+    final currentHasPosition = current.busLat != 0.0 && current.busLon != 0.0;
+    if (candidateHasPosition != currentHasPosition) return candidateHasPosition;
+
+    final candidateStatus = _assignmentStatusRank(candidate);
+    final currentStatus = _assignmentStatusRank(current);
+    if (candidateStatus != currentStatus) {
+      return candidateStatus > currentStatus;
+    }
+
+    final candidateTrip = _assignmentTripRank(candidate);
+    final currentTrip = _assignmentTripRank(current);
+    if (candidateTrip != currentTrip) return candidateTrip > currentTrip;
+
+    final candidateDistance = _scheduleDistanceSeconds(candidate);
+    final currentDistance = _scheduleDistanceSeconds(current);
+    if (candidateDistance != currentDistance) {
+      return candidateDistance < currentDistance;
+    }
+
+    if (existingState != null) {
+      final candidateContinues =
+          candidate.routeRun.isNotEmpty &&
+          candidate.routeRun == existingState.routeRun;
+      final currentContinues =
+          current.routeRun.isNotEmpty &&
+          current.routeRun == existingState.routeRun;
+      if (candidateContinues != currentContinues) return candidateContinues;
+    }
+
+    // Keep the first equally supported record so feed ordering cannot cause
+    // the assignment to oscillate between polls.
+    return false;
+  }
+
+  int _assignmentStatusRank(TimeTrackVehicle vehicle) {
+    final shortStatus = vehicle.shortStatus.trim().toUpperCase();
+    final longStatus = vehicle.gtfsStopSequenceStatus.trim().toUpperCase();
+    // The legacy feed can retain an old short status while explicitly marking
+    // the route assignment as NO DATA. Treat the explicit status as decisive.
+    if (longStatus == 'NO DATA') return 0;
+    if (shortStatus == 'OT' ||
+        shortStatus.startsWith('A') ||
+        shortStatus.startsWith('B') ||
+        longStatus.contains('ON TIME') ||
+        longStatus.contains('AHEAD') ||
+        longStatus.contains('BEHIND')) {
+      return 2;
+    }
+    if (longStatus.isNotEmpty && longStatus != 'NO DATA') return 1;
+    return 0;
+  }
+
+  int _assignmentTripRank(TimeTrackVehicle vehicle) {
+    if (vehicle.gtfsTripId.isEmpty) return 0;
+    return _repo.tripsById.containsKey(vehicle.gtfsTripId) ? 2 : 1;
+  }
+
+  int _scheduleDistanceSeconds(TimeTrackVehicle vehicle) {
+    final position = vehicle.positionTimeSeconds;
+    final departure = vehicle.departureTimeAtClosestStop;
+    if (position <= 0 || departure <= 0) return 1 << 30;
+
+    final raw = (position - departure).abs();
+    final withinDay = raw % Duration.secondsPerDay;
+    return math.min(withinDay, Duration.secondsPerDay - withinDay);
   }
 
   /// Fallback shape resolution when gtfsTripId is unavailable.

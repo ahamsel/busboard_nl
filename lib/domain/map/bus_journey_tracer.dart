@@ -142,6 +142,7 @@ class _BusTraceState {
   BusStatus? previousStatus;
   String? previousTripId;
   String? previousVehicleId;
+  String? previousShapeId;
   bool wasBlending = false;
   int blendCount = 0;
   int backstepCount = 0;
@@ -329,7 +330,9 @@ class BusJourneyTracer {
       // --- Anomaly detection ---
 
       // Backward jump.
-      if (progressM != null && bs.previousProgressM != null) {
+      if (progressM != null &&
+          bs.previousProgressM != null &&
+          bs.previousShapeId == state.shapeId) {
         final delta = progressM - bs.previousProgressM!;
         if (delta < -thresholds.backwardJumpMeters) {
           final mag = delta.abs();
@@ -460,6 +463,7 @@ class BusJourneyTracer {
 
       // Update tracking state.
       bs.previousProgressM = progressM;
+      bs.previousShapeId = state.shapeId;
       bs.previousLat = lat;
       bs.previousLon = lon;
       bs.previousTimestamp = now;

@@ -28,6 +28,14 @@ class GtfsRepository {
   /// Set [force] to true to re-download even if cache is valid.
   Future<void> load({bool force = false}) async {
     final dirPath = await _downloader.downloadAndExtract(force: force);
+    await loadFromDirectory(dirPath);
+  }
+
+  /// Load already-extracted GTFS files from [dirPath].
+  ///
+  /// This keeps production loading and diagnostic replay on the same parser
+  /// and indexes without forcing a network download or platform cache lookup.
+  Future<void> loadFromDirectory(String dirPath) async {
     final parser = GtfsParser(dirPath);
 
     // Parse all files
@@ -100,15 +108,17 @@ class GtfsRepository {
       if (trip.shapeId == null || trip.shapeId!.isEmpty) continue;
       final route = routesById[trip.routeId];
       if (route == null) continue;
-      tripsByRouteShortName.putIfAbsent(route.routeShortName, () => []).add(
-        TripShapeEntry(
-          tripId: trip.tripId,
-          shapeId: trip.shapeId!,
-          headsign: trip.tripHeadsign,
-          directionId: trip.directionId,
-          serviceId: trip.serviceId,
-        ),
-      );
+      tripsByRouteShortName
+          .putIfAbsent(route.routeShortName, () => [])
+          .add(
+            TripShapeEntry(
+              tripId: trip.tripId,
+              shapeId: trip.shapeId!,
+              headsign: trip.tripHeadsign,
+              directionId: trip.directionId,
+              serviceId: trip.serviceId,
+            ),
+          );
     }
 
     _loaded = true;

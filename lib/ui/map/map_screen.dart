@@ -25,7 +25,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
   MapLibreMapController? _controller;
   Ticker? _ticker;
   bool _styleLoaded = false;
-  final Map<String, Circle> _busAnnotations = {};
   Map<String, BusTrackingState>? _pendingAnnotationTracking;
   bool _annotationUpdateInFlight = false;
   DateTime? _lastAnnotationRenderAt;
@@ -52,6 +51,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
   static const _selectedStopLayerId = 'selected-stop-layer';
   static const _routeShapeSourceId = 'route-shape-source';
   static const _routeShapeLayerId = 'route-shape-layer';
+  static const _busesSourceId = 'buses-source';
+  static const _busesLayerId = 'buses-layer';
+  static const _busLabelsLayerId = 'bus-labels-layer';
 
   void _log(String msg) {
     if (kDebugMode) debugPrint('[Map] $msg');
@@ -67,7 +69,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
   @override
   void dispose() {
     _ticker?.dispose();
-    _busAnnotations.clear();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -247,10 +248,6 @@ class _MapScreenState extends ConsumerState<MapScreen>
     // Re-add sources and layers because style reload clears them
     await _initializeMapResources();
 
-    // Clear local annotation state because style reload wiped the native map content
-    // This forces _renderBusAnnotations to re-add all circles instead of trying to update non-existent ones
-    _busAnnotations.clear();
-
     // Start animation ticker if not already running
     if (_ticker == null) {
       _ticker = Ticker(_onTick);
@@ -277,6 +274,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
       await _addStopsLayer(controller);
       await _addSelectedStopLayer(controller);
       await _addRouteShapeLayer(controller);
+      await _addBusesLayer(controller);
     } catch (e) {
       _log('Error initializing map resources: $e');
     }
@@ -450,7 +448,48 @@ class _MapScreenState extends ConsumerState<MapScreen>
     );
   }
 
-  // ─── Bus Updates (annotation-based) ─────────────────────────
+  Future<void> _addBusesLayer(MapLibreMapController controller) async {
+    await controller.addGeoJsonSource(
+      _busesSourceId,
+      _emptyFeatureCollection(),
+    );
+
+    await controller.addCircleLayer(
+      _busesSourceId,
+      _busesLayerId,
+      const CircleLayerProperties(
+        circleRadius: 9.0,
+        circleColor: '#E53935',
+        circleStrokeWidth: 2.5,
+        circleStrokeColor: '#FFFFFF',
+      ),
+    );
+
+    // Use the font stack advertised by the OpenFreeMap style. Labels live in
+    // their own layer so every physical vehicle ID can be rendered above its
+    // red dot without depending on the native annotation manager.
+    await controller.addSymbolLayer(
+      _busesSourceId,
+      _busLabelsLayerId,
+      const SymbolLayerProperties(
+        textField: [Expressions.get, 'label'],
+        textFont: ['Noto Sans Bold'],
+        textSize: 10.5,
+        textOffset: [
+          Expressions.literal,
+          [0.0, 1.35],
+        ],
+        textAnchor: 'top',
+        textColor: '#8B1111',
+        textHaloColor: '#FFFFFF',
+        textHaloWidth: 1.5,
+        textAllowOverlap: true,
+        textIgnorePlacement: true,
+      ),
+    );
+  }
+
+  // ─── Bus Updates ─────────────────────────────────────────────
 
   void _onTick(Duration elapsed) {
     if (!_styleLoaded) return;
@@ -493,57 +532,52 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
     final interpolated = engine.interpolate(DateTime.now());
 
-    // Apply route filter
-    final filtered = _activeRouteFilter.isEmpty
-        ? tracking
-        : Map.fromEntries(
-            tracking.entries.where(
-              (e) => _activeRouteFilter.contains(e.value.routeNumber),
-            ),
-          );
+    // Unseen vehicles remain in the engine briefly so a transient feed gap
+    // does not destroy their motion history, but they are not live map dots.
+    // This prevents a replaced bus and its stale predecessor being shown as
+    // one route "jumping" between two physical vehicles.
+    final filtered = Map.fromEntries(
+      tracking.entries.where(
+        (entry) =>
+            entry.value.status != BusStatus.stale &&
+            (_activeRouteFilter.isEmpty ||
+                _activeRouteFilter.contains(entry.value.routeNumber)),
+      ),
+    );
 
-    final nextKeys = filtered.keys.toSet();
-    final existingKeys = _busAnnotations.keys.toList();
-
-    // Remove stale annotations.
-    for (final key in existingKeys) {
-      if (nextKeys.contains(key)) continue;
-      final circle = _busAnnotations.remove(key);
-      if (circle == null) continue;
-      try {
-        await controller.removeCircle(circle);
-      } catch (_) {}
-    }
-
+    final features = <Map<String, dynamic>>[];
     for (final entry in filtered.entries) {
       final state = entry.value;
       final pos = interpolated[entry.key];
       final lat = pos?.$1 ?? state.smoothedLat;
       final lon = pos?.$2 ?? state.smoothedLon;
-      final target = LatLng(lat, lon);
 
-      final existing = _busAnnotations[entry.key];
-      if (existing == null) {
-        try {
-          final circle = await controller.addCircle(
-            CircleOptions(
-              geometry: target,
-              circleRadius: 9.0,
-              circleColor: '#E53935',
-              circleStrokeWidth: 2.5,
-              circleStrokeColor: '#FFFFFF',
-            ),
-          );
-          _busAnnotations[entry.key] = circle;
-        } catch (_) {}
-      } else {
-        try {
-          await controller.updateCircle(
-            existing,
-            CircleOptions(geometry: target),
-          );
-        } catch (_) {}
-      }
+      final vehicleLabel = state.vehicleId.isNotEmpty
+          ? state.vehicleId
+          : entry.key;
+      features.add({
+        'type': 'Feature',
+        'id': entry.key,
+        'geometry': {
+          'type': 'Point',
+          'coordinates': [lon, lat],
+        },
+        'properties': {
+          'trackingKey': entry.key,
+          'route': state.routeNumber,
+          'vehicle': vehicleLabel,
+          'label': '${state.routeNumber} · $vehicleLabel',
+        },
+      });
+    }
+
+    try {
+      await controller.setGeoJsonSource(_busesSourceId, {
+        'type': 'FeatureCollection',
+        'features': features,
+      });
+    } catch (error) {
+      _log('Could not update bus map layer: $error');
     }
 
     if (filtered.length != _lastLoggedBusCount) {
@@ -587,7 +621,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
     }
 
     // For any other layer or miss, fall back to distance-based search
-    // (buses are annotations, not GeoJSON layers, so they use _handleTap)
+    // Bus and stop layers are checked independently because they carry
+    // different feature metadata.
     _handleTap(coordinates);
   }
 
@@ -658,6 +693,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
     var closestDist = double.infinity;
 
     for (final entry in tracking.entries) {
+      if (entry.value.status == BusStatus.stale) continue;
       final pos = interpolated[entry.key];
       final lat = pos?.$1 ?? entry.value.smoothedLat;
       final lon = pos?.$2 ?? entry.value.smoothedLon;
@@ -772,8 +808,13 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   void _showRouteFilter() {
     final tracking = ref.read(busTrackingStreamProvider).value ?? {};
-    final allRoutes = tracking.values.map((s) => s.routeNumber).toSet().toList()
-      ..sort();
+    final allRoutes =
+        tracking.values
+            .where((state) => state.status != BusStatus.stale)
+            .map((state) => state.routeNumber)
+            .toSet()
+            .toList()
+          ..sort();
 
     if (allRoutes.isEmpty) return;
 

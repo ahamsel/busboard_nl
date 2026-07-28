@@ -63,29 +63,53 @@ class ArrivalRowTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Row(
                   children: [
-                    // Enhanced badge
+                    // Stop-specific Metrobus prediction status.
                     if (arrival.isEnhanced) ...[
-                      _EnhancedBadge(),
+                      _StopPredictionBadge(isRealtime: arrival.isLive),
                       const SizedBox(width: 4),
                     ],
-                    // Live badge
+                    // Fleet-derived live status when no stop prediction exists.
                     if (arrival.isLive && !arrival.isEnhanced) ...[
                       _LiveBadge(status: arrival.liveStatus),
                     ],
-                    if (arrival.isLive && arrival.vehicleNumber != null) ...[
+                    if (arrival.routeRun != null ||
+                        (arrival.isLive && arrival.vehicleNumber != null)) ...[
                       const SizedBox(width: 6),
-                      Text(
-                        'Bus ${arrival.vehicleNumber}',
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurface.withValues(
-                            alpha: 0.5,
+                      Flexible(
+                        child: Text(
+                          [
+                            if (arrival.routeRun != null) arrival.routeRun!,
+                            if (arrival.isLive && arrival.vehicleNumber != null)
+                              'Bus ${arrival.vehicleNumber}',
+                          ].join(' • '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
+                            fontSize: 11,
                           ),
-                          fontSize: 11,
                         ),
                       ),
                     ],
                   ],
                 ),
+                if (arrival.isLive &&
+                    arrival.currentLocation?.isNotEmpty == true) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'Near ${arrival.currentLocation}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withValues(
+                        alpha: 0.45,
+                      ),
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -151,14 +175,19 @@ class ArrivalRowTile extends StatelessWidget {
   }
 }
 
-/// ENHANCED badge for scraped prediction rows.
-class _EnhancedBadge extends StatelessWidget {
+/// Explicitly distinguishes Metrobus predictions from schedule-only rows.
+class _StopPredictionBadge extends StatelessWidget {
+  final bool isRealtime;
+
+  const _StopPredictionBadge({required this.isRealtime});
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isLight = theme.brightness == Brightness.light;
-    final color =
-        isLight ? const Color(0xFF7B1FA2) : const Color(0xFFCE93D8);
+    final color = isRealtime
+        ? (isLight ? const Color(0xFF7B1FA2) : const Color(0xFFCE93D8))
+        : theme.colorScheme.onSurface.withValues(alpha: 0.5);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -177,7 +206,7 @@ class _EnhancedBadge extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Text(
-            'ENHANCED',
+            isRealtime ? 'PRED' : 'SCHEDULE',
             style: TextStyle(
               color: color,
               fontSize: 9,

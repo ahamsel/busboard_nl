@@ -23,7 +23,7 @@ class ArrivalService {
     required DateTime now,
     int maxResults = 15,
     List<TimeTrackVehicle>? liveVehicles,
-    List<MetrobusDeparture>? scrapedDepartures,
+    List<MetrobusDeparture>? stopPredictions,
   }) {
     if (!repository.isLoaded) return [];
 
@@ -131,9 +131,9 @@ class ArrivalService {
       );
     }
 
-    // Merge scraped predictions if available
-    if (scrapedDepartures != null && scrapedDepartures.isNotEmpty) {
-      _mergeScrapedDepartures(arrivals, scrapedDepartures, nowTime);
+    // Merge stop-specific Metrobus predictions if available.
+    if (stopPredictions != null && stopPredictions.isNotEmpty) {
+      _mergeStopPredictions(arrivals, stopPredictions, nowTime);
     }
 
     // Sort by soonest departure
@@ -143,59 +143,79 @@ class ArrivalService {
     return arrivals.take(maxResults).toList();
   }
 
-  /// Merge scraped departure predictions into the arrivals list.
+  /// Merge stop-specific Metrobus departure data into the arrivals list.
   ///
-  /// Matches by route short name + scheduled time within 5 minutes,
-  /// then overrides the predicted time with the scraped prediction.
-  void _mergeScrapedDepartures(
+  /// The kiosk JSON contains GTFS trip IDs, so those are matched first.
+  /// Route + scheduled time is retained as a compatibility match for rows
+  /// whose structured trip ID does not correspond to the local GTFS version.
+  void _mergeStopPredictions(
     List<ArrivalRow> arrivals,
-    List<MetrobusDeparture> scraped,
+    List<MetrobusDeparture> stopPredictions,
     GtfsTime nowTime,
   ) {
+    final usedDepartureIndexes = <int>{};
+
     for (var i = 0; i < arrivals.length; i++) {
       final arrival = arrivals[i];
 
-      // Find best matching scraped departure
+      // Prefer the exact trip identity now exposed by the kiosk JSON.
       MetrobusDeparture? bestMatch;
-      int bestTimeDiff = 6; // Must be within 5 minutes
-
-      for (final dep in scraped) {
-        // Match route short name
-        if (dep.routeShortName != arrival.routeShortName) continue;
-
-        // Parse the scraped scheduled time and compare
-        final scrapedSchedTime =
-            MetrobusDeparture.parseTimeToGtfs(dep.scheduledTime);
-        if (scrapedSchedTime == null) continue;
-
-        final timeDiff =
-            (scrapedSchedTime.totalSeconds - arrival.scheduledTime.totalSeconds)
-                .abs() ~/
-            60;
-
-        if (timeDiff < bestTimeDiff) {
-          bestTimeDiff = timeDiff;
+      int? bestMatchIndex;
+      for (var depIndex = 0; depIndex < stopPredictions.length; depIndex++) {
+        if (usedDepartureIndexes.contains(depIndex)) continue;
+        final dep = stopPredictions[depIndex];
+        if (dep.tripId.isNotEmpty && dep.tripId == arrival.tripId) {
           bestMatch = dep;
+          bestMatchIndex = depIndex;
+          break;
         }
       }
 
-      if (bestMatch == null) continue;
+      // Compatibility matching across different structured GTFS snapshots.
+      int bestTimeDiff = 6; // Must be within 5 minutes
+      if (bestMatch == null) {
+        for (var depIndex = 0; depIndex < stopPredictions.length; depIndex++) {
+          if (usedDepartureIndexes.contains(depIndex)) continue;
+          final dep = stopPredictions[depIndex];
+          if (dep.routeShortName != arrival.routeShortName) continue;
 
-      // Parse the scraped predicted time
-      final scrapedPredTime =
-          MetrobusDeparture.parseTimeToGtfs(bestMatch.predictedTime);
-      if (scrapedPredTime == null) continue;
+          final stopScheduledTime = dep.scheduledGtfsTime;
+          if (stopScheduledTime == null) continue;
 
-      // Override with scraped prediction
-      final effectiveMinutes = scrapedPredTime.minutesFrom(nowTime);
+          final timeDiff =
+              (stopScheduledTime.totalSeconds -
+                      arrival.scheduledTime.totalSeconds)
+                  .abs() ~/
+              60;
+          if (timeDiff < bestTimeDiff) {
+            bestTimeDiff = timeDiff;
+            bestMatch = dep;
+            bestMatchIndex = depIndex;
+          }
+        }
+      }
+
+      if (bestMatch == null || bestMatchIndex == null) continue;
+      usedDepartureIndexes.add(bestMatchIndex);
+
+      final stopScheduledTime = bestMatch.scheduledGtfsTime;
+      if (stopScheduledTime == null) continue;
+      final stopPredictedTime = bestMatch.isRealtime
+          ? bestMatch.predictedGtfsTime
+          : null;
+      final effectiveTime = stopPredictedTime ?? stopScheduledTime;
+
+      // Metrobus may deliberately return "Soon" with a zero countdown while
+      // the nominal stop time has just passed, so prefer its own countdown.
+      final effectiveMinutes = bestMatch.secondsToDeparture == null
+          ? effectiveTime.minutesFrom(nowTime)
+          : (bestMatch.secondsToDeparture! / 60).round();
       if (effectiveMinutes < -1) continue; // Already departed
 
-      // Determine live status from scraped data
-      final scrapedSchedTime =
-          MetrobusDeparture.parseTimeToGtfs(bestMatch.scheduledTime);
       LiveStatus? newStatus = arrival.liveStatus;
-      if (scrapedSchedTime != null) {
-        final diff = scrapedSchedTime.totalSeconds - scrapedPredTime.totalSeconds;
+      if (bestMatch.isRealtime && stopPredictedTime != null) {
+        final diff =
+            stopScheduledTime.totalSeconds - stopPredictedTime.totalSeconds;
         if (diff > 60) {
           newStatus = LiveStatus.ahead;
         } else if (diff < -60) {
@@ -207,16 +227,29 @@ class ArrivalService {
 
       arrivals[i] = ArrivalRow(
         routeShortName: arrival.routeShortName,
-        headsign: arrival.headsign,
-        scheduledTime: arrival.scheduledTime,
-        predictedTime: scrapedPredTime,
+        headsign: bestMatch.headsign.isEmpty
+            ? arrival.headsign
+            : bestMatch.headsign,
+        scheduledTime: stopScheduledTime,
+        predictedTime: stopPredictedTime,
         minutesAway: effectiveMinutes < 0 ? 0 : effectiveMinutes,
-        liveStatus: newStatus,
-        isLive: true,
+        liveStatus: bestMatch.isRealtime ? newStatus : null,
+        isLive: bestMatch.isRealtime,
         tripId: arrival.tripId,
-        vehicleNumber: arrival.vehicleNumber ?? bestMatch.vehicle,
-        schedDiffMins: arrival.schedDiffMins,
+        vehicleNumber: bestMatch.vehicle.isEmpty
+            ? arrival.vehicleNumber
+            : bestMatch.vehicle,
+        schedDiffMins: bestMatch.delaySeconds == null
+            ? arrival.schedDiffMins
+            : (-bestMatch.delaySeconds! / 60).round(),
         isEnhanced: true,
+        routeRun: bestMatch.routeRun,
+        currentLocation: bestMatch.currentLocation.isEmpty
+            ? null
+            : bestMatch.currentLocation,
+        predictionConfidence: bestMatch.confidenceLabel.isEmpty
+            ? null
+            : bestMatch.confidenceLabel,
       );
     }
   }

@@ -7,7 +7,6 @@ import 'package:busboard_nl/data/realtime/timetrack_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_journey_tracer.dart';
 import 'package:busboard_nl/domain/map/bus_motion_engine.dart';
-import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'bus_journey_renderer.dart';
@@ -15,7 +14,7 @@ import 'bus_journey_renderer.dart';
 void main() {
   test(
     'bus motion replay harness: captured TimeTrack snapshots stay stable and smooth',
-    () {
+    () async {
       final fixturePath =
           Platform.environment['BUS_MOTION_CAPTURE_PATH'] ??
           'test/fixtures/timetrack/capture.json';
@@ -60,7 +59,15 @@ void main() {
           ? replayFrames.take(maxFrames).toList()
           : replayFrames;
 
-      final repo = _buildRepoFromFrames(frames);
+      final gtfsDirectory =
+          Platform.environment['BUS_MOTION_GTFS_DIRECTORY']?.trim() ?? '';
+      late final GtfsRepository repo;
+      if (gtfsDirectory.isEmpty) {
+        repo = _buildRepoFromFrames(frames);
+      } else {
+        repo = GtfsRepository();
+        await repo.loadFromDirectory(gtfsDirectory);
+      }
       final engine = BusMotionEngine(repo);
       final metrics = _ReplayMetrics();
       final traceEnv = Platform.environment['BUS_MOTION_TRACE'] ?? '';
@@ -90,9 +97,35 @@ void main() {
           cursor = pollTime;
         }
 
+        final statesBeforeBatch = engine.states;
+        final physicalAssignmentCounts = <String, int>{};
+        for (final vehicle in frame.vehicles) {
+          final vehicleId = vehicle.vehicle.trim();
+          if (vehicleId.isEmpty) continue;
+          physicalAssignmentCounts[vehicleId] =
+              (physicalAssignmentCounts[vehicleId] ?? 0) + 1;
+        }
+        final duplicateAssignments = physicalAssignmentCounts.values.fold<int>(
+          0,
+          (sum, count) => sum + (count > 1 ? count - 1 : 0),
+        );
+        if (duplicateAssignments > 0) {
+          metrics.framesWithDuplicateAssignments++;
+          metrics.rawDuplicateAssignments += duplicateAssignments;
+        }
+
         tracer?.beforeBatch(engine);
         engine.processBatch(frame.vehicles, pollTime);
         tracer?.afterBatch(engine, pollTime);
+        for (final entry in engine.states.entries) {
+          if (entry.key != entry.value.vehicleId) {
+            metrics.identityKeyMismatches++;
+          }
+          final previous = statesBeforeBatch[entry.key];
+          if (previous != null && previous.vehicleId != entry.value.vehicleId) {
+            metrics.stateVehicleTakeovers++;
+          }
+        }
         metrics.totalPolls++;
         if (frame.statusCode != 200) {
           metrics.non200Polls++;
@@ -158,6 +191,10 @@ void main() {
         'processed=${metrics.totalProcessedVehicles} '
         'accepted=${metrics.totalAcceptedUpdates} dup=${metrics.totalDuplicateUpdates} '
         'rejected=${metrics.totalRejectedOutliers} '
+        'rawAssignDup=${metrics.rawDuplicateAssignments} '
+        'dupFrames=${metrics.framesWithDuplicateAssignments} '
+        'identityMismatch=${metrics.identityKeyMismatches} '
+        'vehicleTakeovers=${metrics.stateVehicleTakeovers} '
         'snapped=${metrics.snappedSamples} rendered=${metrics.renderedProgressSamples} '
         'offShapeP90=${offShapeP90.toStringAsFixed(2)}m '
         'speedErrP50=${speedErrP50.toStringAsFixed(2)}km/h '
@@ -169,6 +206,10 @@ void main() {
         'corrP90Median=${correctionP90Median.toStringAsFixed(2)}m '
         'innovP50Median=${innovationP50Median.toStringAsFixed(2)}m',
       );
+      for (final backstep in metrics.backsteps.take(20)) {
+        // ignore: avoid_print
+        print('[ReplayBackstep] $backstep');
+      }
       _maybeWriteMetrics(
         harness: 'snapshot',
         metrics: {
@@ -182,6 +223,11 @@ void main() {
           'accepted': metrics.totalAcceptedUpdates,
           'duplicates': metrics.totalDuplicateUpdates,
           'rejected': metrics.totalRejectedOutliers,
+          'raw_duplicate_assignments': metrics.rawDuplicateAssignments,
+          'frames_with_duplicate_assignments':
+              metrics.framesWithDuplicateAssignments,
+          'identity_key_mismatches': metrics.identityKeyMismatches,
+          'state_vehicle_takeovers': metrics.stateVehicleTakeovers,
           'snapped_samples': metrics.snappedSamples,
           'rendered_samples': metrics.renderedProgressSamples,
           'off_shape_p90_m': offShapeP90,
@@ -201,6 +247,8 @@ void main() {
       expect(metrics.totalVehiclesInFrames, greaterThan(0));
       expect(metrics.totalProcessedVehicles, greaterThan(0));
       expect(metrics.totalAcceptedUpdates, greaterThan(0));
+      expect(metrics.identityKeyMismatches, 0);
+      expect(metrics.stateVehicleTakeovers, 0);
 
       if (metrics.renderedProgressSamples >= 40) {
         expect(backstepRate, lessThan(0.02));
@@ -268,6 +316,10 @@ class _ReplayMetrics {
   int totalAcceptedUpdates = 0;
   int totalDuplicateUpdates = 0;
   int totalRejectedOutliers = 0;
+  int rawDuplicateAssignments = 0;
+  int framesWithDuplicateAssignments = 0;
+  int identityKeyMismatches = 0;
+  int stateVehicleTakeovers = 0;
   int snappedSamples = 0;
   int renderedProgressSamples = 0;
   int activeBackstepCount = 0;
@@ -277,7 +329,10 @@ class _ReplayMetrics {
   final List<double> speedFidelityRatios = [];
   final List<double> correctionP90Samples = [];
   final List<double> innovationP50Samples = [];
+  final List<_BackstepDetail> backsteps = [];
   final Map<String, double> previousProgressByKey = {};
+  final Map<String, String?> previousShapeByKey = {};
+  final Map<String, String?> previousTripByKey = {};
   final Map<String, _RenderProgressSample> previousRenderByKey = {};
 }
 
@@ -642,6 +697,20 @@ void _collectRenderMetrics({
     final key = entry.key;
     final state = engine.states[key];
     if (state == null) continue;
+    final previousShape = metrics.previousShapeByKey[key];
+    final previousTrip = metrics.previousTripByKey[key];
+    final shapeChanged =
+        metrics.previousShapeByKey.containsKey(key) &&
+        previousShape != state.shapeId;
+    final tripChanged =
+        metrics.previousTripByKey.containsKey(key) &&
+        previousTrip != state.currentTripId;
+    if (shapeChanged || tripChanged) {
+      metrics.previousProgressByKey.remove(key);
+      metrics.previousRenderByKey.remove(key);
+    }
+    metrics.previousShapeByKey[key] = state.shapeId;
+    metrics.previousTripByKey[key] = state.currentTripId;
 
     final renderedLat = entry.value.$1;
     final renderedLon = entry.value.$2;
@@ -666,7 +735,10 @@ void _collectRenderMetrics({
       if (snapped != null) {
         metrics.snappedSamples++;
         metrics.offShapeErrorsM.add(snapped.perpendicularDistanceMeters);
-        renderedProgress ??= snapped.progressM;
+        // Measure the coordinate actually returned to the map. During a
+        // correction blend the engine's internal progress is already at the
+        // target while the visible marker is still easing from its origin.
+        renderedProgress = snapped.progressM;
       }
     }
 
@@ -679,11 +751,22 @@ void _collectRenderMetrics({
 
     final previousProgress = metrics.previousProgressByKey[key];
     if (previousProgress != null &&
-        state.status == BusStatus.active &&
-        !_hasRecentTripTransition(state) &&
         renderedProgress + 1e-3 < previousProgress) {
       metrics.activeBackstepCount++;
-      metrics.activeBackstepMeters += (previousProgress - renderedProgress);
+      final magnitude = previousProgress - renderedProgress;
+      metrics.activeBackstepMeters += magnitude;
+      metrics.backsteps.add(
+        _BackstepDetail(
+          time: now,
+          vehicleId: state.vehicleId,
+          routeNumber: state.routeNumber,
+          tripId: state.currentTripId,
+          shapeId: state.shapeId,
+          magnitudeM: magnitude,
+          fromProgressM: previousProgress,
+          toProgressM: renderedProgress,
+        ),
+      );
     }
     metrics.previousProgressByKey[key] = renderedProgress;
 
@@ -722,17 +805,54 @@ void _collectRenderMetrics({
   metrics.previousProgressByKey.removeWhere(
     (key, _) => !renderedKeys.contains(key),
   );
+  metrics.previousShapeByKey.removeWhere(
+    (key, _) => !renderedKeys.contains(key),
+  );
+  metrics.previousTripByKey.removeWhere(
+    (key, _) => !renderedKeys.contains(key),
+  );
   metrics.previousRenderByKey.removeWhere(
     (key, _) => !renderedKeys.contains(key),
   );
 }
 
-String? _traceKey(TimeTrackVehicle vehicle) {
-  if (vehicle.routeRun.trim().isNotEmpty) {
-    return 'routerun:${vehicle.routeRun.trim()}';
+class _BackstepDetail {
+  final DateTime time;
+  final String vehicleId;
+  final int routeNumber;
+  final String? tripId;
+  final String? shapeId;
+  final double magnitudeM;
+  final double fromProgressM;
+  final double toProgressM;
+
+  const _BackstepDetail({
+    required this.time,
+    required this.vehicleId,
+    required this.routeNumber,
+    required this.tripId,
+    required this.shapeId,
+    required this.magnitudeM,
+    required this.fromProgressM,
+    required this.toProgressM,
+  });
+
+  @override
+  String toString() {
+    return 'at=${time.toIso8601String()} vehicle=$vehicleId route=$routeNumber '
+        'trip=${tripId ?? "none"} shape=${shapeId ?? "none"} '
+        'back=${magnitudeM.toStringAsFixed(1)}m '
+        'progress=${fromProgressM.toStringAsFixed(1)}'
+        '->${toProgressM.toStringAsFixed(1)}';
   }
+}
+
+String? _traceKey(TimeTrackVehicle vehicle) {
   if (vehicle.vehicle.trim().isNotEmpty) {
-    return 'vehicle:${vehicle.vehicle.trim()}';
+    return vehicle.vehicle.trim();
+  }
+  if (vehicle.routeRun.trim().isNotEmpty) {
+    return vehicle.routeRun.trim();
   }
   if (vehicle.gtfsTripId.trim().isNotEmpty) {
     return 'trip:${vehicle.gtfsTripId.trim()}';
@@ -770,14 +890,6 @@ String? _bestShapeForRoute({
   }
 
   return candidates.first.shapeId;
-}
-
-bool _hasRecentTripTransition(BusTrackingState state) {
-  final good = state.observations.where((o) => !o.rejected).toList();
-  if (good.length < 2) return false;
-  final last = good[good.length - 1].gtfsTripId;
-  final prev = good[good.length - 2].gtfsTripId;
-  return last != prev && (last != null || prev != null);
 }
 
 String _uniqueTripId({

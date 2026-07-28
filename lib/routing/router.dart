@@ -4,6 +4,7 @@ import '../ui/shell/app_shell.dart';
 import '../ui/stop_picker/stop_picker_screen.dart';
 import '../ui/board/arrival_board_screen.dart';
 import '../ui/map/map_screen.dart';
+import '../ui/alerts/alerts_screen.dart';
 import '../ui/settings/settings_screen.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -41,6 +42,15 @@ final appRouter = GoRouter(
             GoRoute(
               path: '/map',
               builder: (context, state) => const MapScreen(),
+            ),
+          ],
+        ),
+        // Branch 2: Service alerts
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/alerts',
+              builder: (context, state) => const AlertsScreen(),
             ),
           ],
         ),

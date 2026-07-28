@@ -99,11 +99,16 @@ flutter test
 # Run movement replay harness (turns, lag, noise, stability metrics)
 flutter test test/map/bus_motion_replay_harness_test.dart
 
-# Capture real TimeTrack snapshots locally (example: 15 minutes)
+# Capture the app's real production live-data chain (example: 15 minutes)
 dart run tool/capture_timetrack_snapshots.dart \
   --interval 5 \
   --duration 900 \
   --out test/fixtures/timetrack/capture.json
+
+# Inspect raw physical IDs, duplicate assignments, teleports, and A→B→A
+# ping-pongs before replaying what the app renders.
+dart run tool/analyze_live_vehicle_trace.dart \
+  test/fixtures/timetrack/capture.json
 
 # Replay captured snapshots through BusMotionEngine
 BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
@@ -122,4 +127,4 @@ flutter test test/map/bus_motion_snapshot_replay_test.dart
 - **Timezone**: App uses device local time; designed for America/St_Johns
 - **No database**: All GTFS data is held in-memory via indexed maps for fast lookup
 - **MapLibre GeoJSON bug**: `setGeoJsonSource` doesn't re-render circle layers reliably on this stack — buses are rendered with circle annotations.
-- **GPS update cadence**: Bus GPS hardware reports every ~15s (most common: 15–16s, range: 9–78s). App polls every 5s to catch updates promptly.
+- **GPS update cadence**: Bus GPS hardware reports periodically; the app polls every 5s to catch new observations promptly.
