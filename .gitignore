@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local App Store Connect CLI release checkpoints
+.asc/
+
 # Local TimeTrack capture fixtures (can be large)
 test/fixtures/timetrack/*.json
 
