@@ -64,7 +64,7 @@ class _BBRouteDotsState extends State<BBRouteDots> with SingleTickerProviderStat
       return Matrix4.diagonal3Values(s, s, s);
     }
     if (_reduceMotion) return Matrix4.identity();
-    // Each dot rises during the first 40% of its own phase, 130 ms apart.
+    // Each dot rises during the first 40% of its own phase, ~117 ms apart (0.13 of the 900 ms loop).
     final t = (_hop.value - i * 0.13) % 1.0;
     final rise = t < 0.4 ? math.sin(t / 0.4 * math.pi) : 0.0;
     return Matrix4.translationValues(0, -rise * widget.dotSize * 0.7, 0);

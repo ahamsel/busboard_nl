@@ -6,8 +6,9 @@ import 'package:flutter/widgets.dart';
 import 'bb_nav_bar.dart';
 import 'tokens.dart';
 
-/// Floating message above the nav bar (replaces SnackBar). Only one is
-/// visible at a time; a new one replaces the current one.
+/// Floating message above the nav bar where it is shown, else above the bottom
+/// safe area (replaces SnackBar). Only one is visible at a time; a new one
+/// replaces the current one.
 abstract final class BBToast {
   static const cardKey = ValueKey('bb-toast-card');
 
