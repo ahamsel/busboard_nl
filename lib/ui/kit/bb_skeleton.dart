@@ -17,7 +17,7 @@ class BBSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
-    final block = bb.colors.surfaceSunken;
+    final block = bb.colors.skeleton;
 
     Widget box(double w, double h, {double r = 4}) => Container(
           width: w,
