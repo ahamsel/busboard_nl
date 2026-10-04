@@ -32,13 +32,19 @@ class GtfsRepository {
     return _routesForStopCache[stopId] = List.unmodifiable(sorted);
   }
 
-  /// Numeric route ids first (numeric order), then the rest alphabetically.
+  static final RegExp _digitsOnly = RegExp(r'^\d+$');
+
+  /// Digit-only route ids first (numeric order, ties broken by string order),
+  /// then the rest alphabetically. A strict total order: 0 only when equal.
   static int compareRouteNames(String a, String b) {
-    final ai = int.tryParse(a);
-    final bi = int.tryParse(b);
-    if (ai != null && bi != null) return ai.compareTo(bi);
-    if (ai != null) return -1;
-    if (bi != null) return 1;
+    final aNumeric = _digitsOnly.hasMatch(a);
+    final bNumeric = _digitsOnly.hasMatch(b);
+    if (aNumeric && bNumeric) {
+      final c = int.parse(a).compareTo(int.parse(b));
+      return c != 0 ? c : a.compareTo(b);
+    }
+    if (aNumeric) return -1;
+    if (bNumeric) return 1;
     return a.compareTo(b);
   }
   final Map<String, ServiceCalendar> calendarsById = {};

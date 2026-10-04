@@ -38,4 +38,28 @@ void main() {
     names.sort(GtfsRepository.compareRouteNames);
     expect(names, ['2', '10', '15', 'A', 'X1']);
   });
+
+  test('equal numeric values are tie-broken deterministically', () {
+    final a = ['10', '010']..sort(GtfsRepository.compareRouteNames);
+    final b = ['010', '10']..sort(GtfsRepository.compareRouteNames);
+    expect(a, ['010', '10']);
+    expect(b, ['010', '10']);
+  });
+
+  test('only digit-only names are numeric', () {
+    final names = ['0x1A', '+5', '2', ' 10', '', '10']..sort(GtfsRepository.compareRouteNames);
+    expect(names, ['2', '10', '', ' 10', '+5', '0x1A']);
+  });
+
+  test('compareRouteNames is antisymmetric and zero only for equal names', () {
+    const names = ['2', '10', '010', 'A', 'X1', '', '+5'];
+    for (final a in names) {
+      for (final b in names) {
+        final ab = GtfsRepository.compareRouteNames(a, b);
+        final ba = GtfsRepository.compareRouteNames(b, a);
+        expect(ab.sign, -ba.sign, reason: '"$a" vs "$b"');
+        expect(ab == 0, a == b, reason: '"$a" vs "$b"');
+      }
+    }
+  });
 }
