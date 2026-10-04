@@ -62,15 +62,17 @@ class _BBRefreshState extends State<BBRefresh> {
       _refreshing = true;
       _announcement = 'Refreshing';
     });
+    var failed = false;
     try {
       await widget.onRefresh();
     } catch (error, stack) {
+      failed = true;
       FlutterError.reportError(FlutterErrorDetails(exception: error, stack: stack, library: 'BBRefresh'));
     } finally {
       if (mounted) {
         setState(() {
           _refreshing = false;
-          _announcement = 'Updated';
+          _announcement = failed ? "Couldn't refresh" : 'Updated';
         });
         _clearAnnouncement = Timer(const Duration(seconds: 2), () {
           if (mounted) setState(() => _announcement = '');
