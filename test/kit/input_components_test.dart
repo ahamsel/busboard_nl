@@ -54,6 +54,16 @@ void main() {
     expect(typed.last, '1150');
   });
 
+  testWidgets('BBTextField works without a Material ancestor', (tester) async {
+    // kitHost provides only a ColoredBox, so this fails if the field relies on
+    // an ambient Material (as TextField does).
+    final typed = <String>[];
+    await tester.pumpWidget(kitHost(BBTextField(hint: 'Search', onChanged: typed.add)));
+    expect(tester.takeException(), isNull);
+    await tester.enterText(find.byType(TextField), 'abc');
+    expect(typed.last, 'abc');
+  });
+
   testWidgets('BBSegmented segments are at least 44 tall to tap', (tester) async {
     await tester.pumpWidget(kitHost(BBSegmented<String>(
       segments: const [BBSegment(value: 'near', label: 'Near me'), BBSegment(value: 'id', label: 'Stop number')],

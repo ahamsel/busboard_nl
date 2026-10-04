@@ -35,10 +35,15 @@ Widget kitHost(
       child: app!,
     ),
     home: Builder(
-      builder: (context) => Material(
+      // Deliberately no Material ancestor: kit widgets must supply their own
+      // (BBScaffold / BBTextField), as they will in the real screens.
+      builder: (context) => ColoredBox(
         color: context.bb.colors.bg,
-        child: Center(
-          child: SizedBox(width: width, child: child),
+        child: DefaultTextStyle(
+          style: context.bb.text.body,
+          child: Center(
+            child: SizedBox(width: width, child: child),
+          ),
         ),
       ),
     ),
