@@ -33,8 +33,6 @@ final _materialImport = RegExp(r'''^\s*(import|export)\s+['"]package:flutter/(ma
 /// replaces with context.bb. Phase 2 removes entries as it migrates each
 /// file; the list must only ever shrink.
 const _legacyAllowList = {
-  'lib/ui/alerts/alerts_screen.dart',
-  'lib/ui/alerts/service_alert_card.dart',
   'lib/ui/map/bus_bottom_sheet.dart',
   'lib/ui/map/map_screen.dart',
   'lib/ui/map/stop_bottom_sheet.dart',

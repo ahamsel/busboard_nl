@@ -4,6 +4,7 @@ import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/domain/map/bus_observation.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_bottom_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,6 +38,7 @@ void main() {
           ),
         ],
         child: MaterialApp(
+          theme: BBTheme.light(),
           home: Scaffold(body: BusBottomSheet(bus: initial)),
         ),
       ),
