@@ -35,7 +35,7 @@ class BBControlPill extends StatelessWidget {
           for (var i = 0; i < items.length; i++) ...[
             if (i > 0) Container(width: 28, height: 1, color: bb.colors.line),
             Semantics(
-              selected: items[i].selected,
+              selected: items[i].selected ? true : null,
               child: BBIconButton(
                 icon: items[i].icon,
                 semanticLabel: items[i].semanticLabel,
