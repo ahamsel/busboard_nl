@@ -34,17 +34,22 @@ class GtfsRepository {
 
   static final RegExp _digitsOnly = RegExp(r'^\d+$');
 
+  /// The numeric value of a digit-only name, or null when [s] is not
+  /// digit-only or does not fit an int (treated as non-numeric).
+  static int? _numericValue(String s) =>
+      _digitsOnly.hasMatch(s) ? int.tryParse(s) : null;
+
   /// Digit-only route ids first (numeric order, ties broken by string order),
   /// then the rest alphabetically. A strict total order: 0 only when equal.
   static int compareRouteNames(String a, String b) {
-    final aNumeric = _digitsOnly.hasMatch(a);
-    final bNumeric = _digitsOnly.hasMatch(b);
-    if (aNumeric && bNumeric) {
-      final c = int.parse(a).compareTo(int.parse(b));
+    final ai = _numericValue(a);
+    final bi = _numericValue(b);
+    if (ai != null && bi != null) {
+      final c = ai.compareTo(bi);
       return c != 0 ? c : a.compareTo(b);
     }
-    if (aNumeric) return -1;
-    if (bNumeric) return 1;
+    if (ai != null) return -1;
+    if (bi != null) return 1;
     return a.compareTo(b);
   }
   final Map<String, ServiceCalendar> calendarsById = {};
