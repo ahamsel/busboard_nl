@@ -14,6 +14,9 @@ const _items = [
 ];
 
 void main() {
+  // Real Figtree metrics (the test font is far wider) so the fit is truthful.
+  setUpAll(loadAppFonts);
+
   testWidgets('tapping a tab reports its index', (tester) async {
     final picked = <int>[];
     await tester.pumpWidget(kitHost(BBNavBar(items: _items, currentIndex: 0, onSelect: picked.add)));
@@ -48,6 +51,47 @@ void main() {
       width: 320,
     ));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('at text scale 2.0 all tab labels render at the same size and each tab is a 44pt target', (tester) async {
+    for (final brightness in Brightness.values) {
+      await tester.pumpWidget(kitHost(
+        BBNavBar(items: _items, currentIndex: 0, onSelect: (_) {}),
+        brightness: brightness,
+        textScale: 2.0,
+        width: 375,
+      ));
+      expect(tester.takeException(), isNull);
+      // Rendered height (includes any FittedBox scaling, unlike getSize).
+      double rendered(String label) {
+        final f = find.text(label);
+        return (tester.getBottomLeft(f) - tester.getTopLeft(f)).dy;
+      }
+
+      expect(rendered('Alerts'), closeTo(rendered('Board'), 0.5), reason: '${brightness.name}: Alerts vs Board');
+      expect(rendered('Map'), closeTo(rendered('Board'), 0.5), reason: '${brightness.name}: Map vs Board');
+      for (final label in ['Board', 'Map', 'Alerts']) {
+        final tab = find.ancestor(of: find.text(label), matching: find.byType(AnimatedContainer));
+        expect(tester.getSize(tab).height, greaterThanOrEqualTo(44), reason: '${brightness.name}: $label tab');
+      }
+    }
+  });
+
+  testWidgets('heightFor and reservedHeight grow with text scale (clamped to 1.3x)', (tester) async {
+    for (final (scale, expected) in [(1.0, 56.0), (1.3, 56.0 * 1.3), (2.0, 56.0 * 1.3), (0.8, 56.0)]) {
+      late double h;
+      late double reserved;
+      await tester.pumpWidget(MediaQuery(
+        data: MediaQueryData(padding: const EdgeInsets.only(bottom: 34), textScaler: TextScaler.linear(scale)),
+        child: Builder(builder: (context) {
+          h = BBNavBar.heightFor(context);
+          reserved = BBNavBar.reservedHeight(context);
+          return const SizedBox();
+        }),
+      ));
+      expect(h, closeTo(expected, 0.001), reason: 'scale $scale');
+      expect(reserved, closeTo(h + BBNavBar.gap + 34, 0.001), reason: 'scale $scale');
+    }
   });
 
   testWidgets('reservedHeight accounts for the bottom safe area', (tester) async {
