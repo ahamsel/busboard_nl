@@ -5,8 +5,11 @@ import 'bb_pressable.dart';
 import 'tokens.dart';
 
 /// Floating map chip (your stop, route filter, "Back to bus"): a 44 pt pill on
-/// the floating surface. [selected] uses the brand fill. The label ellipsizes
-/// to fit; [leading] (e.g. a [BBGlyph]) replaces [icon].
+/// the floating surface. [selected] uses the brand fill. [leading] (e.g. a
+/// [BBGlyph]) replaces [icon].
+///
+/// The parent must bound the chip's width (e.g. Positioned with both left and
+/// right, or a ConstrainedBox); the label ellipsizes within it.
 class BBChip extends StatelessWidget {
   const BBChip({
     super.key,
