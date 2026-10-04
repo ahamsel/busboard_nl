@@ -54,6 +54,15 @@
    - It gains a Map theme control (Match app / Light / Dark) that writes `setMapThemeMode` (spec §6.5). The map's own sheet stays until Phase 3.
    - The refresh-interval slider becomes a ± stepper (5–60 s, step 5).
    - A failed schedule refresh re-enables the button and shows a `BBToast`. Previously it stayed disabled.
+10. **Sentence-case copy:** `Near me`, `Last stop`, `Go`, `Try again`, `Service alerts`, `Refresh interval`, `Schedule data (GTFS)` and `Refresh schedule now` replace the old upper-case or title-case labels. The stop field is labelled `Stop number`.
+11. **Near-me distance:** the distance is merged into the caption (`Stop 1150 · 80m`) instead of being a separate trailing label.
+12. **Board refreshes when the schedule first loads:** if the schedule finishes loading after the Board mounted (for example a deep link straight to a stop), the Board loads its departures at once instead of waiting for the next timer tick (Task 7 ruling).
+13. **Alert effect pill omitted when redundant:** the effect pill is not shown when the alert's title already equals the effect label (Task 8 ruling).
+14. **`Checking live data…` while loading:** until the first refresh completes, the Board's status line reads `Checking live data…` with a muted dot, and it is not a live region, so assistive tech never hears a provisional `Live unavailable · showing schedule`.
+15. **Selected segments use brand colours:** the selected segment is `brandSoft` with `brandInk` text and a 1.5 px `brand` border, in light and dark. The border carries the state (6.7:1 against the dark track, 3.8:1 against the light one); the fill alone is below 3:1.
+16. **All route pills shown:** near-me rows show a pill for every route serving the stop, not just the first six. Non-numeric short names such as `10A` get a stable hue from `RoutePalette.ofName` instead of hue 0.
+17. **Expected time in the arrival row's sentence:** for live rows with a prediction, the screen-reader sentence ends with `, expected HH:MM`.
+18. **Board alerts scroll with the departures:** the relevant-alert card and its `more` link sit at the top of the scrolling list, not in the fixed header, so they never crowd out the departures at large text. Stored refresh intervals are clamped to 5–60 s when loaded.
 
 ## Review Focus
 
