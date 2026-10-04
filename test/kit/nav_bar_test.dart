@@ -114,4 +114,19 @@ void main() {
     );
     expect(material.color, BBColors.light.bg);
   });
+
+  testWidgets('the active tab shows its fill icon, the others their regular icon', (tester) async {
+    await tester.pumpWidget(kitHost(BBNavBar(
+      items: const [
+        BBNavItem(label: 'Board', icon: BBIcons.board, activeIcon: BBIcons.boardFill),
+        BBNavItem(label: 'Map', icon: BBIcons.map, activeIcon: BBIcons.mapFill),
+      ],
+      currentIndex: 0,
+      onSelect: (_) {},
+    )));
+    expect(find.byIcon(BBIcons.boardFill), findsOneWidget);
+    expect(find.byIcon(BBIcons.board), findsNothing);
+    expect(find.byIcon(BBIcons.map), findsOneWidget);
+    expect(find.byIcon(BBIcons.mapFill), findsNothing);
+  });
 }
