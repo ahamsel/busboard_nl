@@ -1,0 +1,125 @@
+stop_id,stop_code,stop_name,stop_desc,stop_lat,stop_lon,zone_id,stop_url,location_type,parent_station,stop_timezone,wheelchair_boarding
+2646,2646,Seaborn St opp McLaren Pl,,47.56552,-52.76978,,,,,,0
+1575,1575,Elizabeth Ave opp Whiteway St,,47.56707,-52.735998,,,,,,0
+1635,1635,Elizabeth Ave before Whiteway St,,47.56695,-52.735835,,,,,,0
+2555,2555,Topsail Rd before Holbrook Ave,,47.53097,-52.7558,,,,,,0
+2560,2560,Thorburn Rd opp Picea Ln,,47.563575,-52.759125,,,,,,0
+2565,2565,Thorburn Rd before Mount Scio Rd,,47.564289,-52.76205,,,,,,0
+2570,2570,Thorburn Rd after Bambrick St,,47.564647,-52.766325,,,,,,0
+2575,2575,Goldstone St opp Sorrel Dr,,47.56425,-52.771422,,,,,,0
+2580,2580,Kelsey Dr after Messenger Dr,,47.558737,-52.781581,,,,,,0
+2615,2615,Kelsey Dr at Sobeys,,47.552675,-52.780892,,,,,,0
+2620,2620,Kenmount Rd at Sandman Hotel,,47.552298,-52.773889,,,,,,0
+2622,2622,Kenmount Rd at Fairfield Inn,,47.553947,-52.770225,,,,,,0
+2625,2625,Pippy Pl at Canada Post Office,,47.555781,-52.767033,,,,,,0
+2630,2630,Pippy Pl after OLeary Ave,,47.558603,-52.769606,,,,,,0
+2640,2640,Pippy Pl before Duffy Pl,,47.562517,-52.772167,,,,,,0
+2645,2645,Goldstone St at Sorrel Dr,,47.564002,-52.771664,,,,,,0
+2647,2647,Seaborn St after Faulkner St,,47.56623,-52.76655,,,,,,0
+2648,2648,Bambrick St,,47.56562,-52.76538,,,,,,0
+2650,2650,Thorburn Rd after Wigmore Ct,,47.564128,-52.762188,,,,,,0
+2655,2655,Thorburn Rd before Picea Ln,,47.563458,-52.759413,,,,,,0
+2660,2660,Thorburn Rd at Avalon Mall,,47.562114,-52.75395,,,,,,0
+2665,2665,Clinch Cres opp Warners Rd,,47.56918,-52.74518,,,,,,0
+2670,2670,Clinch Cres at Janeway,,47.572631,-52.743789,,,,,,0
+2675,2675,Clinch Cres before Warners Rd,,47.569019,-52.744689,,,,,,0
+2680,2680,Westerland Rd opp Irwins Rd,,47.570838,-52.737063,,,,,,0
+2685,2685,Anderson Ave before Howlett Ave,,47.565285,-52.736247,,,,,,0
+2695,2695,Freshwater Rd at Keane Pl,,47.56312,-52.728377,,,,,,0
+2700,2700,Merrymeeting Rd after Freshwater Rd,,47.563389,-52.724572,,,,,,0
+2705,2705,Merrymeeting Rd before Blatch Ave,,47.56467,-52.72166,,,,,,0
+2710,2710,Merrymeeting Rd before Cook St,,47.565287,-52.719335,,,,,,0
+2715,2715,Merrymeeting Rd before Parade St,,47.566099,-52.716048,,,,,,0
+2730,2730,Queens Rd at Bates Hill,,47.562841,-52.710654,,,,,,0
+2735,2735,Gower St before Church Hill,,47.564944,-52.709109,,,,,,0
+2740,2740,Longs Hill opp Livingstone St,,47.564952,-52.710716,,,,,,0
+2755,2755,Merrymeeting Rd at Feild St,,47.56585,-52.717564,,,,,,0
+2760,2760,Merrymeeting Rd at Mayor Ave,,47.5652,-52.720211,,,,,,0
+2765,2765,Merrymeeting Rd before Rankin St,,47.564472,-52.72255,,,,,,0
+2770,2770,Merrymeeting Rd before Freshwater Rd,,47.5634,-52.724875,,,,,,0
+2775,2775,Freshwater Rd before Winchester St,,47.56315,-52.7292,,,,,,0
+2785,2785,Freshwater Rd before Elizabeth Ave,,47.563286,-52.738425,,,,,,0
+2790,2790,Westerland Rd before Prince Philip Dr,,47.570069,-52.735638,,,,,,0
+2810,2810,Crosbie Rd opp Swilers Club,,47.558866,-52.742842,,,,,,0
+1145,1145,Clinch Cres near Arctic Ave,,47.571841,-52.738179,,,,,,0
+1200,1200,Ridge Rd opp civic 30,,47.589439,-52.731464,,,,,,0
+1205,1205,Higgins Line near Dublin Rd,,47.587625,-52.728536,,,,,,0
+1210,1210,Allandale Rd opp Confed Bldg,,47.58345,-52.728694,,,,,,0
+1215,1215,University Ave before Paton St,,47.568497,-52.741353,,,,,,0
+1220,1220,University Ave after Hatcher St,,47.566922,-52.742511,,,,,,0
+1225,1225,University Ave opp Curtis Pl,,47.564755,-52.742695,,,,,,0
+1230,1230,Oxen Pond Rd before Freshwater Rd,,47.563344,-52.742778,,,,,,0
+1232,1232,Stamps Ln before Wishingwell Rd,,47.56174,-52.7415,,,,,,0
+1235,1235,Wishingwell Rd before Crosbie Rd,,47.560419,-52.743003,,,,,,0
+1250,1250,Empire Ave before Cordage Pl,,47.555967,-52.741751,,,,,,0
+1255,1255,Empire Ave before Ropewalk Ln,,47.557072,-52.739383,,,,,,0
+1260,1260,Empire Ave opp Kellys Brook Apts,,47.558025,-52.737648,,,,,,0
+1265,1265,Cashin Ave before Prowse Ave,,47.558466,-52.734867,,,,,,0
+1270,1270,Cashin Ave after Pennywell Rd,,47.556689,-52.733417,,,,,,0
+1275,1275,Cashin Ave after Campbell Ave,,47.554347,-52.731461,,,,,,0
+1280,1280,Cashin Ave before Blackmarsh Rd,,47.552797,-52.730175,,,,,,0
+1285,1285,Symonds Ave after Albany Pl,,47.550356,-52.729561,,,,,,0
+1295,1295,Cornwall Ave after Cornwall Hgts,,47.544744,-52.7336,,,,,,0
+1300,1300,Cornwall Ave after OReilly St,,47.543467,-52.734483,,,,,,0
+1305,1305,Cornwall Ave after Glenview Terr,,47.540769,-52.737227,,,,,,0
+1310,1310,Topsail Rd opp Old Topsail Rd,,47.538914,-52.738742,,,,,,0
+1315,1315,Topsail Rd before Colville Pl,,47.537661,-52.740186,,,,,,0
+1320,1320,Topsail Rd before Forbes St,,47.536242,-52.742783,,,,,,0
+1325,1325,Topsail Rd before Columbus Dr,,47.535364,-52.745028,,,,,,0
+1380,1380,Military Rd opp Gathering Place,,47.567793,-52.708903,,,,,,0
+1385,1385,Military Rd after Kings Rd,,47.56948,-52.70749,,,,,,0
+1390,1390,Military Rd before Cochrane St,,47.571197,-52.704537,,,,,,0
+2160,2160,Duckworth St after Ordnance St,,47.569939,-52.701347,,,,,,0
+2165,2165,Water St at Sir Humphrey Gilbert Bldg,,47.567906,-52.702911,,,,,,0
+6096,6096,Ridge Rd after Gloucester St,,47.588227,-52.733988,,,,,,0
+6209,6209,Kenmount Rd after Ryans Lane,,47.550923,-52.776965,,,,,,0
+6213,6213,Harbour Dr at Clifts Bairds Cove,,47.564097,-52.705846,,,,,,0
+6214,6214,Harbour Dr at Ayres Cove,,47.562695,-52.707274,,,,,,0
+6215,6215,Harbour Dr at Becks Cove,,47.561347,-52.709045,,,,,,0
+4320,4320,Old Placentia Rd after Commonwealth Ave,,47.505125,-52.793119,,,,,,0
+4325,4325,Old Placentia Rd before Westbrook Landing,,47.502878,-52.797531,,,,,,0
+4330,4330,Old Placentia Rd opp Emerald Dr,,47.501464,-52.802939,,,,,,0
+4335,4335,Old Placentia Rd at Richard Nolan Dr,,47.5027,-52.806578,,,,,,0
+4610,4610,Jackman Dr opp Ash Pl,,47.506511,-52.803758,,,,,,0
+4615,4615,Jackman Dr at Pike Pl,,47.507098,-52.807711,,,,,,0
+4620,4620,Norman Dr,,47.505153,-52.807775,,,,,,0
+4625,4625,Munden Dr near Hounsell Ave,,47.506431,-52.809881,,,,,,0
+4630,4630,Munden Dr before Old Placentia Rd,,47.505395,-52.811764,,,,,,0
+4640,4640,Old Placentia Rd before Smallwood Dr,,47.505711,-52.814053,,,,,,0
+4645,4645,Smallwood Dr near Old Placentia Rd,,47.507301,-52.814385,,,,,,0
+4650,4650,Jeffers Dr at Jeffers Pl,,47.508773,-52.811116,,,,,,0
+4655,4655,Jeffers Dr at Badcock Pl,,47.509951,-52.806122,,,,,,0
+4660,4660,Jeffers Dr at Woodford Pl,,47.511982,-52.804926,,,,,,0
+4680,4680,Smallwood Dr civic 85,,47.51641,-52.79683,,,,,,0
+4685,4685,Smallwood Dr opp Blossom Ave,,47.516666,-52.793,,,,,,0
+4690,4690,Smallwood Dr before Park Ave,,47.518666,-52.789156,,,,,,0
+4695,4695,Park Ave before Valleyview Ave,,47.51962,-52.788183,,,,,,0
+4700,4700,Park Ave before Worrall Cres,,47.519877,-52.783436,,,,,,0
+4705,4705,Park Ave at Rosedale Pl,,47.520372,-52.778467,,,,,,0
+4710,4710,Dunns Rd before Topsail Rd,,47.522267,-52.777685,,,,,,0
+4715,4715,Topsail Rd near Collision Clinic,,47.523744,-52.774069,,,,,,0
+4720,4720,Topsail Rd before Burgeo St,,47.524507,-52.77078,,,,,,0
+4725,4725,Topsail Rd civic 623,,47.5266,-52.7657,,,,,,0
+4730,4730,Topsail Rd before Thomas St,,47.528183,-52.761192,,,,,,0
+1000,1000,Village Shopping Centre,,47.533785,-52.750122,,,,,,0
+2780,2780,Freshwater Rd after Anderson Ave,,47.563267,-52.733853,,,,,,0
+1195,1195,Marine Institute,,47.587105,-52.735508,,,,,,0
+1290,1290,Hamilton Ave near Shaw St,,47.547753,-52.731197,,,,,,0
+1600,1600,Avalon Mall,,47.55998,-52.757503,,,,,,0
+1395,1395,Military Rd opp St Thomas Church,,47.571195,-52.702342,,,,,,0
+2190,2190,Water St at Convention Centre,,47.559411,-52.711767,,,,,,0
+2750,2750,Parade St,,47.56542,-52.715147,,,,,,0
+1245,1245,Crosbie Rd bldg 17,,47.556355,-52.74409,,,,,,0
+4665,4665,Smallwood Dr before Commonwealth Ave,,47.513538,-52.804235,,,,,,0
+1630,1630,Elizabeth Ave before Anderson Ave,,47.564885,-52.738207,,,,,,0
+2610,2610,Kelsey Dr at Walmart,,47.555126,-52.782729,,,,,,0
+1850,1850,Freshwater Rd after Parade St,,47.564176,-52.715183,,,,,,0
+1150,1150,MUN Centre,,47.57337,-52.735682,,,,,,0
+2690,2690,Anderson Ave before Freshwater Rd,,47.563933,-52.733546,,,,,,0
+4440,4440,Mount Pearl Square,,47.523852,-52.7805,,,,,,0
+4960,4960,Clinch Cres at Faculty of Medicine,,47.573008,-52.740561,,,,,,0
+4980,4980,Clinch Cres before Prince Philip Dr,,47.57154,-52.73818,,,,,,0
+4982,4982,Clinch Cres opp Faculty of Medicine,,47.573146,-52.740488,,,,,,0
+4985,4985,Clinch Cres opp Janeway,,47.572354,-52.744499,,,,,,0
+5025,5025,Harvey Rd at Longs Hill,,47.56445,-52.71368,,,,,,0
+1202,1202,Ridge Rd at YMCA,,47.590126,-52.729192,,,,,,0
