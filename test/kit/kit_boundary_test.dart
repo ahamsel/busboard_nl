@@ -36,7 +36,6 @@ const _legacyAllowList = {
   'lib/ui/map/bus_bottom_sheet.dart',
   'lib/ui/map/map_screen.dart',
   'lib/ui/map/stop_bottom_sheet.dart',
-  'lib/ui/settings/settings_screen.dart',
 };
 
 void main() {
