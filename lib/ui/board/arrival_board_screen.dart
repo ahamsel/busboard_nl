@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +10,7 @@ import '../../data/realtime/timetrack_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
 import '../alerts/service_alert_card.dart';
+import '../kit/kit.dart';
 import 'arrival_row_tile.dart';
 
 /// Arrival board screen for a selected stop.
@@ -149,156 +150,90 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     ) {
       if (prev != next) _startTimer();
     });
+    // The schedule may finish loading after the first refresh ran (e.g. a deep
+    // link straight to the board); load the departures as soon as it arrives.
+    ref.listen<AsyncValue<Object?>>(gtfsRepositoryProvider, (prev, next) {
+      if (next.hasValue && prev?.hasValue != true) _refreshData();
+    });
 
-    final theme = Theme.of(context);
+    final bb = context.bb;
     final stopInfo = ref.watch(stopInfoProvider(widget.stopId));
+    final stopName = stopInfo?.stopName ?? 'Stop ${widget.stopId}';
     final relevantAlerts = _relevantAlerts(
       ref.watch(serviceUpdatesProvider).value,
     );
-    final timeFormat = DateFormat('HH:mm:ss');
+    final updated = DateFormat('HH:mm:ss').format(_lastUpdate);
+    final statusText = _liveAvailable
+        ? 'Live · updated $updated'
+        : '${_liveIssue ?? 'Live unavailable'} · showing schedule';
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-          onPressed: () => context.pop(),
-        ),
-        title: Column(
-          children: [
-            Text(
-              stopInfo?.stopName ?? 'Stop ${widget.stopId}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            Text(
-              'Stop #${widget.stopId}',
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+    return BBScaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.xs, 0),
+            child: Row(children: [
+              BBPill(
+                label: 'STOP ${widget.stopId}',
+                background: bb.colors.ink,
+                foreground: bb.colors.bg,
               ),
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 20),
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-            onPressed: () => context.push('/settings'),
+              const Spacer(),
+              BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop()),
+              BBIconButton(
+                icon: BBIcons.settings,
+                semanticLabel: 'Settings',
+                onPressed: () => context.push('/settings'),
+              ),
+            ]),
           ),
-        ],
-      ),
-
-      body: RefreshIndicator(
-        onRefresh: _refreshData,
-        color: theme.colorScheme.primary,
-        child: Column(
-          children: [
-            // Status bar
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface.withValues(alpha: 0.5),
-                border: Border(
-                  bottom: BorderSide(
-                    color:
-                        theme.dividerTheme.color ??
-                        theme.colorScheme.onSurface.withValues(alpha: 0.06),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  // Updated timestamp
-                  Icon(
-                    Icons.update,
-                    size: 14,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.35),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Updated ${timeFormat.format(_lastUpdate)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                  ),
-                  const Spacer(),
-                  // Status indicators
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_liveAvailable) ...[
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: theme.brightness == Brightness.light
-                                ? const Color(0xFF2E7D32)
-                                : const Color(0xFF81C784),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          'GPS FEED',
-                          style: TextStyle(
-                            color: theme.brightness == Brightness.light
-                                ? const Color(0xFF2E7D32)
-                                : const Color(0xFF81C784),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ] else
-                        Text(
-                          _liveIssue ?? 'Live unavailable',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.5,
-                            ),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, 0),
+            child: Semantics(
+              header: true,
+              child: Text(stopName, maxLines: 2, overflow: TextOverflow.ellipsis, style: bb.text.display),
             ),
-
-            if (relevantAlerts.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
-                child: Column(
-                  children: [
-                    ServiceAlertCard(
-                      alert: relevantAlerts.first,
-                      stopNames: stopInfo == null
-                          ? const {}
-                          : {widget.stopId: stopInfo.stopName},
-                      compact: true,
-                      onTap: () => context.go('/alerts'),
-                    ),
-                    if (relevantAlerts.length > 1)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 5),
-                        child: TextButton(
-                          onPressed: () => context.go('/alerts'),
-                          child: Text(
-                            '${relevantAlerts.length - 1} more relevant '
-                            '${relevantAlerts.length == 2 ? "alert" : "alerts"}',
-                          ),
-                        ),
-                      ),
-                  ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.s),
+            child: Semantics(
+              liveRegion: true,
+              child: Row(children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: _liveAvailable ? bb.colors.live : bb.colors.muted,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-
-            // Arrivals list
-            Expanded(child: _buildArrivalsList(theme)),
-          ],
-        ),
+                const SizedBox(width: BBSpace.s),
+                Expanded(child: Text(statusText, style: bb.text.caption)),
+              ]),
+            ),
+          ),
+          if (relevantAlerts.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.xs),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ServiceAlertCard(
+                  alert: relevantAlerts.first,
+                  stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
+                  compact: true,
+                  onTap: () => context.go('/alerts'),
+                ),
+                if (relevantAlerts.length > 1)
+                  BBButton(
+                    label:
+                        '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
+                    kind: BBButtonKind.quiet,
+                    onPressed: () => context.go('/alerts'),
+                  ),
+              ]),
+            ),
+          Expanded(child: BBRefresh(onRefresh: _refreshData, child: _buildArrivalsList(context))),
+        ],
       ),
     );
   }
@@ -319,76 +254,31 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         .toList();
   }
 
-  Widget _buildArrivalsList(ThemeData theme) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  Widget _buildArrivalsList(BuildContext context) {
+    final bottom = BBNavBar.reservedHeight(context) + BBSpace.l;
 
+    // Every state is a scrollable list so pull-to-refresh always works.
+    Widget centered(Widget child) => ListView(
+          padding: EdgeInsets.only(bottom: bottom),
+          children: [const SizedBox(height: 64), Center(child: child)],
+        );
+
+    if (_loading) return centered(const BBLoading(label: 'Loading departures...'));
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 48,
-              color: theme.colorScheme.error.withValues(alpha: 0.9),
-            ),
-            const SizedBox(height: 16),
-            Text(_error!, style: theme.textTheme.titleMedium),
-          ],
-        ),
-      );
+      return centered(BBEmptyState(icon: BBIcons.error, tone: BBEmptyTone.error, title: _error!));
     }
-
     if (_arrivals.isEmpty) {
-      return ListView(
-        children: [
-          const SizedBox(height: 80),
-          Center(
-            child: Column(
-              children: [
-                Icon(
-                  Icons.schedule,
-                  size: 56,
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No upcoming departures',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'There are no scheduled departures\nfrom this stop right now.',
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                    fontSize: 13,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
+      return centered(const BBEmptyState(
+        icon: BBIcons.schedule,
+        title: 'No upcoming departures',
+        message: 'There are no scheduled departures\nfrom this stop right now.',
+      ));
     }
-
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.screen, bottom),
       itemCount: _arrivals.length,
-      separatorBuilder: (context, i) => Divider(
-        height: 1,
-        indent: 82,
-        color:
-            theme.dividerTheme.color ??
-            theme.colorScheme.onSurface.withValues(alpha: 0.06),
-      ),
-      itemBuilder: (context, index) {
-        return ArrivalRowTile(arrival: _arrivals[index]);
-      },
+      separatorBuilder: (_, _) => const SizedBox(height: BBSpace.s),
+      itemBuilder: (_, index) => ArrivalRowTile(arrival: _arrivals[index]),
     );
   }
 }
