@@ -39,9 +39,14 @@ class AppShell extends ConsumerWidget {
             bottom: 0,
             child: BBNavBar(
               items: [
-                const BBNavItem(label: 'Board', icon: BBIcons.board),
-                const BBNavItem(label: 'Map', icon: BBIcons.map),
-                BBNavItem(label: 'Alerts', icon: BBIcons.alerts, badgeCount: activeAlertCount),
+                const BBNavItem(label: 'Board', icon: BBIcons.board, activeIcon: BBIcons.boardFill),
+                const BBNavItem(label: 'Map', icon: BBIcons.map, activeIcon: BBIcons.mapFill),
+                BBNavItem(
+                  label: 'Alerts',
+                  icon: BBIcons.alerts,
+                  activeIcon: BBIcons.alertsFill,
+                  badgeCount: activeAlertCount,
+                ),
               ],
               currentIndex: index,
               onSelect: (i) => navigationShell.goBranch(i, initialLocation: i == index),

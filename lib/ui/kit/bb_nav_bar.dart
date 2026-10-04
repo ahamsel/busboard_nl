@@ -4,9 +4,12 @@ import 'bb_pressable.dart';
 import 'tokens.dart';
 
 class BBNavItem {
-  const BBNavItem({required this.label, required this.icon, this.badgeCount = 0});
+  const BBNavItem({required this.label, required this.icon, this.activeIcon, this.badgeCount = 0});
   final String label;
   final IconData icon;
+
+  /// Shown while the tab is selected (the fill weight); defaults to [icon].
+  final IconData? activeIcon;
   final int badgeCount;
 }
 
@@ -98,7 +101,7 @@ class _Tab extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(item.icon, size: 18, color: fg),
+                Icon(selected ? (item.activeIcon ?? item.icon) : item.icon, size: 18, color: fg),
                 const SizedBox(width: 6),
                 Text(item.label, maxLines: 1, style: bb.text.label.copyWith(color: fg)),
                 if (item.badgeCount > 0) ...[

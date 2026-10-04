@@ -65,6 +65,15 @@ flutter:
           weight: 700
         - asset: assets/fonts/Figtree-ExtraBold.ttf
           weight: 800
+    # Phosphor icons (MIT), the two weights bb_icons.dart uses.
+    - family: PhosphorRegular
+      fonts:
+        - asset: assets/fonts/phosphor/Phosphor-Regular.ttf
+    - family: PhosphorFill
+      fonts:
+        - asset: assets/fonts/phosphor/Phosphor-Fill.ttf
   assets:
     # Figtree's OFL text, shown on the licence page (see lib/app_licenses.dart).
     - assets/fonts/OFL.txt
+    # Phosphor's MIT licence text, same page.
+    - assets/fonts/phosphor/LICENSE.txt
