@@ -1,4 +1,5 @@
 import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -31,13 +32,21 @@ void main() {
   });
 
   testWidgets('a long chip label ellipsizes at 2x text on 320 pt', (tester) async {
+    const label = 'Freshwater Rd before Anderson Ave · 3080';
     await tester.pumpWidget(kitHost(
-      BBChip(label: 'Freshwater Rd before Anderson Ave · 3080', icon: BBIcons.star, chevron: true, onTap: () {}),
-      width: 320,
+      Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: BBChip(label: label, icon: BBIcons.star, chevron: true, onTap: () {}),
+        ),
+      ),
+      width: 390,
       textScale: 2,
     ));
     expect(tester.takeException(), isNull);
     expect(tester.getSize(find.byType(BBChip)).width, lessThanOrEqualTo(320));
+    expect(tester.widget<Text>(find.text(label)).overflow, TextOverflow.ellipsis);
+    expect(tester.renderObject<RenderParagraph>(find.text(label)).didExceedMaxLines, isTrue);
   });
 
   testWidgets('control pill buttons are 44 pt, labelled, and dim when disabled', (tester) async {
