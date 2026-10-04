@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'kit_test_helpers.dart';
@@ -144,5 +148,98 @@ void main() {
     await tester.fling(find.text('row'), const Offset(0, 300), 1000);
     await tester.pumpAndSettle();
     expect(refreshed, 1);
+  });
+
+  Widget refreshHost(Future<void> Function() onRefresh) => kitHost(SizedBox(
+        height: 600,
+        child: BBRefresh(
+          onRefresh: onRefresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: const [SizedBox(height: 100, child: Text('row'))],
+          ),
+        ),
+      ));
+
+  testWidgets('pulling past the trigger ticks once, and a short pull does not refresh', (tester) async {
+    var ticks = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') ticks++;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    var refreshed = 0;
+    await tester.pumpWidget(refreshHost(() async => refreshed++));
+
+    await tester.drag(find.text('row'), const Offset(0, 40));
+    await tester.pumpAndSettle();
+    expect(refreshed, 0);
+    expect(ticks, 0);
+
+    await tester.fling(find.text('row'), const Offset(0, 300), 1000);
+    await tester.pumpAndSettle();
+    expect(refreshed, 1);
+    expect(ticks, 1);
+  });
+
+  testWidgets('screen readers can refresh with the Refresh action', (tester) async {
+    final handle = tester.ensureSemantics();
+    final done = Completer<void>();
+    var refreshed = 0;
+    await tester.pumpWidget(refreshHost(() {
+      refreshed++;
+      return done.future;
+    }));
+    final id = CustomSemanticsAction.getIdentifier(BBRefresh.refreshAction);
+    tester.semantics.customAction(
+      find.semantics.byPredicate((n) => n.getSemanticsData().customSemanticsActionIds?.contains(id) ?? false),
+      BBRefresh.refreshAction,
+    );
+    await tester.pump();
+    expect(refreshed, 1);
+    expect(find.semantics.byPredicate((n) => n.flagsCollection.isLiveRegion && n.label == 'Refreshing'), findsOneWidget);
+    done.complete();
+    await tester.pump();
+    expect(find.semantics.byPredicate((n) => n.flagsCollection.isLiveRegion && n.label == 'Updated'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 3));
+    handle.dispose();
+  });
+
+  testWidgets('a pull during a refresh does not start another', (tester) async {
+    final done = Completer<void>();
+    var refreshed = 0;
+    await tester.pumpWidget(refreshHost(() {
+      refreshed++;
+      return done.future;
+    }));
+    // The hopping dots loop while refreshing, so pump fixed durations here:
+    // pumpAndSettle would never settle.
+    await tester.fling(find.text('row'), const Offset(0, 300), 1000);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.fling(find.text('row'), const Offset(0, 300), 1000);
+    await tester.pump(const Duration(seconds: 1));
+    expect(refreshed, 1);
+    expect(find.byType(BBRouteDots), findsOneWidget);
+    done.complete();
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.byType(BBRouteDots), findsNothing);
+  });
+
+  testWidgets('a failing refresh ends the indicator and reports once', (tester) async {
+    var calls = 0;
+    await tester.pumpWidget(refreshHost(() async {
+      calls++;
+      throw StateError('offline');
+    }));
+    await tester.fling(find.text('row'), const Offset(0, 300), 1000);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isA<StateError>());
+    expect(find.byType(BBRouteDots), findsNothing);
+
+    await tester.fling(find.text('row'), const Offset(0, 300), 1000);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isA<StateError>());
+    expect(calls, 2);
   });
 }
