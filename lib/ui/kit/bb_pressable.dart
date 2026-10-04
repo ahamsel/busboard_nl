@@ -27,6 +27,14 @@ class BBPressable extends StatefulWidget {
 class _BBPressableState extends State<BBPressable> {
   bool _down = false;
 
+  @override
+  void didUpdateWidget(BBPressable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Disabled mid-press: the gesture callbacks are gone, so nothing would
+    // ever clear the pressed look.
+    if (widget.onTap == null) _down = false;
+  }
+
   void _setDown(bool value) {
     if (_down != value) setState(() => _down = value);
   }

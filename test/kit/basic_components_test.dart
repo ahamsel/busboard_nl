@@ -79,6 +79,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('BBPressable does not stay pressed when disabled mid-press', (tester) async {
+    double scaleOf() => tester.widget<AnimatedScale>(
+          find.descendant(of: find.byType(BBPressable), matching: find.byType(AnimatedScale)),
+        ).scale;
+
+    await tester.pumpWidget(kitHost(BBPressable(onTap: () {}, child: const Text('hold'))));
+    final gesture = await tester.startGesture(tester.getCenter(find.text('hold')));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(scaleOf(), 0.98);
+
+    await tester.pumpWidget(kitHost(const BBPressable(onTap: null, child: Text('hold'))));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(scaleOf(), 1.0);
+  });
+
   testWidgets('large RouteBadge grows with text scale, capped at 1.6x', (tester) async {
     await tester.pumpWidget(kitHost(const Center(child: RouteBadge(routeNumber: 26))));
     expect(tester.getSize(find.byType(RouteBadge)), const Size(40, 40));
