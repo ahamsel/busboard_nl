@@ -32,11 +32,11 @@
 All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 
 ### 2.1 Icons: Phosphor plus our own glyphs
-- **Phosphor icons** (`phosphor_flutter`, MIT; Flutter lists a package's LICENSE on the licences page automatically, so `registerAppLicenses()` needs no change):
+- **Phosphor icons** (MIT). The two weights we use, Regular and Fill, are **vendored** as app fonts in `assets/fonts/phosphor/` (families `PhosphorRegular` and `PhosphorFill`). Their licence is registered in `registerAppLicenses()`, like Figtree's. The `phosphor_flutter` package isn't used: its latest release, 2.1.0, doesn't compile on Flutter 3.47, because `IconData` is now final.
   - The **regular** weight is the default.
   - The **fill** weight marks active and selected states: the active nav tab, a starred stop, a selected route chip.
   - `BBIcons` keeps its names (`board`, `map`, `alerts`, …), so screen code doesn't change. Only the glyph source moves from Material Rounded to Phosphor.
-  - Release builds keep `--tree-shake-icons`, so only the glyphs we use ship.
+  - `BBIcons` are plain `const IconData` values with Phosphor's code points. Release builds keep `--tree-shake-icons`, so only the glyphs we use ship.
 - **Custom glyphs** (`lib/ui/kit/glyphs/`, `CustomPainter`, drawn in the B2 logo's style):
   - `bus`: the logo's bus silhouette, front three-quarter view;
   - `stopPole`: a stop sign on a pole, as riders see it on the street;
@@ -197,4 +197,4 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **The ~12 s delay** may surprise riders who compare the dot with the bus in the street. The follow card always shows "Last GPS update 12 s ago" in its technical details, and countdowns stay live.
 - **OpenFreeMap availability:** it's a donation-funded free service. If the tiles fail, the map shows the kit error state and the Board keeps working. The style generator also lets us retarget another OpenMapTiles-schema source later.
 - **Fleet View is currently "Forbidden"** from some networks. Nothing in Phase 3 depends on it, and the route-number reset rule makes its flapping harmless.
-- **Phosphor package size:** icon tree-shaking keeps release size in check. If a platform build ever disables it, we can vendor a subset font instead.
+- **Phosphor fonts:** they're vendored, so upgrades are manual (copy the new TTFs and code points). Icon tree-shaking keeps release size in check.
