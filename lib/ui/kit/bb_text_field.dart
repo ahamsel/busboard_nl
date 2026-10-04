@@ -53,7 +53,18 @@ class BBTextField extends StatelessWidget {
               autofocus: autofocus,
               style: bb.text.body,
               cursorColor: bb.colors.brand,
-              decoration: InputDecoration.collapsed(
+              // Fully bare field: BBTextField draws its own container, so the
+              // theme's filled/outlined InputDecorationTheme must not leak in.
+              decoration: InputDecoration(
+                isCollapsed: true,
+                filled: false,
+                contentPadding: EdgeInsets.zero,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
                 hintText: hint,
                 hintStyle: bb.text.body.copyWith(color: bb.colors.muted),
               ),
