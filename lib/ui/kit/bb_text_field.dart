@@ -70,6 +70,7 @@ class BBTextField extends StatelessWidget {
                   errorBorder: InputBorder.none,
                   focusedErrorBorder: InputBorder.none,
                   hintText: hint,
+                hintMaxLines: 2,
                   hintStyle: bb.text.body.copyWith(color: bb.colors.muted),
                 ),
               ),

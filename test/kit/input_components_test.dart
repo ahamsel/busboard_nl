@@ -54,6 +54,30 @@ void main() {
     expect(typed.last, '1150');
   });
 
+  testWidgets('BBTextField decoration is border-less, unpadded and lets the hint wrap to two lines', (tester) async {
+    for (final brightness in Brightness.values) {
+      await tester.pumpWidget(kitHost(const BBTextField(hint: 'Stop name or number on the pole'), brightness: brightness));
+      final d = tester.widget<InputDecorator>(find.byType(InputDecorator)).decoration;
+      expect(d.border, InputBorder.none, reason: '${brightness.name} border');
+      expect(d.enabledBorder, InputBorder.none, reason: '${brightness.name} enabledBorder');
+      expect(d.focusedBorder, InputBorder.none, reason: '${brightness.name} focusedBorder');
+      expect(d.contentPadding, EdgeInsets.zero, reason: '${brightness.name} contentPadding');
+      expect(d.filled, isFalse, reason: '${brightness.name} filled');
+      expect(d.hintMaxLines, 2, reason: '${brightness.name} hintMaxLines');
+    }
+  });
+
+  testWidgets('a long hint wraps instead of truncating at text scale 2.0', (tester) async {
+    await tester.pumpWidget(kitHost(
+      const BBTextField(hint: 'Stop name or number on the pole'),
+      textScale: 2.0,
+      width: 260,
+    ));
+    final hint = tester.widget<Text>(find.text('Stop name or number on the pole'));
+    expect(hint.maxLines, 2);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('BBTextField works without a Material ancestor', (tester) async {
     // kitHost provides only a ColoredBox, so this fails if the field relies on
     // an ambient Material (as TextField does).
