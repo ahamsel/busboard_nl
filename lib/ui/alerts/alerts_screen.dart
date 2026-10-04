@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../data/realtime/service_alert_models.dart';
 import '../../state/providers.dart';
+import '../copy/legal_copy.dart';
 import 'service_alert_card.dart';
 
 class AlertsScreen extends ConsumerWidget {
@@ -106,7 +107,7 @@ class _AlertsContent extends ConsumerWidget {
           ],
           const SizedBox(height: 18),
           Text(
-            'Pull down to refresh · Official Metrobus GTFS-Realtime',
+            LegalCopy.footer,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11,

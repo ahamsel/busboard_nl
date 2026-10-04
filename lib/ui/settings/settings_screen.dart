@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../state/providers.dart';
+import '../copy/legal_copy.dart';
 
 /// Settings screen for changing refresh interval and forcing GTFS re-download.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -330,14 +331,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Data: Metrobus public GTFS, GTFS-Realtime and '
-                      'TimeTrack JSON feeds. No webpage scraping.',
+                      LegalCopy.independence,
                       style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.3,
-                        ),
-                        fontSize: 11,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      LegalCopy.dataCredit,
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      LegalCopy.mapCredit,
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
                     ),
                   ],
                 ),
