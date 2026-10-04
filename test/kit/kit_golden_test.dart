@@ -97,6 +97,27 @@ class _Gallery extends StatelessWidget {
               ],
             ),
             const SizedBox(height: BBSpace.m),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      BBChip(label: 'MUN Centre · 1150', icon: BBIcons.star, chevron: true, onTap: () {}),
+                      BBChip(label: 'All routes', chevron: true, onTap: () {}),
+                      BBChip(label: 'Route 10', selected: true, onTap: () {}),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: BBSpace.m),
+                BBControlPill(items: [
+                  BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: () {}),
+                ]),
+              ],
+            ),
+            const SizedBox(height: BBSpace.m),
             BBNavBar(
               items: const [
                 BBNavItem(label: 'Board', icon: BBIcons.board),

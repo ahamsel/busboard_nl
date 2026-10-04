@@ -3,6 +3,8 @@ library;
 
 export 'bb_button.dart';
 export 'bb_card.dart';
+export 'bb_chip.dart';
+export 'bb_control_pill.dart';
 export 'bb_dialog.dart';
 export 'bb_divider.dart';
 export 'glyphs/bb_glyph.dart';
