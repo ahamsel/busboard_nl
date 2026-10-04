@@ -84,6 +84,12 @@ lib/
   state/providers.dart              → Riverpod providers (polling stream, engine, settings)
 ```
 
+## Building
+
+- Android builds need JDK 21 (maplibre_gl 0.27 targets Java 21). Point Gradle at it, for example with `JAVA_HOME` and `GRADLE_OPTS=-Dorg.gradle.java.home=<jdk21>`.
+- The iOS deployment target is 15.0 (the minimum Flutter 3.47 supports).
+- Release builds are signed from `android/key.properties`, which is not checked in.
+
 ## How to Run
 
 ```bash
