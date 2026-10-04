@@ -151,4 +151,11 @@ void main() {
     expect(find.text('60 seconds'), findsOneWidget);
     handle.dispose();
   });
+
+  testWidgets('the stored interval is clamped to 5..60 when loaded, so the board timer agrees with the display', (tester) async {
+    final high = await _pump(tester, prefs: {'refreshInterval': 100});
+    expect(high.read(settingsProvider).refreshIntervalSeconds, 60);
+    final low = await _pump(tester, prefs: {'refreshInterval': 1});
+    expect(low.read(settingsProvider).refreshIntervalSeconds, 5);
+  });
 }

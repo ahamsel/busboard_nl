@@ -68,7 +68,8 @@ class SettingsNotifier extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     state = AppSettings(
       selectedStopId: prefs.getString('selectedStopId'),
-      refreshIntervalSeconds: prefs.getInt('refreshInterval') ?? 5,
+      // Keep the stored value inside the 5..60 s range the UI offers.
+      refreshIntervalSeconds: (prefs.getInt('refreshInterval') ?? 5).clamp(5, 60),
       lastGtfsUpdate: prefs.getString('lastGtfsUpdate') != null
           ? DateTime.tryParse(prefs.getString('lastGtfsUpdate')!)
           : null,
