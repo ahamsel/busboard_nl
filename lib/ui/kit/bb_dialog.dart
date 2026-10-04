@@ -46,41 +46,58 @@ class _DialogCard<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: BBSpace.xxl),
+    // Keep the card inside the safe area (and above the keyboard) so its
+    // height is bounded: long text scrolls, the actions stay on screen.
+    final insets = MediaQuery.paddingOf(context) + EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom);
+    return Padding(
+      padding: insets + const EdgeInsets.all(BBSpace.xxl),
+      child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
-          child: DecoratedBox(
-            decoration: bb.floating(radius: BBRadius.sheet),
-            child: Padding(
-              padding: const EdgeInsets.all(BBSpace.xl),
-              child: DefaultTextStyle(
-                style: bb.text.body,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Semantics(header: true, child: Text(title, style: bb.text.headline)),
-                    if (message != null) ...[
-                      const SizedBox(height: BBSpace.s),
-                      Text(message!, style: bb.text.body.copyWith(color: bb.colors.muted)),
-                    ],
-                    const SizedBox(height: BBSpace.xl),
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      spacing: BBSpace.s,
-                      runSpacing: BBSpace.s,
-                      children: [
-                        for (final a in actions)
-                          BBButton(
-                            label: a.label,
-                            kind: a.primary ? BBButtonKind.primary : BBButtonKind.quiet,
-                            onPressed: () => Navigator.of(context).pop(a.value),
+          child: Semantics(
+            namesRoute: true,
+            explicitChildNodes: true,
+            label: title,
+            child: DecoratedBox(
+              decoration: bb.floating(radius: BBRadius.sheet),
+              child: Padding(
+                padding: const EdgeInsets.all(BBSpace.xl),
+                child: DefaultTextStyle(
+                  style: bb.text.body,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Semantics(header: true, child: Text(title, style: bb.text.headline)),
+                              if (message != null) ...[
+                                const SizedBox(height: BBSpace.s),
+                                Text(message!, style: bb.text.body.copyWith(color: bb.colors.muted)),
+                              ],
+                            ],
                           ),
-                      ],
-                    ),
-                  ],
+                        ),
+                      ),
+                      const SizedBox(height: BBSpace.xl),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: BBSpace.s,
+                        runSpacing: BBSpace.s,
+                        children: [
+                          for (final a in actions)
+                            BBButton(
+                              label: a.label,
+                              kind: a.primary ? BBButtonKind.primary : BBButtonKind.quiet,
+                              onPressed: () => Navigator.of(context).pop(a.value),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
