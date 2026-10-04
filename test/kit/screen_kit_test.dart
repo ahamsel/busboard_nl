@@ -17,6 +17,22 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('disabled BBIconButton is a disabled button, ignores taps and stays visible', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(kitHost(Center(child: BBIconButton(icon: BBIcons.add, semanticLabel: 'Add', onPressed: null))));
+    expect(
+      tester.getSemantics(find.byType(BBIconButton)),
+      isSemantics(label: 'Add', isButton: true, isEnabled: false, hasTapAction: false),
+    );
+    await tester.tap(find.byType(BBIconButton));
+    expect(tester.takeException(), isNull);
+    final icon = tester.widget<Icon>(find.byType(Icon));
+    expect(icon.color, BBColors.light.ink);
+    final opacity = tester.widget<Opacity>(find.ancestor(of: find.byType(Icon), matching: find.byType(Opacity)));
+    expect(opacity.opacity, 0.45);
+    handle.dispose();
+  });
+
   testWidgets('BBTopBar shows title as a header, back and actions', (tester) async {
     final handle = tester.ensureSemantics();
     var back = 0;
@@ -51,6 +67,10 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(kitHost(const BBLoading(label: 'Finding nearby stops...')));
     expect(find.bySemanticsLabel('Finding nearby stops...'), findsWidgets);
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Finding nearby stops...').first),
+      isSemantics(isLiveRegion: true, label: 'Finding nearby stops...'),
+    );
     handle.dispose();
   });
 
