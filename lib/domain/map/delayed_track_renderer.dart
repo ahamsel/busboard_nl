@@ -1,3 +1,4 @@
+import '../location/nearest_stop_service.dart';
 import 'bus_track.dart';
 import 'route_geometry.dart';
 
@@ -27,13 +28,16 @@ class RenderedBus {
 /// distance along the shape, never backward on the same trip; geographic
 /// interpolation across a trip change or off route; at most
 /// [maxExtrapolation] past the newest fix, then hold.
+///
+/// [render] updates per-vehicle state (the never-backward mark and the
+/// smoothed delay), so call it once per bus per frame with a monotonic
+/// `now`. [renderAll] also drops the state of vehicles it was not given.
 class DelayedTrackRenderer {
   DelayedTrackRenderer(this._geometry);
 
   final RouteGeometry _geometry;
 
-  /// The furthest progress drawn per bus, on the trip it was drawn on.
-  final Map<String, ({String? tripId, double progress})> _highWater = {};
+  final Map<String, _VehicleState> _state = {};
 
   static const Duration minDelay = Duration(seconds: 8);
   static const Duration maxDelay = Duration(seconds: 20);
@@ -41,6 +45,26 @@ class DelayedTrackRenderer {
   static const Duration maxExtrapolation = Duration(seconds: 5);
   static const Duration _delayMargin = Duration(seconds: 2);
   static const int _delaySamples = 8;
+
+  /// How far the drawn delay may move toward its target, per second of wall time.
+  static const double _delaySlewPerSecond = 0.1;
+
+  /// Never-backward hold: backward moves up to this far are jitter, held.
+  static const double _jitterMeters = 60;
+
+  /// A backward jump whose two places are this close on the map is the same
+  /// road seen from the other pass: accepted at once.
+  static const double _relabelMeters = 40;
+
+  /// A hold of a bigger backward move lasts at most this long (render time).
+  static const Duration _maxHold = Duration(seconds: 15);
+
+  /// A mark whose last use is older than this is from another session of the
+  /// bus (a reused trip ID, a re-created track, a resumed app).
+  static const Duration _markLifetime = Duration(seconds: 60);
+
+  /// A clock this far behind a mark's last use has moved back.
+  static const Duration _clockBackTolerance = Duration(seconds: 1);
 
   /// Median interval between the track's last fixes, plus 2 s, clamped to
   /// [minDelay]..[maxDelay]; [defaultDelay] with fewer than two fixes.
@@ -58,14 +82,28 @@ class DelayedTrackRenderer {
     return Duration(milliseconds: ms);
   }
 
-  Map<String, RenderedBus> renderAll(Iterable<BusTrack> tracks, DateTime now) =>
-      {for (final t in tracks) t.vehicleId: render(t, now)};
+  Map<String, RenderedBus> renderAll(Iterable<BusTrack> tracks, DateTime now) {
+    final result = {for (final t in tracks) t.vehicleId: render(t, now)};
+    _state.removeWhere((id, _) => !result.containsKey(id));
+    return result;
+  }
 
-  void forget(String vehicleId) => _highWater.remove(vehicleId);
+  void forget(String vehicleId) => _state.remove(vehicleId);
+
+  /// The delay currently applied to [vehicleId]: [delayFor] eased in at
+  /// 0.1 s per second. Null before the bus's first render.
+  Duration? currentDelayFor(String vehicleId) {
+    final s = _state[vehicleId]?.delaySeconds;
+    return s == null ? null : Duration(microseconds: (s * 1e6).round());
+  }
+
+  /// How many vehicles hold state; for tests.
+  int get debugStateCount => _state.length;
 
   RenderedBus render(BusTrack track, DateTime now) {
     final fixes = track.fixes;
-    final at = now.subtract(delayFor(track));
+    final state = _state.putIfAbsent(track.vehicleId, _VehicleState.new);
+    final at = now.subtract(_slewedDelay(track, state, now));
     RenderedBus bus;
     if (!at.isAfter(fixes.first.gpsTime)) {
       bus = _atFix(track.vehicleId, fixes.first);
@@ -82,7 +120,25 @@ class DelayedTrackRenderer {
       final f = span <= 0 ? 1.0 : at.difference(a.gpsTime).inMicroseconds / span;
       bus = _between(track.vehicleId, a, b, f.clamp(0.0, 1.0));
     }
-    return _neverBackward(bus);
+    return _neverBackward(bus, at, state);
+  }
+
+  /// The delay for this frame: the target, approached at most
+  /// [_delaySlewPerSecond] per second of wall time since the previous render.
+  Duration _slewedDelay(BusTrack track, _VehicleState state, DateTime now) {
+    final target = delayFor(track).inMicroseconds / 1e6;
+    var current = state.delaySeconds ?? target;
+    final last = state.lastNow;
+    if (last != null) {
+      final elapsed = now.difference(last).inMicroseconds / 1e6;
+      if (elapsed > 0) {
+        final step = elapsed * _delaySlewPerSecond;
+        current = target > current ? (current + step < target ? current + step : target) : (current - step > target ? current - step : target);
+      }
+    }
+    state.delaySeconds = current;
+    state.lastNow = now;
+    return Duration(microseconds: (current * 1e6).round());
   }
 
   RenderedBus _atFix(String id, TrackFix f) {
@@ -125,22 +181,87 @@ class DelayedTrackRenderer {
   }
 
   RenderedBus? _onShape(String id, String shapeId, double progress, String? tripId) {
-    final pose = _geometry.poseAt(shapeId, progress);
+    final length = _geometry.shapeLength(shapeId);
+    final clamped = length == null ? progress : progress.clamp(0.0, length);
+    final pose = _geometry.poseAt(shapeId, clamped);
     if (pose == null) return null;
-    return RenderedBus(vehicleId: id, lat: pose.lat, lon: pose.lon, heading: pose.heading, progress: progress, shapeId: shapeId, tripId: tripId);
+    return RenderedBus(vehicleId: id, lat: pose.lat, lon: pose.lon, heading: pose.heading, progress: clamped, shapeId: shapeId, tripId: tripId);
   }
 
   RenderedBus _raw(String id, double lat, double lon, double heading, String? tripId) =>
       RenderedBus(vehicleId: id, lat: lat, lon: lon, heading: heading, tripId: tripId);
 
-  RenderedBus _neverBackward(RenderedBus bus) {
+  /// Holds a bus that would move backward along its trip, within limits: a
+  /// small step back (<= [_jitterMeters]) is jitter and held; a bigger one
+  /// that lands within [_relabelMeters] of the mark on the map is the same
+  /// place on the other pass and accepted; any other is held for at most
+  /// [_maxHold] of render time, then accepted. Drawing without a progress
+  /// (off route, across a trip change) forgets the mark.
+  RenderedBus _neverBackward(RenderedBus bus, DateTime at, _VehicleState state) {
     final p = bus.progress;
-    if (p == null || bus.shapeId == null) return bus;
-    final hw = _highWater[bus.vehicleId];
-    if (hw != null && hw.tripId == bus.tripId && p < hw.progress) {
-      return _onShape(bus.vehicleId, bus.shapeId!, hw.progress, bus.tripId) ?? bus;
+    final shapeId = bus.shapeId;
+    if (p == null || shapeId == null) {
+      state.mark = null;
+      return bus;
     }
-    _highWater[bus.vehicleId] = (tripId: bus.tripId, progress: p);
-    return bus;
+    var mark = state.mark;
+    if (mark != null && (at.isBefore(mark.at.subtract(_clockBackTolerance)) || at.isAfter(mark.at.add(_markLifetime)))) {
+      mark = null;
+    }
+    if (mark == null || mark.tripId != bus.tripId || p >= mark.progress) {
+      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
+      return bus;
+    }
+    final markPose = _geometry.poseAt(shapeId, mark.progress);
+    final held = _onShape(bus.vehicleId, shapeId, mark.progress, bus.tripId);
+    if (held == null || markPose == null) {
+      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
+      return bus;
+    }
+    if (mark.progress - p <= _jitterMeters) {
+      mark.at = at;
+      state.mark = mark;
+      return held;
+    }
+    final pose = _geometry.poseAt(shapeId, p);
+    if (pose != null && NearestStopService.haversineDistance(pose.lat, pose.lon, markPose.lat, markPose.lon) <= _relabelMeters) {
+      // The hold episode, if one is under way, keeps its start: a bus that
+      // sweeps back across the other pass is still one backward move.
+      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at)..holdStart = mark.holdStart;
+      return bus;
+    }
+    final holdStart = mark.holdStart ?? at;
+    if (at.difference(holdStart) > _maxHold) {
+      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
+      return bus;
+    }
+    mark
+      ..at = at
+      ..holdStart = holdStart;
+    state.mark = mark;
+    return held;
   }
+}
+
+/// The furthest progress drawn for a bus on one trip, and when it was last
+/// used (render time).
+class _Mark {
+  _Mark({required this.tripId, required this.progress, required this.at});
+
+  final String? tripId;
+  final double progress;
+  DateTime at;
+
+  /// Render time at which the current hold of a big backward move began.
+  DateTime? holdStart;
+}
+
+class _VehicleState {
+  _Mark? mark;
+
+  /// The delay currently applied, seconds; null before the first render.
+  double? delaySeconds;
+
+  /// Wall time of the previous render.
+  DateTime? lastNow;
 }
