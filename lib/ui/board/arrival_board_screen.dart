@@ -237,14 +237,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.s),
             child: Row(children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: _liveAvailable ? bb.colors.live : bb.colors.muted,
-                  shape: BoxShape.circle,
-                ),
-              ),
+              BBGlyph(BBGlyphKind.liveDot, size: 12, color: _liveAvailable ? bb.colors.live : bb.colors.muted),
               const SizedBox(width: BBSpace.s),
               Flexible(
                 child: Semantics(
