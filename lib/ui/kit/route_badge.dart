@@ -19,6 +19,12 @@ class RouteBadge extends StatelessWidget {
   final String? label;
   final RouteBadgeSize size;
 
+  /// Side of the large badge at text scale 1.0.
+  static const double largeSide = 40;
+
+  /// Largest text-scale factor the large badge follows.
+  static const double maxScale = 1.6;
+
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
@@ -31,10 +37,16 @@ class RouteBadge extends StatelessWidget {
       fontWeight: FontWeight.w800,
     );
 
+    // The route number dominates its row, so the large square grows with the
+    // user's text size (capped so a row still fits); FittedBox stays as a
+    // safety net for long labels.
+    final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, maxScale);
+    final side = largeSide * scale;
+
     final Widget badge = large
         ? SizedBox(
-            width: 40,
-            height: 40,
+            width: side,
+            height: side,
             child: DecoratedBox(
               decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(BBRadius.badge)),
               child: Padding(

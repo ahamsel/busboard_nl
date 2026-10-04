@@ -79,6 +79,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('large RouteBadge grows with text scale, capped at 1.6x', (tester) async {
+    await tester.pumpWidget(kitHost(const Center(child: RouteBadge(routeNumber: 26))));
+    expect(tester.getSize(find.byType(RouteBadge)), const Size(40, 40));
+
+    await tester.pumpWidget(kitHost(const Center(child: RouteBadge(routeNumber: 26)), textScale: 2.0));
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(find.byType(RouteBadge)), const Size(64, 64));
+  });
+
   testWidgets('labelled pressable keeps its screen-reader tap action', (tester) async {
     final handle = tester.ensureSemantics();
     var taps = 0;
