@@ -142,3 +142,26 @@ TimeTrackVehicle fix({
     departureTimeAtClosestStop: departureTimeAtClosestStop,
   );
 }
+
+extension TimeTrackVehicleTestCopy on TimeTrackVehicle {
+  TimeTrackVehicle copyForTest({String? status, String? shortStatus, double? lat, double? lon}) => TimeTrackVehicle(
+        routeRun: routeRun, currentRoute: currentRoute, routeNumber: routeNumber, vehicle: vehicle,
+        timeStamp: timeStamp, deviation: deviation, currentLocation: currentLocation,
+        busLat: lat ?? busLat, busLon: lon ?? busLon, heading: heading, speed: speed,
+        positionTime: positionTime, positionTimeSeconds: positionTimeSeconds,
+        gtfsTripHeadsign: gtfsTripHeadsign, gtfsServiceId: gtfsServiceId,
+        gtfsStopSequenceStatus: status ?? gtfsStopSequenceStatus,
+        gtfsStopSequenceMinsFromStop: gtfsStopSequenceMinsFromStop,
+        gtfsStopSequenceDeviation: gtfsStopSequenceDeviation,
+        gtfsStopSequenceClosestStop: gtfsStopSequenceClosestStop,
+        gtfsStopSequenceSchedDifferenceMins: gtfsStopSequenceSchedDifferenceMins,
+        gtfsTripId: gtfsTripId, shortStatus: shortStatus ?? this.shortStatus,
+        departureTimeAtClosestStop: departureTimeAtClosestStop,
+      );
+}
+
+extension TripInfoTestCopy on TripInfo {
+  TripInfo copyForTest({required String tripId}) => TripInfo(
+        tripId: tripId, routeId: routeId, serviceId: serviceId, tripHeadsign: tripHeadsign,
+        directionId: directionId, shapeId: shapeId);
+}
