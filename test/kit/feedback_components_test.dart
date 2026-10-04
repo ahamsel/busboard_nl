@@ -185,16 +185,27 @@ void main() {
     expect(refreshed, 1);
   });
 
-  Widget refreshHost(Future<void> Function() onRefresh) => kitHost(SizedBox(
+  Widget refreshHost(Future<void> Function() onRefresh, {String? semanticLabel}) => kitHost(SizedBox(
         height: 600,
         child: BBRefresh(
           onRefresh: onRefresh,
+          semanticLabel: semanticLabel,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             children: const [SizedBox(height: 100, child: Text('row'))],
           ),
         ),
       ));
+
+  testWidgets('the Refresh action sits on a node labelled with semanticLabel', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(refreshHost(() async {}, semanticLabel: 'Departures'));
+    final id = CustomSemanticsAction.getIdentifier(BBRefresh.refreshAction);
+    final node = find.semantics.byPredicate((n) => n.getSemanticsData().customSemanticsActionIds?.contains(id) ?? false);
+    expect(node, findsOneWidget);
+    expect(node, isSemantics(label: 'Departures', customActions: [BBRefresh.refreshAction]));
+    handle.dispose();
+  });
 
   testWidgets('pulling past the trigger ticks once, and a short pull does not refresh', (tester) async {
     var ticks = 0;

@@ -36,6 +36,7 @@ class AlertsScreen extends ConsumerWidget {
           ),
           Expanded(
             child: BBRefresh(
+              semanticLabel: 'Service alerts',
               onRefresh: () async {
                 ref.invalidate(serviceUpdatesProvider);
                 try {

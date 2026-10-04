@@ -250,7 +250,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               if (_liveAvailable) Text(' · updated $updated', style: bb.text.caption),
             ]),
           ),
-          Expanded(child: BBRefresh(onRefresh: _refreshData, child: _buildArrivalsList(context, alertBlock))),
+          Expanded(child: BBRefresh(onRefresh: _refreshData, semanticLabel: 'Departures', child: _buildArrivalsList(context, alertBlock))),
         ],
       ),
     );
