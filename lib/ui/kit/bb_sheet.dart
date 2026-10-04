@@ -1,10 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'tokens.dart';
 
-/// Draggable bottom sheet with three detents (peek / half / full) and a
-/// haptic tick when it settles on one. Place it in a Stack over the content.
+/// Draggable bottom sheet with three detents (peek / half / full). It gives one
+/// haptic tick when it settles on a detent (not while merely passing one, and
+/// not at startup). Place it in a Stack over the content.
 class BBSheet extends StatefulWidget {
   const BBSheet({
     super.key,
@@ -14,8 +17,10 @@ class BBSheet extends StatefulWidget {
     this.fullFraction = 0.9,
     this.initialFraction,
     this.controller,
-  }) : assert(peekFraction > 0 && peekFraction < halfFraction && halfFraction < fullFraction && fullFraction <= 1,
-            'BBSheet fractions must satisfy 0 < peek < half < full <= 1');
+  }) : assert(
+         peekFraction > 0 && peekFraction < halfFraction && halfFraction < fullFraction && fullFraction <= 1,
+         'BBSheet fractions must satisfy 0 < peek < half < full <= 1',
+       );
 
   final List<Widget> slivers;
   final double peekFraction;
@@ -29,19 +34,43 @@ class BBSheet extends StatefulWidget {
 }
 
 class _BBSheetState extends State<BBSheet> {
-  double? _lastDetent;
+  static const _tolerance = 0.004;
+  static const _settleDelay = Duration(milliseconds: 80);
 
-  bool _onExtent(DraggableScrollableNotification n) {
+  late double? _lastDetent = widget.initialFraction ?? widget.peekFraction;
+  double _extent = 0;
+  Timer? _settleTimer;
+
+  double? _detentNear(double extent) {
     for (final detent in [widget.peekFraction, widget.halfFraction, widget.fullFraction]) {
-      if ((n.extent - detent).abs() < 0.004) {
-        if (_lastDetent != detent) {
-          _lastDetent = detent;
-          HapticFeedback.selectionClick();
-        }
-        return false;
-      }
+      if ((extent - detent).abs() < _tolerance) return detent;
     }
+    return null;
+  }
+
+  // Notifications fire on every size update, so a detent is only "settled" once
+  // the extent has stayed on it for a short debounce.
+  bool _onExtent(DraggableScrollableNotification n) {
+    _extent = n.extent;
+    _settleTimer?.cancel();
+    final detent = _detentNear(n.extent);
+    if (detent == null) {
+      _lastDetent = null;
+      return false;
+    }
+    _settleTimer = Timer(_settleDelay, () {
+      if (_detentNear(_extent) == detent && _lastDetent != detent) {
+        _lastDetent = detent;
+        HapticFeedback.selectionClick();
+      }
+    });
     return false;
+  }
+
+  @override
+  void dispose() {
+    _settleTimer?.cancel();
+    super.dispose();
   }
 
   @override
