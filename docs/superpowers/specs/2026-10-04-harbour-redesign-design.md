@@ -61,12 +61,14 @@ All visual values live in a single `ThemeExtension<BBTokens>` (light + dark inst
 | `surfaceSunken` | `#EFE7DA` | `#121B25` | segmented-control track, inputs |
 | `line` | `#ECE4D8` | `#243140` | dividers, hairlines |
 | `ink` | `#1C2A3A` | `#F2EDE4` | primary text |
-| `muted` | `#6B7785` | `#8E9AA8` | secondary text |
-| `brand` | `#3E7CB1` | `#6FA6DA` | fills, active tab, primary button, your-stop ring |
+| `muted` | `#5A6674` | `#8E9AA8` | secondary text |
+| `brand` | `#3C79AE` | `#6FA6DA` | fills, active tab, primary button, your-stop ring (icon keeps `#3E7CB1`) |
 | `onBrand` | `#FFFFFF` | `#0F1720` | text/icons on `brand` |
 | `brandInk` | `#2C5F8E` | `#8DBBE6` | links and small brand-coloured text (AA on `bg`) |
 | `brandSoft` | `#DCE8F4` | `#1D3348` | soft brand backgrounds, count chips |
-| `live` | `#2BA36B` | `#4CC38A` | live / on time dot and label |
+| `live` | `#2BA36B` | `#4CC38A` | live dot only (not for small text) |
+| `liveInk` | `#1B7048` | `#4CC38A` | "Live" labels and live pill text (AA on bg/surface/liveSoft) |
+| `liveSoft` | `#DDF1E6` | `#16332A` | live pill background |
 | `soon` | `#D9480F` | `#FF8A5B` | arrival ≤ 5 min |
 | `warnBg` / `warnInk` | `#FDEBD3` / `#8A4B08` | `#3A2A14` / `#F5C27A` | detours, delays |
 | `dangerBg` / `dangerInk` | `#FBD9D6` / `#9B1C1C` | `#3A1A1A` / `#F5A3A3` | no service, errors |
