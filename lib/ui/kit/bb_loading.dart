@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 
+import 'bb_route_dots.dart';
 import 'tokens.dart';
 
-/// Brand spinner with an optional label, announced to screen readers.
+/// Hopping route dots with an optional label, announced to screen readers.
+/// For short inline waits; first loads of lists use [BBSkeleton].
 class BBLoading extends StatelessWidget {
   const BBLoading({super.key, this.label});
 
@@ -17,11 +19,7 @@ class BBLoading extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(strokeWidth: 3, color: bb.colors.brand),
-          ),
+          const BBRouteDots(),
           if (label != null) ...[
             const SizedBox(height: BBSpace.m),
             ExcludeSemantics(

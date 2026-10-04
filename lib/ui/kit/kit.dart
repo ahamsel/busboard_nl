@@ -15,6 +15,7 @@ export 'bb_nav_bar.dart';
 export 'bb_pill.dart';
 export 'bb_pressable.dart';
 export 'bb_refresh.dart';
+export 'bb_route_dots.dart';
 export 'bb_scaffold.dart';
 export 'bb_section_header.dart';
 export 'bb_segmented.dart';
