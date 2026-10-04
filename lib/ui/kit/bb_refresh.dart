@@ -14,10 +14,14 @@ import 'tokens.dart';
 /// then "Updated". The child must overscroll at the top: the app's bouncing
 /// scroll behaviour with AlwaysScrollableScrollPhysics.
 class BBRefresh extends StatefulWidget {
-  const BBRefresh({super.key, required this.onRefresh, required this.child});
+  const BBRefresh({super.key, required this.onRefresh, required this.child, this.semanticLabel});
 
   final Future<void> Function() onRefresh;
   final Widget child;
+
+  /// Names the screen-reader focus stop that carries the "Refresh" action
+  /// (e.g. "Departures"), so the action is not announced on an unlabelled node.
+  final String? semanticLabel;
 
   static const double triggerDistance = 72;
   static const CustomSemanticsAction refreshAction = CustomSemanticsAction(label: 'Refresh');
@@ -114,6 +118,7 @@ class _BBRefreshState extends State<BBRefresh> {
   Widget build(BuildContext context) {
     return Semantics(
       container: true,
+      label: widget.semanticLabel,
       customSemanticsActions: {BBRefresh.refreshAction: () => unawaited(_refresh())},
       child: Stack(
         children: [
