@@ -14,6 +14,10 @@ class BBSheetController extends DraggableScrollableController {
   _BBSheetState? _sheet;
 
   /// Animates to [detent] (in 1 ms with reduce motion). No-op when detached.
+  ///
+  /// Don't await this from tests or from code that can unmount the sheet: the
+  /// future may never complete if the sheet goes away mid-animation. Use
+  /// `unawaited(...)`.
   Future<void> animateToDetent(BBSheetDetent detent) async {
     final sheet = _sheet;
     if (sheet == null || !isAttached) return;
@@ -21,6 +25,9 @@ class BBSheetController extends DraggableScrollableController {
   }
 
   /// Back to peek, e.g. when the map behind the sheet is tapped.
+  ///
+  /// Same caveat as [animateToDetent]: don't await it from tests or from code
+  /// that can unmount the sheet; use `unawaited(...)`.
   Future<void> collapse() => animateToDetent(BBSheetDetent.peek);
 }
 
@@ -58,7 +65,12 @@ class BBSheet extends StatefulWidget {
   final double? initialFraction;
   final BBSheetController? controller;
   final double bottomInset;
+  /// Whether the sheet can be swiped (or closed by screen reader) down to
+  /// nothing. A dismissible sheet needs [onDismiss].
   final bool dismissible;
+
+  /// Called once when a dismissible sheet closes. The parent should unmount, or
+  /// re-key, the sheet here: a dismissed sheet stays mounted at extent 0.
   final VoidCallback? onDismiss;
   final String semanticLabel;
 

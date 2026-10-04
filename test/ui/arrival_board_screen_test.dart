@@ -202,7 +202,7 @@ void main() {
     expect(find.text('Checking live data…'), findsOneWidget);
     expect(find.textContaining('Live unavailable'), findsNothing);
     expect(find.textContaining('showing schedule'), findsNothing);
-    // BBLoading announces its own spinner; the status line itself must be silent.
+    // The skeleton announces itself with its own live region; the status line itself must be silent.
     expect(
       find.semantics.byPredicate(
         (n) => n.flagsCollection.isLiveRegion && RegExp('live|schedule', caseSensitive: false).hasMatch(n.label),
