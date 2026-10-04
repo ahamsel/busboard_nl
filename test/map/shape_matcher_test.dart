@@ -1,3 +1,4 @@
+import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/domain/map/shape_matcher.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -54,5 +55,25 @@ void main() {
       ShapeMatcher.snapNear(lat: 0, lon: 0, points: [points.first], cumulativeDistances: [0], expectedAlong: 0),
       isNull,
     );
+  });
+
+  test('a clearly nearer pass wins over the expected one (the 25 m cutoff)', () {
+    // A U turn: 1 km east along lat 47.5600, then back west ~55 m north.
+    const south = 47.5600;
+    const north = 47.5605; // ~55.6 m north
+    final u = <ShapePoint>[
+      for (var i = 0; i <= 10; i++) ShapePoint(shapeId: 'u', lat: south, lon: lonAt(i * 100.0), sequence: i + 1),
+      for (var i = 10; i >= 0; i--) ShapePoint(shapeId: 'u', lat: north, lon: lonAt(i * 100.0), sequence: 22 - i),
+    ];
+    final uCum = cumulativeFor(u);
+    // The bus is on the north (return) pass at 400 m from the west end, but
+    // the hint says the south (outbound) pass at 400 m. Without the cutoff the
+    // south candidate scores ~55.6 (perp, no distance penalty) against the
+    // north one's ~0 + 0.05 × ~1255 ≈ 62.7, so the hint would win wrongly.
+    final near = ShapeMatcher.snapNear(
+      lat: north, lon: lonAt(400), points: u, cumulativeDistances: uCum, expectedAlong: 400)!;
+    expect(near.perpendicularDistance, lessThan(1));
+    expect(near.distanceAlongRoute, closeTo(uCum.last - 400, 10));
+    expect(ShapeMatcher.ambiguityToleranceMeters, 25.0);
   });
 }

@@ -16,7 +16,7 @@ const returnLat = 47.56007; // ~8 m north
 const _west = -52.7600;
 const _east = -52.7465; // ~1 km east at this latitude
 
-/// Between the curbs, 2.4 m from the return leg and 5.8 m from the outbound.
+/// Between the curbs, 2.0 m from the return leg and 5.8 m from the outbound.
 const nearReturnCurb = 47.560052;
 
 /// 1.3 m from the outbound leg.
