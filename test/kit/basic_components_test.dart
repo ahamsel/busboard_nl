@@ -84,15 +84,16 @@ void main() {
     var taps = 0;
     const label = 'Route 29 Signal Hill Road, live, 4 minutes';
     await tester.pumpWidget(kitHost(BBCard(onTap: () => taps++, semanticLabel: label, child: const Text('row'))));
-    expect(tester.getSemantics(find.bySemanticsLabel(label)).label, label);
-    // Tap via semantics - if onTap is missing from Semantics, tester.semantics.tap fails
+    expect(tester.getSemantics(find.bySemanticsLabel(label)),
+        isSemantics(label: label, isButton: true, hasTapAction: true));
     tester.semantics.tap(find.semantics.byLabel(label));
     await tester.pump();
     expect(taps, 1);
 
-    // Disabled labelled pressable has no tap action.
+    // Disabled labelled pressable exposes no tap action.
     await tester.pumpWidget(kitHost(const BBPressable(onTap: null, semanticLabel: 'off', child: Text('x'))));
-    expect(tester.getSemantics(find.bySemanticsLabel('off')).label, 'off');
+    expect(tester.getSemantics(find.bySemanticsLabel('off')),
+        isSemantics(label: 'off', hasTapAction: false));
     handle.dispose();
   });
 }
