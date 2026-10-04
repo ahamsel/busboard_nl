@@ -55,9 +55,19 @@ class BBSegmented<T> extends StatelessWidget {
                           vertical: BBSpace.s,
                         ),
                         decoration: BoxDecoration(
+                          // Brand fill plus a brand border: the fill alone is ~1.3:1
+                          // against the track, so the border carries the state
+                          // (WCAG 1.4.11). Unselected segments keep a clear border
+                          // of the same width so the row never shifts.
                           color: s.value == selected
-                              ? bb.colors.surface
+                              ? bb.colors.brandSoft
                               : const Color(0x00000000),
+                          border: Border.all(
+                            color: s.value == selected
+                                ? bb.colors.brand
+                                : const Color(0x00000000),
+                            width: 1.5,
+                          ),
                           borderRadius: BorderRadius.circular(9),
                         ),
                         child: Center(
@@ -68,7 +78,7 @@ class BBSegmented<T> extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: bb.text.label.copyWith(
                               color: s.value == selected
-                                  ? bb.colors.ink
+                                  ? bb.colors.brandInk
                                   : bb.colors.muted,
                             ),
                           ),
