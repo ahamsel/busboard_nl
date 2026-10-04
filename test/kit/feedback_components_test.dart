@@ -227,6 +227,7 @@ void main() {
   });
 
   testWidgets('a failing refresh ends the indicator and reports once', (tester) async {
+    final handle = tester.ensureSemantics();
     var calls = 0;
     await tester.pumpWidget(refreshHost(() async {
       calls++;
@@ -236,10 +237,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isA<StateError>());
     expect(find.byType(BBRouteDots), findsNothing);
+    expect(find.semantics.byPredicate((n) => n.flagsCollection.isLiveRegion && n.label == "Couldn't refresh"), findsOneWidget);
+    expect(find.semantics.byPredicate((n) => n.flagsCollection.isLiveRegion && n.label == 'Updated'), findsNothing);
 
     await tester.fling(find.text('row'), const Offset(0, 300), 1000);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isA<StateError>());
     expect(calls, 2);
+    handle.dispose();
   });
 }
