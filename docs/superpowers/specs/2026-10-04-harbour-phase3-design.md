@@ -32,7 +32,7 @@
 All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 
 ### 2.1 Icons: Phosphor plus our own glyphs
-- **Phosphor icons** (`phosphor_flutter`, MIT; add its licence to `registerAppLicenses()`):
+- **Phosphor icons** (`phosphor_flutter`, MIT; Flutter lists a package's LICENSE on the licences page automatically, so `registerAppLicenses()` needs no change):
   - The **regular** weight is the default.
   - The **fill** weight marks active and selected states: the active nav tab, a starred stop, a selected route chip.
   - `BBIcons` keeps its names (`board`, `map`, `alerts`, …), so screen code doesn't change. Only the glyph source moves from Material Rounded to Phosphor.
@@ -70,8 +70,9 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **Grab handle:** a 34 × 4 pill inside the card. For screen readers it's announced as "Sheet, adjustable", with actions *Expand*, *Collapse* and (when dismissible) *Close*.
 
 ### 2.4 Smaller kit items (defaults, carried over from Phase 2)
-- `BBToast` and `BBDialog` are restyled in the floating-card language: inset, radius 24, the shared shadow. `BBToast` also reserves space for the nav bar on any screen; this fixes the Settings offset.
-- `BBScaffold(reserveNavBar: bool)` replaces the AppShell's ad-hoc `_mapBranch` bottom padding. The map branch uses `reserveNavBar: false` and lays out its own sheet.
+- `BBDialog` already follows the floating-card language (inset card, radius 24, the shared shadow), so it doesn't change.
+- `BBToast` reserves space for the nav bar only when the bar is on screen. The tab shell provides a `BBNavBarScope`, and pushed screens such as Settings sit outside it. This fixes the Settings offset.
+- Moving the map branch's bottom padding out of AppShell happens in 3b, together with the map rebuild: the new map lays out its own sheet above the bar. `BBScaffold(reserveNavBar)` is dropped, because no screen needs it.
 - New kit pieces needed by the map: `BBChip` and `BBControlPill`. `BBChip` is a floating map chip with an optional leading glyph and trailing chevron; `BBControlPill` is a vertical stack of 44 pt icon buttons.
 
 ## 3. Phase 3b — the map
