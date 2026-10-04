@@ -86,6 +86,7 @@ void main() {
           targets: const [ServiceAlertTarget(routeId: '10'), ServiceAlertTarget(routeId: '3'), ServiceAlertTarget(stopId: '3080'), ServiceAlertTarget(stopId: '9999')]),
     ]);
     expect(find.text('Service alerts'), findsOneWidget);
+    expect(tester.widget<ListView>(find.byType(ListView)).physics, isA<AlwaysScrollableScrollPhysics>());
     expect(find.text('Weekday service operating'), findsOneWidget);
     expect(find.text('Active now'), findsOneWidget);
     expect(find.text('Water Street Detour'), findsOneWidget);

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
@@ -15,6 +17,8 @@ import 'package:gtfs_realtime_bindings/gtfs_realtime_bindings.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../kit/kit_test_helpers.dart';
 
 final _failing = MockClient((_) async => http.Response('down', 500));
 final _emptyKiosk = MockClient((_) async => http.Response('{"arrivals":[]}', 200));
@@ -61,6 +65,9 @@ Future<void> _pump(
   GtfsRepository? repo,
   List<ServiceAlert> alerts = const [],
   http.Client? timeTrackClient,
+  double textScale = 1.0,
+  bool preloadRepo = false,
+  bool settle = true,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final router = GoRouter(initialLocation: '/board/1150', routes: [
@@ -70,8 +77,7 @@ Future<void> _pump(
     GoRoute(path: '/settings', builder: (_, _) => const Text('SETTINGS')),
     GoRoute(path: '/alerts', builder: (_, _) => const Text('ALERTS')),
   ]);
-  await tester.pumpWidget(ProviderScope(
-    overrides: [
+  final container = ProviderContainer(overrides: [
       gtfsRepositoryProvider.overrideWith((ref) async {
         if (repo == null) throw Exception('not loaded');
         return repo;
@@ -84,10 +90,23 @@ Future<void> _pump(
             fetchedAt: DateTime(2026, 10, 4),
             feedTimestamp: null,
           ))),
-    ],
-    child: MaterialApp.router(theme: BBTheme.light(), routerConfig: router),
+  ]);
+  addTearDown(container.dispose);
+  // A deep-linked board can mount before the schedule is ready; preloading
+  // pins the "first refresh is still in flight" state for the status tests.
+  if (preloadRepo) await container.read(gtfsRepositoryProvider.future);
+  await tester.pumpWidget(UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp.router(
+      theme: BBTheme.light(),
+      routerConfig: router,
+      builder: (context, app) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: app!,
+      ),
+    ),
   ));
-  await tester.pumpAndSettle();
+  if (settle) await tester.pumpAndSettle();
 }
 
 Future<void> _unmount(WidgetTester tester) async {
@@ -96,6 +115,8 @@ Future<void> _unmount(WidgetTester tester) async {
 }
 
 void main() {
+  setUpAll(loadAppFonts);
+
   testWidgets('header: stop pill, name, Change, settings, status line', (tester) async {
     final handle = tester.ensureSemantics();
     await _pump(tester, repo: _repo());
@@ -135,6 +156,8 @@ void main() {
     expect(find.text('No upcoming departures'), findsOneWidget);
     expect(find.text('There are no scheduled departures\nfrom this stop right now.'), findsOneWidget);
     expect(find.byType(BBRefresh), findsOneWidget);
+    // Pull-to-refresh must not depend on the host's scroll behaviour.
+    expect(tester.widget<ListView>(find.byType(ListView)).physics, isA<AlwaysScrollableScrollPhysics>());
     await _unmount(tester);
   });
 
@@ -158,5 +181,44 @@ void main() {
     await _pump(tester, repo: _repo());
     await _unmount(tester);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('header row fits at 320 pt and 2x text', (tester) async {
+    tester.view.physicalSize = const Size(320 * 3, 568 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await _pump(tester, repo: _repo(), textScale: 2.0);
+    expect(tester.takeException(), isNull);
+    expect(find.text('STOP 1150'), findsOneWidget);
+    expect(find.text('Change'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('first load says "Checking live data…" and stays silent, then announces the result', (tester) async {
+    final handle = tester.ensureSemantics();
+    final never = MockClient((_) => Completer<http.Response>().future);
+    await _pump(tester, repo: _repo(), timeTrackClient: never, preloadRepo: true, settle: false);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Checking live data…'), findsOneWidget);
+    expect(find.textContaining('Live unavailable'), findsNothing);
+    expect(find.textContaining('showing schedule'), findsNothing);
+    // BBLoading announces its own spinner; the status line itself must be silent.
+    expect(
+      find.semantics.byPredicate(
+        (n) => n.flagsCollection.isLiveRegion && RegExp('live|schedule', caseSensitive: false).hasMatch(n.label),
+      ),
+      findsNothing,
+    );
+    expect(find.semantics.byLabel('Checking live data…'), findsOneWidget);
+    // The live request times out (10 s): the failure is then announced.
+    await tester.pump(const Duration(seconds: 11));
+    await tester.pumpAndSettle();
+    expect(find.text('Checking live data…'), findsNothing);
+    expect(
+      find.semantics.byLabel('Live feed error · showing schedule'),
+      isSemantics(isLiveRegion: true, label: 'Live feed error · showing schedule'),
+    );
+    handle.dispose();
+    await _unmount(tester);
   });
 }
