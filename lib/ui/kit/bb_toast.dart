@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
@@ -89,7 +90,8 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
     return Positioned(
       left: BBSpace.l,
       right: BBSpace.l,
-      bottom: BBNavBar.reservedHeight(context) + BBSpace.s,
+      // Above the nav bar, or above the keyboard when it is taller.
+      bottom: math.max(BBNavBar.reservedHeight(context), MediaQuery.viewInsetsOf(context).bottom) + BBSpace.s,
       child: FadeTransition(
         opacity: curved,
         child: SlideTransition(
