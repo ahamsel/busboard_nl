@@ -163,8 +163,10 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
       ref.watch(serviceUpdatesProvider).value,
     );
     final updated = DateFormat('HH:mm:ss').format(_lastUpdate);
-    final statusText = _liveAvailable
-        ? 'Live · updated $updated'
+    // The live region carries only the state, so assistive tech announces
+    // live <-> schedule transitions but not every refresh timestamp.
+    final stateText = _liveAvailable
+        ? 'Live'
         : '${_liveIssue ?? 'Live unavailable'} · showing schedule';
 
     return BBScaffold(
@@ -197,21 +199,24 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.s),
-            child: Semantics(
-              liveRegion: true,
-              child: Row(children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: _liveAvailable ? bb.colors.live : bb.colors.muted,
-                    shape: BoxShape.circle,
-                  ),
+            child: Row(children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: _liveAvailable ? bb.colors.live : bb.colors.muted,
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(width: BBSpace.s),
-                Expanded(child: Text(statusText, style: bb.text.caption)),
-              ]),
-            ),
+              ),
+              const SizedBox(width: BBSpace.s),
+              Flexible(
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(stateText, style: bb.text.caption),
+                ),
+              ),
+              if (_liveAvailable) Text(' · updated $updated', style: bb.text.caption),
+            ]),
           ),
           if (relevantAlerts.isNotEmpty)
             Padding(
