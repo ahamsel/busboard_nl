@@ -1,4 +1,5 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/domain/map/route_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -90,5 +91,82 @@ void main() {
     final g = RouteGeometry(repo);
     final v = fix(meters: 100, seconds: 43200, tripId: '');
     expect(g.fallbackShapeId(v), 'other'); // no headsign given: first entry
+  });
+
+  group('fix round 1', () {
+    void retime(GtfsRepository repo, String Function(String time) f) {
+      for (final rows in repo.stopTimesByStopId.values) {
+        for (var i = 0; i < rows.length; i++) {
+          final r = rows[i];
+          final time = f(r.departureTime);
+          rows[i] = StopTimeRow(tripId: r.tripId, arrivalTime: time, departureTime: time, stopId: r.stopId, stopSequence: r.stopSequence);
+        }
+      }
+    }
+
+    test('one bad stop does not corrupt the stops after it', () {
+      final repo = outAndBackRepo();
+      // s2..s4 become sequences 3..5; a stop at the west end (where the
+      // shape starts and ends) takes sequence 2.
+      for (final rows in repo.stopTimesByStopId.values) {
+        for (var i = 0; i < rows.length; i++) {
+          final r = rows[i];
+          if (r.stopSequence >= 2) {
+            rows[i] = StopTimeRow(tripId: r.tripId, arrivalTime: r.arrivalTime, departureTime: r.departureTime, stopId: r.stopId, stopSequence: r.stopSequence + 1);
+          }
+        }
+      }
+      repo.stopsById['bad'] = StopInfo(stopId: 'bad', stopName: 'bad', stopLat: 47.560045, stopLon: lonAt(0));
+      repo.stopTimesByStopId['bad'] = [
+        const StopTimeRow(tripId: outAndBackTripId, arrivalTime: '12:00:30', departureTime: '12:00:30', stopId: 'bad', stopSequence: 2),
+      ];
+      final g = RouteGeometry(repo);
+      final p = g.stopProgresses(outAndBackTripId, outAndBackShapeId);
+      expect(p, hasLength(5));
+      expect(p[0], closeTo(200, 15));
+      expect(p[1] == null || p[1]! < 100, isTrue, reason: 'bad stop was ${p[1]}');
+      expect(p[2], closeTo(500, 15));
+      expect(p[3], closeTo(800, 15));
+      expect(p[4], closeTo(total - 300, 15));
+      final nonNull = p.whereType<double>().toList();
+      for (var i = 1; i < nonNull.length; i++) {
+        expect(nonNull[i], greaterThanOrEqualTo(nonNull[i - 1]));
+      }
+    });
+
+    test('a stop far from the shape is null, never snapped', () {
+      final repo = outAndBackRepo();
+      repo.stopsById['s2'] = StopInfo(stopId: 's2', stopName: 's2', stopLat: 47.57, stopLon: lonAt(500));
+      final p = RouteGeometry(repo).stopProgresses(outAndBackTripId, outAndBackShapeId);
+      expect(p[1], isNull);
+      expect(p[2], closeTo(800, 15));
+    });
+
+    test('poseAt keeps its heading on a duplicated final shape point', () {
+      final repo = outAndBackRepo();
+      final points = outAndBackPoints();
+      final last = points.last;
+      points.add(ShapePoint(shapeId: outAndBackShapeId, lat: last.lat, lon: last.lon, sequence: last.sequence + 1));
+      repo.shapesById[outAndBackShapeId] = points;
+      repo.shapeCumulativeDistances[outAndBackShapeId] = cumulativeFor(points);
+      final g = RouteGeometry(repo);
+      final end = g.poseAt(outAndBackShapeId, cumulativeFor(points).last)!;
+      expect(end.heading, closeTo(270, 1));
+      expect(end.lat, closeTo(returnLat, 1e-6));
+    });
+
+    test('a stop is found by the closest departure time, not the first within 30 s', () {
+      final repo = outAndBackRepo();
+      retime(repo, (t) => t == '12:02:00' ? '12:00:20' : t == '12:01:00' ? '12:00:00' : t);
+      final g = RouteGeometry(repo);
+      expect(g.stopProgressAtTime(outAndBackTripId, outAndBackShapeId, 12 * 3600 + 20), closeTo(800, 15));
+    });
+
+    test('a stop is found by departure time for trips past midnight', () {
+      final repo = outAndBackRepo();
+      retime(repo, (t) => '${int.parse(t.substring(0, 2)) + 12}${t.substring(2)}');
+      final g = RouteGeometry(repo);
+      expect(g.stopProgressAtTime(outAndBackTripId, outAndBackShapeId, 60), closeTo(500, 15));
+    });
   });
 }
