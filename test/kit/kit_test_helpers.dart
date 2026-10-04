@@ -28,6 +28,7 @@ Widget kitHost(
   return MaterialApp(
     debugShowCheckedModeBanner: false,
     theme: brightness == Brightness.dark ? BBTheme.dark() : BBTheme.light(),
+    themeAnimationStyle: AnimationStyle.noAnimation,
     scrollBehavior: const BBScrollBehavior(),
     builder: (context, app) => MediaQuery(
       data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
