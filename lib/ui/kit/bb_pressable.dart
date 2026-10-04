@@ -31,6 +31,11 @@ class _BBPressableState extends State<BBPressable> {
     if (_down != value) setState(() => _down = value);
   }
 
+  void _handleTap() {
+    if (widget.haptic) HapticFeedback.selectionClick();
+    widget.onTap!();
+  }
+
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
@@ -39,18 +44,14 @@ class _BBPressableState extends State<BBPressable> {
       button: true,
       enabled: enabled,
       label: widget.semanticLabel,
+      onTap: enabled ? _handleTap : null,
       excludeSemantics: widget.semanticLabel != null,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: enabled ? (_) => _setDown(true) : null,
         onTapUp: enabled ? (_) => _setDown(false) : null,
         onTapCancel: enabled ? () => _setDown(false) : null,
-        onTap: enabled
-            ? () {
-                if (widget.haptic) HapticFeedback.selectionClick();
-                widget.onTap!();
-              }
-            : null,
+        onTap: enabled ? _handleTap : null,
         child: AnimatedScale(
           scale: _down ? 0.98 : 1,
           duration: duration,
