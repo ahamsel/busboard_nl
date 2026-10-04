@@ -81,6 +81,7 @@ class _Gallery extends StatelessWidget {
                 BBButton(label: 'Use this stop', onPressed: () {}),
                 BBButton(label: 'Cancel', kind: BBButtonKind.quiet, onPressed: () {}),
                 BBSwitch(value: true, onChanged: (_) {}),
+                BBSwitch(value: false, onChanged: (_) {}),
               ],
             ),
             const SizedBox(height: BBSpace.m),

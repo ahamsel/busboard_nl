@@ -50,7 +50,9 @@ class BBSwitch extends StatelessWidget {
               decoration: BoxDecoration(
                 color: value ? c.brand : c.surfaceSunken,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: value ? c.brand : c.line),
+                // Off state: a muted outline + thumb (>= 3:1, WCAG 1.4.11) so it reads
+                // as a control even without the on-state fill.
+                border: Border.all(color: value ? c.brand : c.muted, width: value ? 1 : 1.5),
               ),
               child: AnimatedAlign(
                 duration: duration,
@@ -60,7 +62,7 @@ class BBSwitch extends StatelessWidget {
                   width: 20,
                   height: 20,
                   decoration: BoxDecoration(
-                    color: value ? c.onBrand : c.surface,
+                    color: value ? c.onBrand : c.muted,
                     shape: BoxShape.circle,
                   ),
                 ),
