@@ -87,6 +87,12 @@ class RouteGeometry {
     return ShapeMatcher.snapNear(lat: lat, lon: lon, points: points, cumulativeDistances: dists, expectedAlong: expectedAlong);
   }
 
+  /// Length of [shapeId] in metres, or null when it is unknown.
+  double? shapeLength(String shapeId) {
+    final dists = _repo.shapeCumulativeDistances[shapeId];
+    return dists == null || dists.isEmpty ? null : dists.last;
+  }
+
   /// Position and heading [progress] metres along [shapeId], clamped to the
   /// shape's ends.
   ShapePose? poseAt(String shapeId, double progress) {
