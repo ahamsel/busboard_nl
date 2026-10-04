@@ -23,14 +23,19 @@ class BBIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.bb.colors;
+    // Opacity sits inside BBPressable so the labelled Semantics node stays the
+    // outermost one (the same dimming BBButton applies when disabled).
     return BBPressable(
       onTap: onPressed,
       semanticLabel: semanticLabel,
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Center(
-          child: Icon(icon, size: size, color: onPressed == null ? c.line : (color ?? c.ink)),
+      child: Opacity(
+        opacity: onPressed == null ? 0.45 : 1,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Icon(icon, size: size, color: color ?? c.ink),
+          ),
         ),
       ),
     );
