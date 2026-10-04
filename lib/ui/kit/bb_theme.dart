@@ -30,6 +30,22 @@ abstract final class BBTheme {
       surfaceTint: Colors.transparent,
     );
 
+    OutlineInputBorder inputBorder(Color color, double width) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(BBRadius.button),
+          borderSide: BorderSide(color: color, width: width),
+        );
+    final buttonStyle = ButtonStyle(
+      backgroundColor: WidgetStatePropertyAll(c.brand),
+      foregroundColor: WidgetStatePropertyAll(c.onBrand),
+      elevation: const WidgetStatePropertyAll(0),
+      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 24, vertical: 14)),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(BBRadius.button)),
+      ),
+      textStyle: WidgetStatePropertyAll(t.text.label.copyWith(fontSize: 15, fontWeight: FontWeight.w800)),
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+    );
+
     return ThemeData(
       useMaterial3: true,
       brightness: t.brightness,
@@ -69,6 +85,19 @@ abstract final class BBTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(BBRadius.card)),
       ),
       dividerTheme: DividerThemeData(color: c.line, thickness: 1),
+      // Legacy-screen defaults until Phase 2: filled, rounded text fields.
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: c.surface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: inputBorder(c.line, 1),
+        enabledBorder: inputBorder(c.line, 1),
+        focusedBorder: inputBorder(c.brand, 2),
+        hintStyle: t.text.body.copyWith(color: c.muted),
+      ),
+      // Legacy-screen defaults until Phase 2: solid brand buttons.
+      elevatedButtonTheme: ElevatedButtonThemeData(style: buttonStyle),
+      filledButtonTheme: FilledButtonThemeData(style: buttonStyle),
       extensions: [t],
     );
   }
@@ -113,19 +142,39 @@ class BBPageTransitionsBuilder extends PageTransitionsBuilder {
         child: child,
       ),
     );
+    // ModalRoute hands us a ProxyAnimation around the route's controller (and
+    // briefly a constant one while offstage), so the gesture resolves the real
+    // AnimationController lazily when a drag starts.
     if (Theme.of(context).platform == TargetPlatform.iOS) {
-      page = BBEdgeSwipeBack(canPop: () => route.popGestureEnabled, child: page);
+      page = BBEdgeSwipeBack(
+        canPop: () => route.popGestureEnabled,
+        animation: animation,
+        child: page,
+      );
     }
     return page;
   }
 }
 
-/// Drag from the left edge to go back. The page follows the finger. Releasing
-/// past a third of the width (or flinging) pops; otherwise it springs back.
+/// Drag from the left edge to go back. The swipe drives the route's own
+/// route's [AnimationController] (so the previous page is painted underneath,
+/// as with Cupertino's back gesture) and the page follows the finger. Releasing past a
+/// third of the width (or flinging) pops; otherwise it springs back.
 class BBEdgeSwipeBack extends StatefulWidget {
-  const BBEdgeSwipeBack({super.key, required this.canPop, required this.child, this.edgeWidth = 20});
+  const BBEdgeSwipeBack({
+    super.key,
+    required this.canPop,
+    required this.animation,
+    required this.child,
+    this.edgeWidth = 20,
+  });
 
   final bool Function() canPop;
+
+  /// The route's transition animation (1 = page fully shown, 0 = dismissed).
+  /// It may be a [ProxyAnimation] chain; the swipe only engages if that chain
+  /// ends in an [AnimationController].
+  final Animation<double> animation;
   final Widget child;
   final double edgeWidth;
 
@@ -133,46 +182,79 @@ class BBEdgeSwipeBack extends StatefulWidget {
   State<BBEdgeSwipeBack> createState() => _BBEdgeSwipeBackState();
 }
 
-class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> with SingleTickerProviderStateMixin {
-  late final AnimationController _settle = AnimationController(vsync: this, duration: BBMotion.standard)
-    ..addListener(() => setState(() => _dx = _settleFrom * (1 - Curves.easeOut.transform(_settle.value))));
-  double _dx = 0;
-  double _settleFrom = 0;
+class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> {
+  // True from drag start until the controller settles back to fully shown (or
+  // the route is gone). While true the page is offset by the controller.
+  bool _active = false;
   bool _tracking = false;
+  NavigatorState? _navigator;
+  AnimationController? _controller;
+
+  static AnimationController? _unwrap(Animation<double> animation) {
+    var a = animation;
+    while (a is ProxyAnimation) {
+      final parent = a.parent;
+      if (parent == null) return null;
+      a = parent;
+    }
+    return a is AnimationController ? a : null;
+  }
 
   void _start(DragStartDetails _) {
-    _tracking = widget.canPop();
-    if (_tracking) _settle.stop();
+    _controller = _unwrap(widget.animation);
+    _tracking = _controller != null && widget.canPop();
+    if (!_tracking) return;
+    _navigator = Navigator.of(context)..didStartUserGesture();
+    _controller!.stop();
+    setState(() => _active = true);
   }
 
   void _update(DragUpdateDetails d) {
     if (!_tracking) return;
     final width = context.size?.width ?? 0;
-    setState(() => _dx = (_dx + d.delta.dx).clamp(0.0, width));
+    if (width <= 0) return;
+    _controller!.value -= d.delta.dx / width;
   }
 
   void _end(DragEndDetails d) {
     if (!_tracking) return;
-    _tracking = false;
-    final width = context.size?.width ?? 1;
     final velocity = d.primaryVelocity ?? 0;
-    if (_dx > width / 3 || velocity > 600) {
-      Navigator.of(context).maybePop();
+    final dismissed = 1 - _controller!.value;
+    _finish(pop: dismissed > 1 / 3 || velocity > 600);
+  }
+
+  // Mirrors Cupertino's back-gesture controller: pop through the navigator
+  // (the reverse animation continues from the current value) or animate back to
+  // fully shown, and keep userGestureInProgress true until the controller
+  // settles so the transition doesn't change mid-flight.
+  void _finish({required bool pop}) {
+    _tracking = false;
+    final controller = _controller!;
+    final navigator = _navigator!;
+    _navigator = null;
+    const curve = Curves.easeOut;
+    if (pop) {
+      navigator.pop();
     } else {
-      _springBack();
+      controller.animateTo(1.0, duration: BBMotion.standard, curve: curve);
+    }
+    if (controller.isAnimating) {
+      late AnimationStatusListener listener;
+      listener = (status) {
+        if (status != AnimationStatus.completed && status != AnimationStatus.dismissed) return;
+        controller.removeStatusListener(listener);
+        navigator.didStopUserGesture();
+        if (mounted && status == AnimationStatus.completed) setState(() => _active = false);
+      };
+      controller.addStatusListener(listener);
+    } else {
+      navigator.didStopUserGesture();
+      if (mounted && !pop) setState(() => _active = false);
     }
   }
 
-  void _springBack() {
-    _tracking = false;
-    _settleFrom = _dx;
-    _settle.forward(from: 0);
-  }
-
-  @override
-  void dispose() {
-    _settle.dispose();
-    super.dispose();
+  void _cancel() {
+    if (_tracking) _finish(pop: false);
   }
 
   @override
@@ -180,7 +262,16 @@ class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> with SingleTickerProv
     return Stack(
       fit: StackFit.passthrough,
       children: [
-        Transform.translate(offset: Offset(_dx, 0), child: widget.child),
+        LayoutBuilder(
+          builder: (context, constraints) => AnimatedBuilder(
+            animation: widget.animation,
+            child: widget.child,
+            builder: (context, child) {
+              final dx = _active ? (1 - widget.animation.value) * constraints.maxWidth : 0.0;
+              return Transform.translate(offset: Offset(dx, 0), child: child);
+            },
+          ),
+        ),
         PositionedDirectional(
           start: 0,
           top: 0,
@@ -191,9 +282,7 @@ class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> with SingleTickerProv
             onHorizontalDragStart: _start,
             onHorizontalDragUpdate: _update,
             onHorizontalDragEnd: _end,
-            onHorizontalDragCancel: () {
-              if (_tracking) _springBack();
-            },
+            onHorizontalDragCancel: _cancel,
           ),
         ),
       ],
