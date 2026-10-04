@@ -45,6 +45,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('toast honours reduce motion: fully visible on first frame', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(_launcher((c) => BBToast.show(c, 'instant')));
+    await tester.tap(find.text('go'));
+    await tester.pump();
+    final fade = tester.widget<FadeTransition>(
+      find.ancestor(of: find.text('instant'), matching: find.byType(FadeTransition)).first,
+    );
+    expect(fade.opacity.value, 1.0);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.text('instant'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('dialog returns the tapped action value', (tester) async {
     String? result;
     await tester.pumpWidget(_launcher((c) async {
