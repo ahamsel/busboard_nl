@@ -30,4 +30,20 @@ abstract final class BBIcons {
   static const IconData offline = Icons.cloud_off_rounded;
   static const IconData error = Icons.error_outline_rounded;
   static const IconData back = Icons.arrow_back_rounded;
+  static const IconData history = Icons.history_rounded;
+  static const IconData update = Icons.update_rounded;
+  static const IconData pin = Icons.pin_drop_rounded;
+  static const IconData timer = Icons.timer_rounded;
+  static const IconData download = Icons.cloud_download_rounded;
+  static const IconData palette = Icons.palette_rounded;
+  static const IconData detour = Icons.alt_route_rounded;
+  static const IconData reducedService = Icons.remove_circle_outline_rounded;
+  static const IconData stopMoved = Icons.wrong_location_rounded;
+  static const IconData accessible = Icons.accessible_rounded;
+  static const IconData additionalService = Icons.add_road_rounded;
+  static const IconData checkCircle = Icons.check_circle_outline_rounded;
+  static const IconData locationOff = Icons.location_off_rounded;
+  static const IconData layers = Icons.layers_rounded;
+  static const IconData add = Icons.add_rounded;
+  static const IconData remove = Icons.remove_rounded;
 }

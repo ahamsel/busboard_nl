@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'tokens.dart';
 
+/// Theme-mode choice, re-exported so screens never import Material.
+typedef BBThemeMode = ThemeMode;
+
 /// App ThemeData built from [BBTokens]. Material stays as plumbing: ripples,
 /// tints and platform-specific transitions are switched off. The ColorScheme
 /// and TextTheme are mapped from tokens so not-yet-migrated screens pick up
