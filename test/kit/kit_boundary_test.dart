@@ -41,7 +41,6 @@ const _legacyAllowList = {
   'lib/ui/map/map_screen.dart',
   'lib/ui/map/stop_bottom_sheet.dart',
   'lib/ui/settings/settings_screen.dart',
-  'lib/ui/shell/app_shell.dart',
   'lib/ui/stop_picker/near_me_list.dart',
   'lib/ui/stop_picker/stop_id_entry.dart',
   'lib/ui/stop_picker/stop_picker_screen.dart',
