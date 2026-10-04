@@ -61,6 +61,8 @@ class _Gallery extends StatelessWidget {
             row(29, 'Signal Hill Rd', 'Live · Bus 2134', '4', soon: true),
             const SizedBox(height: BBSpace.s),
             row(23, 'Stavanger Drive', 'Scheduled', '6'),
+            const SizedBox(height: BBSpace.s),
+            const BBSkeleton(kind: BBSkeletonKind.arrivalRow, count: 1),
             const SizedBox(height: BBSpace.m),
             BBSegmented<int>(
               segments: const [

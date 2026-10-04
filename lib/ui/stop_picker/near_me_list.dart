@@ -33,8 +33,8 @@ class NearMeList extends ConsumerWidget {
         ]),
         nearbyAsync.when(
           loading: () => const Padding(
-            padding: EdgeInsets.all(BBSpace.xxl),
-            child: Center(child: BBLoading(label: 'Finding nearby stops...')),
+            padding: EdgeInsets.only(top: BBSpace.s),
+            child: BBSkeleton(kind: BBSkeletonKind.stopCard, count: 3, label: 'Finding nearby stops...'),
           ),
           error: (_, _) => BBEmptyState(
             icon: BBIcons.locationOff,

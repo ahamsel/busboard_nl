@@ -211,7 +211,10 @@ void main() {
     );
     expect(find.semantics.byLabel('Checking live data…'), findsOneWidget);
     // The live request times out (10 s): the failure is then announced.
-    await tester.pump(const Duration(seconds: 11));
+    // The live client tries several feeds in turn, each with its own 10 s timeout.
+    // The spinner's ticker used to keep frames coming through that wait; the
+    // static skeleton does not, so advance the clock explicitly.
+    await tester.pump(const Duration(minutes: 1));
     await tester.pumpAndSettle();
     expect(find.text('Checking live data…'), findsNothing);
     expect(

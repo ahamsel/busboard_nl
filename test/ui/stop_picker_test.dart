@@ -159,6 +159,11 @@ void main() {
     await _pump(tester, gtfs: _repo, nearby: () => const []);
     expect(find.text('No stops found within 800m.'), findsOneWidget);
     await _pump(tester, gtfs: _repo, nearby: () => Future<List<NearbyStop>>.error(Exception('gps off')));
+    // Riverpod retries a failed provider with backoff before surfacing the error.
+    // The spinner's ticker used to keep frames coming through that wait;
+    // the static skeleton does not, so advance the clock explicitly.
+    await tester.pump(const Duration(minutes: 1));
+    await tester.pumpAndSettle();
     expect(find.text('Unable to get location'), findsOneWidget);
     expect(find.text('Please enable location services and grant permission.'), findsOneWidget);
   });

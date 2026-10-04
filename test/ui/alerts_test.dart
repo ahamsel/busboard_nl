@@ -117,6 +117,10 @@ void main() {
       ],
       child: MaterialApp(theme: BBTheme.light(), home: const AlertsScreen()),
     ));
+    // Riverpod retries a failed stream with backoff before surfacing the error.
+    // The spinner's ticker used to keep frames coming through that wait;
+    // the static skeleton does not, so advance the clock explicitly.
+    await tester.pump(const Duration(minutes: 1));
     await tester.pumpAndSettle();
     expect(find.text('Could not load service alerts'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
@@ -179,7 +183,8 @@ void main() {
     ));
     await tester.pump();
     expect(find.byType(BBRefresh), findsOneWidget);
-    expect(find.byType(BBLoading), findsOneWidget);
+    expect(find.byType(BBSkeleton), findsOneWidget);
+    expect(find.bySemanticsLabel('Loading service alerts...'), findsOneWidget);
   });
 
   testWidgets('period row does not overflow at large text on a narrow screen', (tester) async {
