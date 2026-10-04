@@ -61,7 +61,28 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
+GtfsRepository _repoWithRoutes(List<String> names) {
+  final repo = GtfsRepository();
+  repo.stopsById['1150'] = _mun;
+  final times = <StopTimeRow>[];
+  for (var i = 0; i < names.length; i++) {
+    repo.routesById['r$i'] = RouteInfo(routeId: 'r$i', routeShortName: names[i], routeLongName: '');
+    repo.tripsById['t$i'] = TripInfo(tripId: 't$i', routeId: 'r$i', serviceId: 's', tripHeadsign: '', directionId: 0);
+    times.add(StopTimeRow(tripId: 't$i', arrivalTime: '08:00:00', departureTime: '08:00:00', stopId: '1150', stopSequence: 1));
+  }
+  repo.stopTimesByStopId['1150'] = times;
+  return repo;
+}
+
 void main() {
+  testWidgets('near-me shows a pill for every route serving the stop', (tester) async {
+    final names = ['1', '2', '3', '6', '9', '10', '10A', '11', '12'];
+    await _pump(tester, gtfs: () => _repoWithRoutes(names), nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)]);
+    expect(find.byType(RouteBadge), findsNWidgets(9));
+    expect(find.text('10A'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+  });
+
   testWidgets('header, stop entry and near-me rows with route pills', (tester) async {
     final handle = tester.ensureSemantics();
     await _pump(tester, gtfs: _repo, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)]);

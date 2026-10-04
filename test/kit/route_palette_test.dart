@@ -47,4 +47,23 @@ void main() {
     expect(RouteHue.red.fillFor(Brightness.light), RouteHue.red.fill);
     expect(RouteHue.red.fillFor(Brightness.dark), RouteHue.red.fillDark);
   });
+
+  test('ofName: numeric names use the number, others hash stably', () {
+    expect(RoutePalette.ofName('29'), RoutePalette.of(29));
+    expect(RoutePalette.ofName('10'), RoutePalette.of(10));
+    expect(RoutePalette.ofName('10A'), RoutePalette.ofName('10A'));
+    expect(RouteHue.values, contains(RoutePalette.ofName('10A')));
+    // Letter-suffixed or lettered routes no longer all collapse to hue 0.
+    final names = ['10A', '10B', '12A', 'X1', 'N2', 'Express', 'A', 'B', 'C'];
+    final hues = {for (final n in names) RoutePalette.ofName(n)};
+    expect(hues.length, greaterThan(1));
+    expect(RoutePalette.ofName('10A'), isNot(RoutePalette.ofName('10')));
+  });
+
+  test('ofName: empty and odd names do not throw', () {
+    expect(RouteHue.values, contains(RoutePalette.ofName('')));
+    expect(RoutePalette.ofName(''), RoutePalette.ofName(''));
+    expect(RouteHue.values, contains(RoutePalette.ofName('  ')));
+    expect(RouteHue.values, contains(RoutePalette.ofName('-5')));
+  });
 }

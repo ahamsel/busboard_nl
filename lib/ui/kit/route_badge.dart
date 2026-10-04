@@ -11,9 +11,22 @@ class RouteBadge extends StatelessWidget {
     required this.routeNumber,
     this.label,
     this.size = RouteBadgeSize.large,
-  });
+  }) : hue = null;
+
+  /// Badge for a GTFS `route_short_name`: shows the name and colours it with
+  /// [RoutePalette.ofName], so "10A" gets a stable hue instead of hue 0.
+  RouteBadge.name(
+    String shortName, {
+    super.key,
+    this.size = RouteBadgeSize.large,
+  })  : routeNumber = int.tryParse(shortName) ?? 0,
+        label = shortName,
+        hue = RoutePalette.ofName(shortName);
 
   final int routeNumber;
+
+  /// Explicit colour; when null the hue comes from [routeNumber].
+  final RouteHue? hue;
 
   /// Text shown in the badge; defaults to the route number.
   final String? label;
@@ -28,7 +41,7 @@ class RouteBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
-    final fill = RoutePalette.of(routeNumber).fillFor(bb.brightness);
+    final fill = (hue ?? RoutePalette.of(routeNumber)).fillFor(bb.brightness);
     final text = label ?? '$routeNumber';
     final large = size == RouteBadgeSize.large;
     final style = bb.text.label.copyWith(

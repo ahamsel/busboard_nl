@@ -61,4 +61,28 @@ abstract final class RoutePalette {
   static RouteHue of(int routeNumber) =>
       assigned[routeNumber] ??
       RouteHue.values[routeNumber.abs() % RouteHue.values.length];
+
+  /// Colour for a route's `route_short_name`. Plain numbers use [of]; anything
+  /// else (e.g. "10A") gets a stable hue from a deterministic hash, so
+  /// non-numeric routes do not all collapse onto one colour.
+  static RouteHue ofName(String shortName) {
+    final name = shortName.trim();
+    if (name.isNotEmpty && _digitsOnly.hasMatch(name)) {
+      final n = int.tryParse(name);
+      if (n != null) return of(n);
+    }
+    return RouteHue.values[_stableHash(name) % RouteHue.values.length];
+  }
+
+  static final RegExp _digitsOnly = RegExp(r'^[0-9]+$');
+
+  /// Deterministic across runs and platforms (unlike `String.hashCode`):
+  /// a 31-multiplier polynomial over the code units, masked to 31 bits.
+  static int _stableHash(String s) {
+    var h = 0;
+    for (final unit in s.codeUnits) {
+      h = (h * 31 + unit) & 0x7FFFFFFF;
+    }
+    return h;
+  }
 }

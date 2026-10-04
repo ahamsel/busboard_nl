@@ -102,8 +102,7 @@ class _NearbyStopTile extends ConsumerWidget {
               if (routes.isNotEmpty) ...[
                 const SizedBox(height: BBSpace.xs),
                 Wrap(spacing: 4, runSpacing: 4, children: [
-                  for (final r in routes.take(6))
-                    RouteBadge(routeNumber: int.tryParse(r) ?? 0, label: r, size: RouteBadgeSize.compact),
+                  for (final r in routes) RouteBadge.name(r, size: RouteBadgeSize.compact),
                 ]),
               ],
             ]),
