@@ -47,18 +47,32 @@ class _ToastView extends StatefulWidget {
 }
 
 class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMixin {
-  late final AnimationController _anim = AnimationController(vsync: this, duration: BBMotion.standard);
+  late final AnimationController _anim = AnimationController(vsync: this);
   Timer? _timer;
+  bool _started = false;
 
   @override
   void initState() {
     super.initState();
-    _anim.forward();
     _timer = Timer(widget.duration, () async {
       if (!mounted) return;
       await _anim.reverse();
       widget.onDone();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Honours reduce-motion: a zero duration makes forward()/reverse() complete
+    // immediately. The duration must be set before the first forward().
+    final d = BBMotion.of(context, BBMotion.standard);
+    _anim.duration = d;
+    _anim.reverseDuration = d;
+    if (!_started) {
+      _started = true;
+      _anim.forward();
+    }
   }
 
   @override
