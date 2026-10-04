@@ -8,6 +8,7 @@ class BBColors {
     required this.bg,
     required this.surface,
     required this.surfaceSunken,
+    required this.skeleton,
     required this.line,
     required this.ink,
     required this.muted,
@@ -28,6 +29,10 @@ class BBColors {
   final Color bg;
   final Color surface;
   final Color surfaceSunken;
+
+  /// Placeholder blocks in `BBSkeleton`; distinct from [surfaceSunken] so they
+  /// stay visible on [surface] in dark mode.
+  final Color skeleton;
   final Color line;
   final Color ink;
   final Color muted;
@@ -48,6 +53,7 @@ class BBColors {
     bg: Color(0xFFF7F2EA),
     surface: Color(0xFFFFFFFF),
     surfaceSunken: Color(0xFFEFE7DA),
+    skeleton: Color(0xFFEFE7DA),
     line: Color(0xFFECE4D8),
     ink: Color(0xFF1C2A3A),
     muted: Color(0xFF5A6674),
@@ -69,6 +75,7 @@ class BBColors {
     bg: Color(0xFF0F1720),
     surface: Color(0xFF18222E),
     surfaceSunken: Color(0xFF121B25),
+    skeleton: Color(0xFF2C3A4A),
     line: Color(0xFF243140),
     ink: Color(0xFFF2EDE4),
     muted: Color(0xFF8E9AA8),
@@ -92,6 +99,7 @@ class BBColors {
       bg: l(bg, other.bg),
       surface: l(surface, other.surface),
       surfaceSunken: l(surfaceSunken, other.surfaceSunken),
+      skeleton: l(skeleton, other.skeleton),
       line: l(line, other.line),
       ink: l(ink, other.ink),
       muted: l(muted, other.muted),

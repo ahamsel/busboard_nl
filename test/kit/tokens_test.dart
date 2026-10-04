@@ -35,6 +35,7 @@ void main() {
         ('muted/surface (off switch outline and thumb)', c.muted, c.surface, 3.0),
         ('soon/surface (large minutes)', c.soon, c.surface, 3.0),
         ('soon/bg (large minutes)', c.soon, c.bg, 3.0),
+        ('skeleton/surface (placeholder blocks stay visible)', c.skeleton, c.surface, name == 'dark' ? 1.35 : 1.2),
       ];
       for (final (label, fg, bg, min) in pairs) {
         test(label, () {
