@@ -134,14 +134,20 @@ class BBPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    final curved = CurvedAnimation(parent: animation, curve: BBMotion.curve, reverseCurve: Curves.easeInCubic);
-    Widget page = FadeTransition(
-      opacity: curved,
-      child: SlideTransition(
-        position: Tween(begin: const Offset(0, 0.04), end: Offset.zero).animate(curved),
-        child: child,
-      ),
-    );
+    // Reduce motion: no fade or slide, the page is simply there. (The route's
+    // own animation still runs, since transitionDuration has no context, but
+    // nothing visible is tied to it.)
+    Widget page = child;
+    if (MediaQuery.maybeDisableAnimationsOf(context) != true) {
+      final curved = animation.drive(CurveTween(curve: BBMotion.curve));
+      page = FadeTransition(
+        opacity: curved,
+        child: SlideTransition(
+          position: curved.drive(Tween(begin: const Offset(0, 0.04), end: Offset.zero)),
+          child: child,
+        ),
+      );
+    }
     // ModalRoute hands us a ProxyAnimation around the route's controller (and
     // briefly a constant one while offstage), so the gesture resolves the real
     // AnimationController lazily when a drag starts.

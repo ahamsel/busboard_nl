@@ -11,10 +11,14 @@ double _contrast(Color a, Color b) {
   return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
 }
 
-Widget _app({required TargetPlatform platform}) {
+Widget _app({required TargetPlatform platform, bool disableAnimations = false}) {
   return MaterialApp(
     theme: BBTheme.light().copyWith(platform: platform),
     scrollBehavior: const BBScrollBehavior(),
+    builder: (context, app) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: disableAnimations),
+      child: app!,
+    ),
     home: Builder(
       builder: (context) => Scaffold(
         body: ListView(
@@ -79,6 +83,40 @@ void main() {
       expect(physics, isA<BouncingScrollPhysics>(), reason: '$p');
       expect(find.byType(GlowingOverscrollIndicator), findsNothing);
       expect(find.byType(StretchingOverscrollIndicator), findsNothing);
+    }
+  });
+
+  testWidgets('page transition fades and slides in normally', (tester) async {
+    await tester.pumpWidget(_app(platform: TargetPlatform.android));
+    await tester.tap(find.text('open'));
+    await tester.pump(); // route inserted
+    await tester.pump(const Duration(milliseconds: 16)); // first frame of the transition
+    expect(find.text('PAGE B'), findsOneWidget);
+    final fades = tester.widgetList<FadeTransition>(
+      find.ancestor(of: find.text('PAGE B'), matching: find.byType(FadeTransition)),
+    );
+    expect(fades.any((f) => f.opacity.value < 1), isTrue);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('reduce motion: the pushed page is fully visible on the first frame', (tester) async {
+    for (final p in [TargetPlatform.android, TargetPlatform.iOS]) {
+      await tester.pumpWidget(_app(platform: p, disableAnimations: true));
+      await tester.tap(find.text('open'));
+      await tester.pump(); // route inserted
+      await tester.pump(const Duration(milliseconds: 16)); // first frame of the transition
+      expect(find.text('PAGE B'), findsOneWidget);
+      final fades = tester.widgetList<FadeTransition>(
+        find.ancestor(of: find.text('PAGE B'), matching: find.byType(FadeTransition)),
+      );
+      expect(fades.where((f) => f.opacity.value < 1), isEmpty, reason: '$p: page still fading in');
+      expect(
+        find.ancestor(of: find.text('PAGE B'), matching: find.byType(SlideTransition)),
+        findsNothing,
+        reason: '$p: page still sliding in',
+      );
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
     }
   });
 
