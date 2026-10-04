@@ -74,6 +74,20 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('RouteBadge.name colours by name: numeric like of(), others by stable hash', (tester) async {
+    await tester.pumpWidget(kitHost(const RouteBadge(routeNumber: 29)));
+    final numeric = _boxColor(tester, find.byType(RouteBadge));
+    await tester.pumpWidget(kitHost(RouteBadge.name('29')));
+    expect(_boxColor(tester, find.byType(RouteBadge)), numeric);
+    expect(find.text('29'), findsOneWidget);
+
+    await tester.pumpWidget(kitHost(RouteBadge.name('10A', size: RouteBadgeSize.compact)));
+    expect(_boxColor(tester, find.byType(RouteBadge)), RoutePalette.ofName('10A').fill);
+    expect(find.text('10A'), findsOneWidget);
+    await tester.pumpWidget(kitHost(RouteBadge.name('')));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('large RouteBadge does not overflow at text scale 2.0', (tester) async {
     await tester.pumpWidget(kitHost(const RouteBadge(routeNumber: 26), textScale: 2.0));
     expect(tester.takeException(), isNull);

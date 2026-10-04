@@ -34,7 +34,8 @@ class ArrivalRowTile extends StatelessWidget {
     return ('Scheduled', BBPillTone.neutral);
   }
 
-  /// One sentence for screen readers, e.g. "Route 29 Signal Hill Rd, live, 4 minutes".
+  /// One sentence for screen readers, e.g. "Route 29 Signal Hill Rd, live, 4 minutes,
+  /// expected 09:55" (the expected time is spoken only for live rows with a prediction).
   static String semanticsLabel(ArrivalRow a) {
     final (status, _) = statusOf(a);
     final when = a.minutesAway <= 0
@@ -42,7 +43,10 @@ class ArrivalRowTile extends StatelessWidget {
         : a.minutesAway == 1
         ? '1 minute'
         : '${a.minutesAway} minutes';
-    return 'Route ${a.routeShortName} ${a.headsign}, ${status.toLowerCase()}, $when';
+    final expected = a.isLive && a.predictedTime != null
+        ? ', expected ${a.displayTime.toDisplayString()}'
+        : '';
+    return 'Route ${a.routeShortName} ${a.headsign}, ${status.toLowerCase()}, $when$expected';
   }
 
   @override
@@ -68,10 +72,7 @@ class ArrivalRowTile extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, box) => Row(
             children: [
-              RouteBadge(
-                routeNumber: int.tryParse(a.routeShortName) ?? 0,
-                label: a.routeShortName,
-              ),
+              RouteBadge.name(a.routeShortName),
               const SizedBox(width: BBSpace.m),
               Expanded(
                 child: Column(

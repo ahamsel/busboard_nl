@@ -94,7 +94,7 @@ class ServiceAlertCard extends StatelessWidget {
                   // The pill would just repeat the title when the title is the effect.
                   if (title != alert.effect.label) BBPill(label: alert.effect.label, tone: tone),
                   for (final route in routes)
-                    RouteBadge(routeNumber: int.tryParse(route) ?? 0, label: route, size: RouteBadgeSize.compact),
+                    RouteBadge.name(route, size: RouteBadgeSize.compact),
                   for (final stop in alert.stopIds)
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 230),

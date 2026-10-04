@@ -50,6 +50,16 @@ void main() {
     expect(ArrivalRowTile.semanticsLabel(_row(minutes: 0)), 'Route 29 Signal Hill Rd, scheduled, now');
   });
 
+  test('screen-reader sentence includes the expected time for live rows', () {
+    expect(
+      ArrivalRowTile.semanticsLabel(_row(isLive: true, status: LiveStatus.behind, minutes: 15, predicted: GtfsTime.parse('09:55:00'))),
+      'Route 29 Signal Hill Rd, late, 15 minutes, expected 09:55',
+    );
+    // Scheduled rows (no prediction) and live rows without a predicted time stay as before.
+    expect(ArrivalRowTile.semanticsLabel(_row(isLive: true, minutes: 4)), 'Route 29 Signal Hill Rd, live, 4 minutes');
+    expect(ArrivalRowTile.semanticsLabel(_row(predicted: GtfsTime.parse('09:55:00'))), 'Route 29 Signal Hill Rd, scheduled, 4 minutes');
+  });
+
   testWidgets('live row shows run/bus, near, exp and struck-through sched', (tester) async {
     await tester.pumpWidget(kitHost(ArrivalRowTile(
       arrival: _row(isLive: true, status: LiveStatus.behind, vehicle: '2134', routeRun: '29-1', near: 'MUN Centre',
@@ -87,6 +97,15 @@ void main() {
     expect(find.byType(RouteBadge), findsOneWidget);
     expect(find.bySemanticsLabel('Route 29 Signal Hill Rd, live, 4 minutes'), findsOneWidget);
     expect(find.bySemanticsLabel('Signal Hill Rd'), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('semantics node announces the expected time of a live row', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(kitHost(ArrivalRowTile(
+      arrival: _row(isLive: true, status: LiveStatus.behind, predicted: GtfsTime.parse('09:55:00')),
+    )));
+    expect(find.bySemanticsLabel('Route 29 Signal Hill Rd, late, 4 minutes, expected 09:55'), findsOneWidget);
     handle.dispose();
   });
 
