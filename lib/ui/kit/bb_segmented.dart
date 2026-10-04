@@ -1,6 +1,6 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'bb_pressable.dart';
 import 'tokens.dart';
 
 class BBSegment<T> {
@@ -10,7 +10,12 @@ class BBSegment<T> {
 }
 
 class BBSegmented<T> extends StatelessWidget {
-  const BBSegmented({super.key, required this.segments, required this.selected, required this.onChanged});
+  const BBSegmented({
+    super.key,
+    required this.segments,
+    required this.selected,
+    required this.onChanged,
+  });
 
   final List<BBSegment<T>> segments;
   final T selected;
@@ -21,7 +26,10 @@ class BBSegmented<T> extends StatelessWidget {
     final bb = context.bb;
     final duration = BBMotion.of(context, BBMotion.standard);
     return DecoratedBox(
-      decoration: BoxDecoration(color: bb.colors.surfaceSunken, borderRadius: BorderRadius.circular(BBRadius.badge)),
+      decoration: BoxDecoration(
+        color: bb.colors.surfaceSunken,
+        borderRadius: BorderRadius.circular(BBRadius.badge),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: Row(
@@ -29,31 +37,41 @@ class BBSegmented<T> extends StatelessWidget {
             for (final s in segments)
               Expanded(
                 child: Semantics(
-                  button: true,
                   selected: s.value == selected,
                   inMutuallyExclusiveGroup: true,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
+                  child: BBPressable(
+                    semanticLabel: s.label,
+                    // Tapping the selected segment is a no-op: no haptic, no callback.
+                    haptic: s.value != selected,
                     onTap: () {
-                      if (s.value == selected) return;
-                      HapticFeedback.selectionClick();
-                      onChanged(s.value);
+                      if (s.value != selected) onChanged(s.value);
                     },
-                    child: AnimatedContainer(
-                      duration: duration,
-                      curve: BBMotion.curve,
-                      padding: const EdgeInsets.symmetric(vertical: BBSpace.s),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: s.value == selected ? bb.colors.surface : const Color(0x00000000),
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      child: Text(
-                        s.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: bb.text.label.copyWith(
-                          color: s.value == selected ? bb.colors.ink : bb.colors.muted,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 44),
+                      child: AnimatedContainer(
+                        duration: duration,
+                        curve: BBMotion.curve,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: BBSpace.s,
+                        ),
+                        decoration: BoxDecoration(
+                          color: s.value == selected
+                              ? bb.colors.surface
+                              : const Color(0x00000000),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Center(
+                          heightFactor: 1,
+                          child: Text(
+                            s.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: bb.text.label.copyWith(
+                              color: s.value == selected
+                                  ? bb.colors.ink
+                                  : bb.colors.muted,
+                            ),
+                          ),
                         ),
                       ),
                     ),
