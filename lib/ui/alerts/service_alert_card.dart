@@ -114,7 +114,7 @@ class ServiceAlertCard extends StatelessWidget {
                   Row(children: [
                     Icon(BBIcons.schedule, size: 14, color: bb.colors.muted),
                     const SizedBox(width: 6),
-                    Text(period, style: bb.text.caption),
+                    Flexible(child: Text(period, style: bb.text.caption)),
                   ]),
                 ],
               ],

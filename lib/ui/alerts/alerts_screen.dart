@@ -15,6 +15,14 @@ class AlertsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final updatesAsync = ref.watch(serviceUpdatesProvider);
+    // Every state is a scrollable list so pull-to-refresh works and large text
+    // can never push Retry off-screen.
+    Widget centered(Widget child) => ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+              BBSpace.screen, BBSpace.xl, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+          children: [Center(child: child)],
+        );
     return BBScaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -27,22 +35,32 @@ class AlertsScreen extends ConsumerWidget {
             ],
           ),
           Expanded(
-            child: updatesAsync.when(
-              loading: () => const Center(child: BBLoading(label: 'Loading service alerts...')),
-              error: (error, _) => Center(
-                child: BBEmptyState(
-                  icon: BBIcons.offline,
-                  tone: BBEmptyTone.error,
-                  title: 'Could not load service alerts',
-                  message: error.toString(),
-                  action: BBButton(
-                    label: 'Retry',
-                    icon: BBIcons.refresh,
-                    onPressed: () => ref.invalidate(serviceUpdatesProvider),
+            child: BBRefresh(
+              onRefresh: () async {
+                ref.invalidate(serviceUpdatesProvider);
+                try {
+                  await ref.read(serviceUpdatesProvider.future);
+                } catch (_) {
+                  // A failed refresh shows the error state, not an unhandled throw.
+                }
+              },
+              child: updatesAsync.when(
+                loading: () => centered(const BBLoading(label: 'Loading service alerts...')),
+                error: (error, _) => centered(
+                  BBEmptyState(
+                    icon: BBIcons.offline,
+                    tone: BBEmptyTone.error,
+                    title: 'Could not load service alerts',
+                    message: error.toString(),
+                    action: BBButton(
+                      label: 'Retry',
+                      icon: BBIcons.refresh,
+                      onPressed: () => ref.invalidate(serviceUpdatesProvider),
+                    ),
                   ),
                 ),
+                data: (updates) => _AlertsContent(updates: updates),
               ),
-              data: (updates) => _AlertsContent(updates: updates),
             ),
           ),
         ],
@@ -50,9 +68,6 @@ class AlertsScreen extends ConsumerWidget {
     );
   }
 }
-
-bool _hasEnded(ServiceAlert a, DateTime now) =>
-    a.activePeriods.isNotEmpty && a.activePeriods.every((p) => p.hasEndedBefore(now));
 
 class _AlertsContent extends ConsumerWidget {
   const _AlertsContent({required this.updates});
@@ -64,7 +79,7 @@ class _AlertsContent extends ConsumerWidget {
     final bb = context.bb;
     final now = DateTime.now();
     final active = updates.activeAlertsAt(now);
-    final upcoming = updates.alerts.where((a) => !a.isActiveAt(now) && !_hasEnded(a, now)).toList();
+    final upcoming = updates.alerts.where((a) => !a.isActiveAt(now) && !a.hasEndedBefore(now)).toList();
     final repo = ref.watch(gtfsRepositoryProvider).asData?.value;
     final stopNames = <String, String>{
       if (repo != null)
@@ -80,44 +95,39 @@ class _AlertsContent extends ConsumerWidget {
           ],
         ];
 
-    return BBRefresh(
-      onRefresh: () async {
-        ref.invalidate(serviceUpdatesProvider);
-        await ref.read(serviceUpdatesProvider.future);
-      },
-      child: ListView(
-        padding: EdgeInsets.fromLTRB(
-          BBSpace.screen, BBSpace.s, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
-        children: [
-          _ServiceStatusCard(status: updates.serviceStatus, fetchedAt: updates.feedTimestamp ?? updates.fetchedAt),
-          const SizedBox(height: BBSpace.xl),
-          BBSectionHeader(
-            title: 'Active now',
-            count: active.length,
-            countTone: active.isEmpty ? BBPillTone.live : BBPillTone.danger,
-          ),
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(
+        BBSpace.screen, BBSpace.s, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+      children: [
+        _ServiceStatusCard(status: updates.serviceStatus, fetchedAt: updates.feedTimestamp ?? updates.fetchedAt),
+        const SizedBox(height: BBSpace.xl),
+        BBSectionHeader(
+          title: 'Active now',
+          count: active.length,
+          countTone: active.isEmpty ? BBPillTone.live : BBPillTone.danger,
+        ),
+        const SizedBox(height: BBSpace.m),
+        if (active.isEmpty)
+          BBCard(
+            padding: const EdgeInsets.all(BBSpace.xl),
+            child: Row(children: [
+              Icon(BBIcons.checkCircle, color: bb.colors.liveInk),
+              const SizedBox(width: BBSpace.m),
+              Expanded(child: Text('No active service alerts.', style: bb.text.body)),
+            ]),
+          )
+        else
+          ...cards(active),
+        if (upcoming.isNotEmpty) ...[
+          const SizedBox(height: BBSpace.xxl),
+          BBSectionHeader(title: 'Upcoming', count: upcoming.length),
           const SizedBox(height: BBSpace.m),
-          if (active.isEmpty)
-            BBCard(
-              padding: const EdgeInsets.all(BBSpace.xl),
-              child: Row(children: [
-                Icon(BBIcons.checkCircle, color: bb.colors.liveInk),
-                const SizedBox(width: BBSpace.m),
-                Expanded(child: Text('No active service alerts.', style: bb.text.body)),
-              ]),
-            )
-          else
-            ...cards(active),
-          if (upcoming.isNotEmpty) ...[
-            const SizedBox(height: BBSpace.xxl),
-            BBSectionHeader(title: 'Upcoming', count: upcoming.length),
-            const SizedBox(height: BBSpace.m),
-            ...cards(upcoming),
-          ],
-          const SizedBox(height: BBSpace.xl),
-          Text(LegalCopy.footer, textAlign: TextAlign.center, style: bb.text.caption),
+          ...cards(upcoming),
         ],
-      ),
+        const SizedBox(height: BBSpace.xl),
+        Text(LegalCopy.footer, textAlign: TextAlign.center, style: bb.text.caption),
+      ],
     );
   }
 }
