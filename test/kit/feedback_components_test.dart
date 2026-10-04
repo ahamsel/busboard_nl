@@ -21,6 +21,20 @@ void main() {
     expect(find.text('Bus 2134 is no longer reporting'), findsNothing);
   });
 
+  testWidgets('toast stays above the on-screen keyboard', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_launcher((c) => BBToast.show(c, 'above keys')));
+    await tester.tap(find.text('go'));
+    await tester.pump(const Duration(milliseconds: 250));
+    final toastBottom = tester.getBottomLeft(find.text('above keys')).dy;
+    expect(toastBottom, lessThanOrEqualTo(800 - 300), reason: 'toast bottom at $toastBottom is under the keyboard');
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a second toast replaces the first without errors', (tester) async {
     var n = 0;
     await tester.pumpWidget(_launcher((c) => BBToast.show(c, 'toast ${++n}')));
