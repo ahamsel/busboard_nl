@@ -12,6 +12,35 @@ class GtfsRepository {
   final Map<String, RouteInfo> routesById = {};
   final Map<String, TripInfo> tripsById = {};
   final Map<String, List<StopTimeRow>> stopTimesByStopId = {};
+
+  final Map<String, List<String>> _routesForStopCache = {};
+
+  /// Route short names serving [stopId], sorted with [compareRouteNames].
+  /// Memoised; cleared whenever data is (re)loaded.
+  List<String> routeShortNamesForStop(String stopId) {
+    final cached = _routesForStopCache[stopId];
+    if (cached != null) return cached;
+    final names = <String>{};
+    for (final row in stopTimesByStopId[stopId] ?? const <StopTimeRow>[]) {
+      final trip = tripsById[row.tripId];
+      if (trip == null) continue;
+      final route = routesById[trip.routeId];
+      if (route == null) continue;
+      names.add(route.routeShortName);
+    }
+    final sorted = names.toList()..sort(compareRouteNames);
+    return _routesForStopCache[stopId] = List.unmodifiable(sorted);
+  }
+
+  /// Numeric route ids first (numeric order), then the rest alphabetically.
+  static int compareRouteNames(String a, String b) {
+    final ai = int.tryParse(a);
+    final bi = int.tryParse(b);
+    if (ai != null && bi != null) return ai.compareTo(bi);
+    if (ai != null) return -1;
+    if (bi != null) return 1;
+    return a.compareTo(b);
+  }
   final Map<String, ServiceCalendar> calendarsById = {};
   final List<CalendarDate> calendarDates = [];
   final Map<String, List<ShapePoint>> shapesById = {};
@@ -36,6 +65,7 @@ class GtfsRepository {
   /// This keeps production loading and diagnostic replay on the same parser
   /// and indexes without forcing a network download or platform cache lookup.
   Future<void> loadFromDirectory(String dirPath) async {
+    _routesForStopCache.clear();
     final parser = GtfsParser(dirPath);
 
     // Parse all files
