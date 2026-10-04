@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'tokens.dart';
@@ -154,6 +155,8 @@ class BBPageTransitionsBuilder extends PageTransitionsBuilder {
     if (Theme.of(context).platform == TargetPlatform.iOS) {
       page = BBEdgeSwipeBack(
         canPop: () => route.popGestureEnabled,
+        isCurrent: () => route.isCurrent,
+        isActive: () => route.isActive,
         animation: animation,
         child: page,
       );
@@ -163,19 +166,34 @@ class BBPageTransitionsBuilder extends PageTransitionsBuilder {
 }
 
 /// Drag from the left edge to go back. The swipe drives the route's own
-/// route's [AnimationController] (so the previous page is painted underneath,
-/// as with Cupertino's back gesture) and the page follows the finger. Releasing past a
+/// [AnimationController] (so the previous page is painted underneath, as with
+/// Cupertino's back gesture) and the page follows the finger. Releasing past a
 /// third of the width (or flinging) pops; otherwise it springs back.
+///
+/// Like Cupertino's detector, the edge strip only joins the gesture arena when
+/// the route can actually pop at pointer-down, so on a root route the strip is
+/// inert and lets horizontal scrollables underneath take the drag.
 class BBEdgeSwipeBack extends StatefulWidget {
   const BBEdgeSwipeBack({
     super.key,
     required this.canPop,
     required this.animation,
     required this.child,
+    this.isCurrent = _alwaysTrue,
+    this.isActive = _alwaysTrue,
     this.edgeWidth = 20,
   });
 
+  static bool _alwaysTrue() => true;
+
   final bool Function() canPop;
+
+  /// Whether the dragged route is still the top route when the finger lifts.
+  /// If something else has been pushed meanwhile, the swipe never pops it.
+  final bool Function() isCurrent;
+
+  /// Whether the dragged route is still in the navigator's stack.
+  final bool Function() isActive;
 
   /// The route's transition animation (1 = page fully shown, 0 = dismissed).
   /// It may be a [ProxyAnimation] chain; the swipe only engages if that chain
@@ -195,6 +213,32 @@ class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> {
   bool _tracking = false;
   NavigatorState? _navigator;
   AnimationController? _controller;
+  late final HorizontalDragGestureRecognizer _recognizer;
+
+  @override
+  void initState() {
+    super.initState();
+    _recognizer = HorizontalDragGestureRecognizer(debugOwner: this)
+      ..onStart = _start
+      ..onUpdate = _update
+      ..onEnd = _end
+      ..onCancel = _cancel;
+  }
+
+  @override
+  void dispose() {
+    _recognizer.dispose();
+    // Disposed mid-drag: the navigator must not be left in a user gesture.
+    final navigator = _navigator;
+    if (_tracking && navigator != null) {
+      _tracking = false;
+      _navigator = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (navigator.mounted) navigator.didStopUserGesture();
+      });
+    }
+    super.dispose();
+  }
 
   static AnimationController? _unwrap(Animation<double> animation) {
     var a = animation;
@@ -204,6 +248,10 @@ class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> {
       a = parent;
     }
     return a is AnimationController ? a : null;
+  }
+
+  void _pointerDown(PointerDownEvent event) {
+    if (widget.canPop()) _recognizer.addPointer(event);
   }
 
   void _start(DragStartDetails _) {
@@ -238,11 +286,19 @@ class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> {
     final controller = _controller!;
     final navigator = _navigator!;
     _navigator = null;
-    const curve = Curves.easeOut;
-    if (pop) {
+    var popNow = pop;
+    var settleShown = !pop;
+    if (!widget.isCurrent()) {
+      // Something else navigated while the finger was down. Never pop a page
+      // the user did not drag; a route still in the stack settles fully shown,
+      // one that is already leaving keeps its own pop animation.
+      popNow = false;
+      settleShown = widget.isActive();
+    }
+    if (popNow) {
       navigator.pop();
-    } else {
-      controller.animateTo(1.0, duration: BBMotion.standard, curve: curve);
+    } else if (settleShown) {
+      controller.animateTo(1.0, duration: BBMotion.standard, curve: Curves.easeOut);
     }
     if (controller.isAnimating) {
       late AnimationStatusListener listener;
@@ -255,7 +311,7 @@ class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> {
       controller.addStatusListener(listener);
     } else {
       navigator.didStopUserGesture();
-      if (mounted && !pop) setState(() => _active = false);
+      if (mounted && !popNow) setState(() => _active = false);
     }
   }
 
@@ -283,13 +339,7 @@ class _BBEdgeSwipeBackState extends State<BBEdgeSwipeBack> {
           top: 0,
           bottom: 0,
           width: widget.edgeWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: _start,
-            onHorizontalDragUpdate: _update,
-            onHorizontalDragEnd: _end,
-            onHorizontalDragCancel: _cancel,
-          ),
+          child: Listener(onPointerDown: _pointerDown, behavior: HitTestBehavior.translucent),
         ),
       ],
     );
