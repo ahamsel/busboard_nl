@@ -17,7 +17,7 @@ abstract final class BBTheme {
       brightness: t.brightness,
       primary: c.brand,
       onPrimary: c.onBrand,
-      secondary: c.live,
+      secondary: c.liveInk,
       onSecondary: c.onBrand,
       error: c.dangerInk,
       onError: c.surface,
