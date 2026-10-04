@@ -20,6 +20,7 @@ export 'bb_scaffold.dart';
 export 'bb_section_header.dart';
 export 'bb_segmented.dart';
 export 'bb_sheet.dart';
+export 'bb_skeleton.dart';
 export 'bb_stepper.dart';
 export 'bb_switch.dart';
 export 'bb_text_field.dart';

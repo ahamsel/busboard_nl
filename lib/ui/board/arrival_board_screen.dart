@@ -282,7 +282,19 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
           children: [?alertBlock, const SizedBox(height: 64), Center(child: child)],
         );
 
-    if (_loading) return centered(const BBLoading(label: 'Loading departures...'));
+    if (_loading) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.only(bottom: bottom),
+        children: [
+          ?alertBlock,
+          const Padding(
+            padding: EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.screen, 0),
+            child: BBSkeleton(kind: BBSkeletonKind.arrivalRow, count: 5, label: 'Loading departures...'),
+          ),
+        ],
+      );
+    }
     if (_error != null) {
       return centered(BBEmptyState(icon: BBIcons.error, tone: BBEmptyTone.error, title: _error!));
     }

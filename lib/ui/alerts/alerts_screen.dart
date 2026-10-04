@@ -45,7 +45,14 @@ class AlertsScreen extends ConsumerWidget {
                 }
               },
               child: updatesAsync.when(
-                loading: () => centered(const BBLoading(label: 'Loading service alerts...')),
+                loading: () => ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                      BBSpace.screen, BBSpace.xl, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+                  children: const [
+                    BBSkeleton(kind: BBSkeletonKind.alertCard, count: 3, label: 'Loading service alerts...'),
+                  ],
+                ),
                 error: (error, _) => centered(
                   BBEmptyState(
                     icon: BBIcons.offline,
