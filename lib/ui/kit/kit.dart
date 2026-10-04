@@ -5,6 +5,7 @@ export 'bb_button.dart';
 export 'bb_card.dart';
 export 'bb_dialog.dart';
 export 'bb_divider.dart';
+export 'glyphs/bb_glyph.dart';
 export 'bb_empty_state.dart';
 export 'bb_icon_button.dart';
 export 'bb_icon_tile.dart';

@@ -145,11 +145,7 @@ class _ServiceStatusCard extends StatelessWidget {
     final title = (status?.message.isNotEmpty ?? false) ? status!.message : 'Metrobus service status';
     return BBCard(
       child: Row(children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: stopped ? bb.colors.dangerInk : bb.colors.live, shape: BoxShape.circle),
-        ),
+        BBGlyph(BBGlyphKind.liveDot, size: 14, color: stopped ? bb.colors.dangerInk : bb.colors.live),
         const SizedBox(width: BBSpace.m),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -73,6 +73,16 @@ class _Gallery extends StatelessWidget {
             const SizedBox(height: BBSpace.m),
             const BBTextField(hint: 'Stop name or number on the pole', leadingIcon: BBIcons.search),
             const SizedBox(height: BBSpace.m),
+            Row(
+              children: [
+                for (final kind in BBGlyphKind.values) ...[
+                  BBGlyph(kind, color: bb.colors.ink),
+                  const SizedBox(width: BBSpace.m),
+                ],
+                BBGlyph(BBGlyphKind.liveDot, color: bb.colors.live),
+              ],
+            ),
+            const SizedBox(height: BBSpace.m),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -119,6 +129,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        expect(tester.getSize(find.byType(_Gallery)).height, lessThanOrEqualTo(scale == 1.0 ? 1100 : 1800));
         await expectLater(
           find.byType(_Gallery),
           matchesGoldenFile(
