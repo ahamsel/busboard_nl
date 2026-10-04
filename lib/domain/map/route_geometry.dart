@@ -23,20 +23,24 @@ double bearingDegrees(double lat1, double lon1, double lat2, double lon2) {
 /// snapping to shapes, poses along them, stops in trip order and where the
 /// timetable says a bus should be. Caches per trip and shape.
 class RouteGeometry {
-  RouteGeometry(this._repo) {
-    for (final rows in _repo.stopTimesByStopId.values) {
-      for (final row in rows) {
-        _stopTimesByTripId.putIfAbsent(row.tripId, () => []).add(row);
-      }
-    }
-    for (final rows in _stopTimesByTripId.values) {
-      rows.sort((a, b) => a.stopSequence.compareTo(b.stopSequence));
-    }
-  }
+  RouteGeometry(this._repo);
 
   final GtfsRepository _repo;
-  final Map<String, List<StopTimeRow>> _stopTimesByTripId = {};
+  late final Map<String, List<StopTimeRow>> _stopTimesByTripId = _indexStopTimes();
   final Map<String, List<double?>> _stopProgressCache = {};
+
+  Map<String, List<StopTimeRow>> _indexStopTimes() {
+    final byTrip = <String, List<StopTimeRow>>{};
+    for (final rows in _repo.stopTimesByStopId.values) {
+      for (final row in rows) {
+        byTrip.putIfAbsent(row.tripId, () => []).add(row);
+      }
+    }
+    for (final rows in byTrip.values) {
+      rows.sort((a, b) => a.stopSequence.compareTo(b.stopSequence));
+    }
+    return byTrip;
+  }
 
   /// A fix this far from the shape is off route (detour, depot, bad GPS).
   static const double offRouteMeters = 150;
@@ -104,10 +108,22 @@ class RouteGeometry {
     final b = points[hi];
     final seg = dists[hi] - dists[lo];
     final t = seg <= 0 ? 0.0 : (p - dists[lo]) / seg;
+    // A zero-length segment (a duplicated point) has no direction: use the
+    // nearest earlier segment that has one, else the nearest later one.
+    var h = lo;
+    while (h > 0 && dists[h + 1] - dists[h] <= 0) {
+      h--;
+    }
+    if (dists[h + 1] - dists[h] <= 0) {
+      h = lo;
+      while (h < dists.length - 2 && dists[h + 1] - dists[h] <= 0) {
+        h++;
+      }
+    }
     return (
       lat: a.lat + (b.lat - a.lat) * t,
       lon: a.lon + (b.lon - a.lon) * t,
-      heading: bearingDegrees(a.lat, a.lon, b.lat, b.lon),
+      heading: bearingDegrees(points[h].lat, points[h].lon, points[h + 1].lat, points[h + 1].lon),
     );
   }
 
@@ -120,33 +136,64 @@ class RouteGeometry {
     final cached = _stopProgressCache[key];
     if (cached != null) return cached;
     final rows = _stopTimesByTripId[tripId] ?? const <StopTimeRow>[];
+    final points = _repo.shapesById[shapeId];
+    final dists = _repo.shapeCumulativeDistances[shapeId];
     final result = <double?>[];
     double? previous;
+    int? previousSeconds;
     for (final row in rows) {
       final stop = _repo.stopsById[row.stopId];
-      final s = stop == null
-          ? null
-          : snap(stop.stopLat, stop.stopLon, shapeId,
-              expectedAlong: previous ?? 0.0, minAlong: previous == null ? null : previous - 5.0);
-      final progress = s?.distanceAlongRoute;
-      result.add(progress);
-      if (progress != null) previous = progress;
+      final seconds = _secondsOf(row.departureTime);
+      SnapResult? s;
+      if (stop != null && points != null && dists != null) {
+        if (previous == null) {
+          s = ShapeMatcher.snapNear(
+            lat: stop.stopLat, lon: stop.stopLon, points: points, cumulativeDistances: dists, expectedAlong: 0.0,
+          );
+        } else {
+          // Forward only, and no further than the timetable allows: a stop
+          // that can't be placed in that window is skipped, never snapped
+          // somewhere else, so it can't drag the stops after it.
+          final dt = seconds == null || previousSeconds == null ? 0 : math.max(0, seconds - previousSeconds);
+          s = ShapeMatcher.snapNear(
+            lat: stop.stopLat, lon: stop.stopLon, points: points, cumulativeDistances: dists,
+            expectedAlong: previous, minAlong: previous - 5.0, maxAlong: previous + 300.0 + 30.0 * dt,
+          );
+        }
+      }
+      if (s != null && s.perpendicularDistance <= offRouteMeters) {
+        result.add(s.distanceAlongRoute);
+        previous = s.distanceAlongRoute;
+        if (seconds != null) previousSeconds = seconds;
+      } else {
+        result.add(null);
+      }
     }
     return _stopProgressCache[key] = List.unmodifiable(result);
   }
 
-  /// Progress of the stop [tripId] departs at [departureSeconds] (±30 s).
+  /// Progress of the stop [tripId] departs closest to [departureSeconds]
+  /// (within ±30 s; also matches trips past midnight).
   double? stopProgressAtTime(String tripId, String shapeId, int departureSeconds) {
     final rows = _stopTimesByTripId[tripId];
     if (rows == null) return null;
     final progresses = stopProgresses(tripId, shapeId);
+    double? best;
+    var bestGap = 31;
     for (var i = 0; i < rows.length; i++) {
       final seconds = _secondsOf(rows[i].departureTime);
-      if (seconds != null && (seconds - departureSeconds).abs() <= 30 && progresses[i] != null) {
-        return progresses[i];
+      final progress = progresses[i];
+      if (seconds == null || progress == null) continue;
+      final gap = math.min(
+        (seconds - departureSeconds).abs(),
+        (seconds - (departureSeconds + Duration.secondsPerDay)).abs(),
+      );
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = progress;
       }
     }
-    return null;
+    return best;
   }
 
   /// Progress the timetable implies for [tripId] at [secondsOfDay], by linear
