@@ -74,7 +74,11 @@ class _BBSheetState extends State<BBSheet> {
   static const _tolerance = 0.004;
   static const _settleDelay = Duration(milliseconds: 80);
 
-  late final BBSheetController _controller = widget.controller ?? BBSheetController();
+  late BBSheetController _controller = widget.controller ?? BBSheetController();
+  // DraggableScrollableSheet compares snapSizes by identity and re-snaps (which
+  // drops a live drag) when it changes, so the list must keep one identity
+  // across rebuilds.
+  late List<double> _snapSizes = _computeSnapSizes();
   late double? _lastDetent = widget.initialFraction ?? widget.peekFraction;
   late double _extent = widget.initialFraction ?? widget.peekFraction;
   Timer? _settleTimer;
@@ -85,6 +89,25 @@ class _BBSheetState extends State<BBSheet> {
   void initState() {
     super.initState();
     _controller._sheet = this;
+  }
+
+  List<double> _computeSnapSizes() =>
+      widget.dismissible ? [widget.peekFraction, widget.halfFraction] : [widget.halfFraction];
+
+  @override
+  void didUpdateWidget(BBSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      if (identical(_controller._sheet, this)) _controller._sheet = null;
+      if (oldWidget.controller == null) _controller.dispose();
+      _controller = widget.controller ?? BBSheetController();
+      _controller._sheet = this;
+    }
+    if (widget.dismissible != oldWidget.dismissible ||
+        widget.peekFraction != oldWidget.peekFraction ||
+        widget.halfFraction != oldWidget.halfFraction) {
+      _snapSizes = _computeSnapSizes();
+    }
   }
 
   @override
@@ -129,6 +152,8 @@ class _BBSheetState extends State<BBSheet> {
       });
     }
     _settleTimer?.cancel();
+    // Re-arm dismissal once the sheet has been reopened.
+    if (n.extent >= _tolerance) _dismissed = false;
     if (widget.dismissible && n.extent < _tolerance) {
       _settleTimer = Timer(_settleDelay, _dismiss);
       return false;
@@ -187,8 +212,10 @@ class _BBSheetState extends State<BBSheet> {
       value: _valueOf(at),
       // A semantics node with an increase/decrease action must also name the
       // value each one leads to.
-      increasedValue: _valueOf(up),
-      decreasedValue: _valueOf(down),
+      increasedValue: at == BBSheetDetent.full ? null : _valueOf(up),
+      decreasedValue: at == BBSheetDetent.peek
+          ? (widget.dismissible ? 'Closed' : null)
+          : _valueOf(down),
       onIncrease: at == BBSheetDetent.full ? null : () => _go(up),
       onDecrease: at == BBSheetDetent.peek ? (widget.dismissible ? _dismiss : null) : () => _go(down),
       customSemanticsActions: {
@@ -227,7 +254,7 @@ class _BBSheetState extends State<BBSheet> {
           minChildSize: widget.dismissible ? 0 : peek,
           maxChildSize: widget.fullFraction,
           snap: true,
-          snapSizes: widget.dismissible ? [peek, widget.halfFraction] : [widget.halfFraction],
+          snapSizes: _snapSizes,
           snapAnimationDuration: _snapDuration,
           builder: (context, scrollController) => DecoratedBox(
             key: BBSheet.cardKey,

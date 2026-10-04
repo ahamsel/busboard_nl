@@ -160,6 +160,60 @@ void main() {
     expect(dismissed, 1);
   });
 
+  testWidgets('dismissible sheet can be dismissed again after it is reopened', (tester) async {
+    final controller = BBSheetController();
+    var dismissed = 0;
+    await tester.pumpWidget(_host(controller, dismissible: true, onDismiss: () => dismissed++));
+    await tester.fling(find.text('row 0'), const Offset(0, 400), 2000);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(dismissed, 1);
+
+    unawaited(controller.collapse());
+    await tester.pumpAndSettle();
+    expect(controller.size, closeTo(0.15, 0.01));
+    await tester.fling(find.text('row 0'), const Offset(0, 400), 2000);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(dismissed, 2);
+  });
+
+  testWidgets('a slow drag keeps tracking the finger past the detent midpoints', (tester) async {
+    final controller = BBSheetController();
+    await tester.pumpWidget(_host(controller));
+    final gesture = await tester.startGesture(tester.getCenter(find.text('row 0')));
+    for (var i = 0; i < 45; i++) {
+      await gesture.moveBy(const Offset(0, -10));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(controller.size, greaterThan(0.6));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('swapping the controller attaches the new one', (tester) async {
+    final a = BBSheetController();
+    final b = BBSheetController();
+    await tester.pumpWidget(_host(a));
+    expect(a.isAttached, isTrue);
+    await tester.pumpWidget(_host(b));
+    expect(b.isAttached, isTrue);
+    expect(a.isAttached, isFalse);
+    unawaited(b.animateToDetent(BBSheetDetent.half));
+    await tester.pumpAndSettle();
+    expect(b.size, closeTo(0.5, 0.01));
+  });
+
+  testWidgets('a dismissible sheet at peek announces Closed as the decrease value', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(_host(BBSheetController(), dismissible: true, onDismiss: () {}));
+    expect(
+      tester.getSemantics(find.byKey(BBSheet.handleKey)),
+      isSemantics(value: 'Collapsed', increasedValue: 'Half open', decreasedValue: 'Closed'),
+    );
+    handle.dispose();
+  });
+
   group('haptics', () {
     late int ticks;
 
