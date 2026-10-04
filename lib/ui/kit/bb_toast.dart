@@ -9,16 +9,20 @@ import 'tokens.dart';
 /// Floating message above the nav bar (replaces SnackBar). Only one is
 /// visible at a time; a new one replaces the current one.
 abstract final class BBToast {
+  static const cardKey = ValueKey('bb-toast-card');
+
   static OverlayEntry? _current;
 
   static void show(BuildContext context, String message, {Duration duration = const Duration(seconds: 3)}) {
     _dismissCurrent();
     final overlay = Overlay.of(context, rootOverlay: true);
+    final reserveNavBar = BBNavBarScope.isPresent(context);
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _ToastView(
         message: message,
         duration: duration,
+        reserveNavBar: reserveNavBar,
         onDone: () {
           if (identical(_current, entry)) _current = null;
           if (entry.mounted) entry.remove();
@@ -37,10 +41,16 @@ abstract final class BBToast {
 }
 
 class _ToastView extends StatefulWidget {
-  const _ToastView({required this.message, required this.duration, required this.onDone});
+  const _ToastView({
+    required this.message,
+    required this.duration,
+    required this.reserveNavBar,
+    required this.onDone,
+  });
 
   final String message;
   final Duration duration;
+  final bool reserveNavBar;
   final VoidCallback onDone;
 
   @override
@@ -90,8 +100,15 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
     return Positioned(
       left: BBSpace.l,
       right: BBSpace.l,
-      // Above the nav bar, or above the keyboard when it is taller.
-      bottom: math.max(BBNavBar.reservedHeight(context), MediaQuery.viewInsetsOf(context).bottom) + BBSpace.s,
+      // Above the nav bar where it is shown (else just above the safe area),
+      // or above the keyboard when that is taller.
+      bottom: math.max(
+            widget.reserveNavBar
+                ? BBNavBar.reservedHeight(context)
+                : MediaQuery.paddingOf(context).bottom + BBSpace.l,
+            MediaQuery.viewInsetsOf(context).bottom,
+          ) +
+          BBSpace.s,
       child: FadeTransition(
         opacity: curved,
         child: SlideTransition(
@@ -99,6 +116,7 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
           child: Semantics(
             liveRegion: true,
             child: Container(
+              key: BBToast.cardKey,
               padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.m),
               decoration: bb.floating(radius: BBRadius.card).copyWith(color: bb.colors.ink),
               child: Text(widget.message, style: bb.text.label.copyWith(color: bb.colors.bg)),
