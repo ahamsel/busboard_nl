@@ -118,17 +118,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ]),
                 const SizedBox(height: BBSpace.l),
                 section('Schedule data (GTFS)', BBIcons.download, [
-                  Row(children: [
-                    Text('Last updated: ', style: bb.text.caption),
-                    Expanded(
-                      child: Text(
-                        settings.lastGtfsUpdate != null
-                            ? DateFormat('MMM d, yyyy HH:mm').format(settings.lastGtfsUpdate!)
-                            : 'Never',
-                        style: bb.text.label,
-                      ),
+                  Text.rich(TextSpan(children: [
+                    TextSpan(text: 'Last updated: ', style: bb.text.caption),
+                    TextSpan(
+                      text: settings.lastGtfsUpdate != null
+                          ? DateFormat('MMM d, yyyy HH:mm').format(settings.lastGtfsUpdate!)
+                          : 'Never',
+                      style: bb.text.label,
                     ),
-                  ]),
+                  ])),
                   const SizedBox(height: BBSpace.xs),
                   Text('Auto-refreshes every 7 days', style: bb.text.caption),
                   const SizedBox(height: BBSpace.m),
