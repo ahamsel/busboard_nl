@@ -2,6 +2,7 @@ import 'package:busboard_nl/ui/kit/bb_pressable.dart';
 import 'package:busboard_nl/ui/kit/bb_segmented.dart';
 import 'package:busboard_nl/ui/kit/bb_switch.dart';
 import 'package:busboard_nl/ui/kit/bb_text_field.dart';
+import 'package:busboard_nl/ui/kit/tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -76,6 +77,23 @@ void main() {
     );
     expect(scale.scale, 0.98);
     await g.up();
+  });
+
+  testWidgets('off BBSwitch draws a visible muted outline and thumb in both modes', (tester) async {
+    for (final (brightness, colors) in [(Brightness.light, BBColors.light), (Brightness.dark, BBColors.dark)]) {
+      await tester.pumpWidget(kitHost(BBSwitch(value: false, onChanged: (_) {}), brightness: brightness));
+      await tester.pumpAndSettle();
+      final decorations = tester
+          .widgetList<DecoratedBox>(find.descendant(of: find.byType(BBSwitch), matching: find.byType(DecoratedBox)))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .toList();
+      final thumb = decorations.singleWhere((d) => d.shape == BoxShape.circle);
+      final track = decorations.singleWhere((d) => d.shape == BoxShape.rectangle && d.border != null);
+      expect(thumb.color, colors.muted, reason: '${brightness.name} off thumb');
+      expect((track.border! as Border).top.color, colors.muted, reason: '${brightness.name} off track outline');
+      expect((track.border! as Border).top.width, 1.5);
+    }
   });
 
   testWidgets('BBSwitch hit area is at least 44x44', (tester) async {

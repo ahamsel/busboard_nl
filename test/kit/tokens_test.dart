@@ -30,6 +30,8 @@ void main() {
         ('warnInk/warnBg', c.warnInk, c.warnBg, 4.5),
         ('dangerInk/dangerBg', c.dangerInk, c.dangerBg, 4.5),
         ('surface on dangerInk (nav badge)', c.surface, c.dangerInk, 4.5),
+        ('muted/bg (off switch outline and thumb)', c.muted, c.bg, 3.0),
+        ('muted/surface (off switch outline and thumb)', c.muted, c.surface, 3.0),
         ('soon/surface (large minutes)', c.soon, c.surface, 3.0),
         ('soon/bg (large minutes)', c.soon, c.bg, 3.0),
       ];
