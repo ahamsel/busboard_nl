@@ -172,6 +172,30 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
             ? 'Live'
             : '${_liveIssue ?? 'Live unavailable'} · showing schedule';
 
+    // The alert sits at the top of the scrolling list, not in the fixed header:
+    // at large text the fixed header plus an alert card would fill a small
+    // screen and leave the departures no room.
+    final alertBlock = relevantAlerts.isEmpty
+        ? null
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.xs),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              ServiceAlertCard(
+                alert: relevantAlerts.first,
+                stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
+                compact: true,
+                onTap: () => context.go('/alerts'),
+              ),
+              if (relevantAlerts.length > 1)
+                BBButton(
+                  label:
+                      '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
+                  kind: BBButtonKind.quiet,
+                  onPressed: () => context.go('/alerts'),
+                ),
+            ]),
+          );
+
     return BBScaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -233,26 +257,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               if (_liveAvailable) Text(' · updated $updated', style: bb.text.caption),
             ]),
           ),
-          if (relevantAlerts.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.xs),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                ServiceAlertCard(
-                  alert: relevantAlerts.first,
-                  stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
-                  compact: true,
-                  onTap: () => context.go('/alerts'),
-                ),
-                if (relevantAlerts.length > 1)
-                  BBButton(
-                    label:
-                        '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
-                    kind: BBButtonKind.quiet,
-                    onPressed: () => context.go('/alerts'),
-                  ),
-              ]),
-            ),
-          Expanded(child: BBRefresh(onRefresh: _refreshData, child: _buildArrivalsList(context))),
+          Expanded(child: BBRefresh(onRefresh: _refreshData, child: _buildArrivalsList(context, alertBlock))),
         ],
       ),
     );
@@ -274,14 +279,14 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         .toList();
   }
 
-  Widget _buildArrivalsList(BuildContext context) {
+  Widget _buildArrivalsList(BuildContext context, Widget? alertBlock) {
     final bottom = BBNavBar.reservedHeight(context) + BBSpace.l;
 
     // Every state is a scrollable list so pull-to-refresh always works.
     Widget centered(Widget child) => ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.only(bottom: bottom),
-          children: [const SizedBox(height: 64), Center(child: child)],
+          children: [?alertBlock, const SizedBox(height: 64), Center(child: child)],
         );
 
     if (_loading) return centered(const BBLoading(label: 'Loading departures...'));
@@ -295,12 +300,18 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         message: 'There are no scheduled departures\nfrom this stop right now.',
       ));
     }
-    return ListView.separated(
+    final leading = alertBlock == null ? 0 : 1;
+    return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.screen, bottom),
-      itemCount: _arrivals.length,
-      separatorBuilder: (_, _) => const SizedBox(height: BBSpace.s),
-      itemBuilder: (_, index) => ArrivalRowTile(arrival: _arrivals[index]),
+      padding: EdgeInsets.only(bottom: bottom),
+      itemCount: leading + _arrivals.length,
+      itemBuilder: (_, index) {
+        if (index < leading) return alertBlock;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(BBSpace.screen, index == 0 ? BBSpace.s : 0, BBSpace.screen, BBSpace.s),
+          child: ArrivalRowTile(arrival: _arrivals[index - leading]),
+        );
+      },
     );
   }
 }
