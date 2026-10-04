@@ -12,6 +12,7 @@ class BBPill extends StatelessWidget {
     this.background,
     this.foreground,
     this.leadingDot = false,
+    this.wrap = false,
   });
 
   final String label;
@@ -21,6 +22,9 @@ class BBPill extends StatelessWidget {
   final Color? background;
   final Color? foreground;
   final bool leadingDot;
+
+  /// Let long labels wrap onto several lines instead of ellipsising.
+  final bool wrap;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +58,9 @@ class BBPill extends StatelessWidget {
             Flexible(
               child: Text(
                 label,
-                overflow: TextOverflow.ellipsis,
+                softWrap: wrap,
+                maxLines: wrap ? null : 1,
+                overflow: wrap ? TextOverflow.visible : TextOverflow.ellipsis,
                 style: context.bb.text.caption.copyWith(color: fgColor, fontWeight: FontWeight.w700),
               ),
             ),
