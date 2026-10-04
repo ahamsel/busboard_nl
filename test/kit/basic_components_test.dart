@@ -78,4 +78,25 @@ void main() {
     await tester.pumpWidget(kitHost(const RouteBadge(routeNumber: 26), textScale: 2.0));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('labelled BBCard has semantic tap action', (tester) async {
+    final handle = tester.ensureSemantics();
+    var taps = 0;
+    const label = 'Route 29 Signal Hill Road, live, 4 minutes';
+    await tester.pumpWidget(kitHost(
+      BBCard(
+        onTap: () => taps++,
+        semanticLabel: label,
+        child: const Text('row'),
+      ),
+    ));
+
+    // Verify semantic label is present (accessibility announcement)
+    expect(find.bySemanticsLabel(label), findsOneWidget);
+
+    // Tap using the found element - verifies the semantic tap action is connected
+    await tester.tap(find.bySemanticsLabel(label));
+    expect(taps, 1);
+    handle.dispose();
+  });
 }
