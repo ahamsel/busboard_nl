@@ -404,7 +404,7 @@ class BusMotionEngine {
       // Route change detection: if the route changed for this vehicle
       // (e.g. bus finishing one run and starting another), reset shape
       // matching state so we don't blend/clamp across different routes.
-      if (v.routeRun.isNotEmpty && v.routeRun != existing.routeRun) {
+      if (_routeChanged(v, existing)) {
         _renderProgressByKey.remove(key);
         _blendOrigins.remove(key);
         _backwardCount.remove(key);
@@ -1636,6 +1636,21 @@ class BusMotionEngine {
         math.sin(phi1) * math.cos(phi2) * math.cos(dLon);
     final bearing = math.atan2(y, x) * (180.0 / math.pi);
     return (bearing + 360.0) % 360.0;
+  }
+
+  /// Whether [v] is a different route than the bus was tracked on.
+  ///
+  /// The route number decides when both sides know it. The routeRun label
+  /// is not stable for one route: GTFS-Realtime vehicles take it from Fleet
+  /// View's block ("Rt 10-1") when that feed answers and from the route ID
+  /// ("Rt 10") when it does not, so an intermittent Fleet View would flip it
+  /// every few polls and reset the bus onto a fresh, unblended position.
+  /// Trip changes within one route are handled in [_updateExisting].
+  bool _routeChanged(TimeTrackVehicle v, BusTrackingState existing) {
+    if (v.routeNumber > 0 && existing.routeNumber > 0) {
+      return v.routeNumber != existing.routeNumber;
+    }
+    return v.routeRun.isNotEmpty && v.routeRun != existing.routeRun;
   }
 
   /// Key by physical vehicle ID so each map dot tracks one real bus.
