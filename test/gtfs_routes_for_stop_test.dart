@@ -52,7 +52,7 @@ void main() {
   });
 
   test('compareRouteNames is antisymmetric and zero only for equal names', () {
-    const names = ['2', '10', '010', 'A', 'X1', '', '+5'];
+    const names = ['2', '10', '010', 'A', 'X1', '', '+5', '99999999999999999999'];
     for (final a in names) {
       for (final b in names) {
         final ab = GtfsRepository.compareRouteNames(a, b);
@@ -61,5 +61,11 @@ void main() {
         expect(ab == 0, a == b, reason: '"$a" vs "$b"');
       }
     }
+  });
+
+  test('overflowing digit strings do not throw and are non-numeric', () {
+    expect(GtfsRepository.compareRouteNames('99999999999999999999', '5'), greaterThan(0));
+    final names = ['99999999999999999999', '10', 'A']..sort(GtfsRepository.compareRouteNames);
+    expect(names, ['10', '99999999999999999999', 'A']);
   });
 }
