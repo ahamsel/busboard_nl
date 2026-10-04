@@ -110,8 +110,8 @@ class _AlertsContent extends ConsumerWidget {
             LegalCopy.footer,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 11,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+              fontSize: 12,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
