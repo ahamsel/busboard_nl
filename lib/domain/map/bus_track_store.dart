@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math' as math;
 
 import '../../data/realtime/timetrack_models.dart';
@@ -29,7 +30,10 @@ class BusTrackStore {
   static const double _windowAheadMeters = 400;
   static const double _windowMaxSpeedMps = 30;
 
-  Map<String, BusTrack> get tracks => Map.unmodifiable(_tracks);
+  /// How far ahead of the fetch time a feed timestamp may be (clock skew).
+  static const Duration _maxFutureSkew = Duration(minutes: 2);
+
+  Map<String, BusTrack> get tracks => UnmodifiableMapView(_tracks);
   int get duplicateAssignments => _duplicateAssignments;
 
   bool isStale(BusTrack track, DateTime now) => now.difference(track.lastFixAt) > staleAfter;
@@ -46,14 +50,29 @@ class BusTrackStore {
 
   void _ingestOne(String key, TimeTrackVehicle v, DateTime fetchTime) {
     final gpsTime = _gpsTime(v.positionTimeSeconds, fetchTime);
-    final tripId = v.gtfsTripId.isEmpty ? null : v.gtfsTripId;
-    final shapeId = _shapeFor(v, tripId);
+    // A feed that repeats an old timestamp (or runs ahead of us) must not
+    // create or refresh a track. Only a real feed time is judged; the
+    // fetch-time fallback is always current.
+    if (v.positionTimeSeconds > 0 && v.positionTimeSeconds < Duration.secondsPerDay) {
+      if (fetchTime.difference(gpsTime) > dropAfter) return;
+      if (gpsTime.difference(fetchTime) > _maxFutureSkew) return;
+    }
 
     var track = _tracks[key];
     if (track != null && _routeChanged(v, track)) track = null;
     if (track != null && !gpsTime.isAfter(track.latest.gpsTime)) return;
 
     final previous = track?.latest;
+    var tripId = v.gtfsTripId.isEmpty ? null : v.gtfsTripId;
+    var shapeId = _shapeFor(v, tripId);
+    // A missing or unknown trip ID is a gap in the feed, not a new trip:
+    // stay on the trip and shape the bus was already tracked on.
+    if (previous != null &&
+        previous.shapeId != null &&
+        (tripId == null || _geometry.shapeIdForTrip(tripId) == null)) {
+      tripId = previous.tripId;
+      shapeId = previous.shapeId;
+    }
     final continuing = previous != null &&
         previous.progress != null &&
         previous.shapeId == shapeId &&
@@ -66,7 +85,8 @@ class BusTrackStore {
     if (shapeId != null) {
       final snap = continuing
           ? _snapContinuing(v, shapeId, previous, gpsTime)
-          : _geometry.snap(v.busLat, v.busLon, shapeId, expectedAlong: _geometry.initialHint(v, tripId, shapeId));
+          : _geometry.snap(v.busLat, v.busLon, shapeId, expectedAlong: _geometry.initialHint(v, tripId, shapeId) ??
+                  (previous?.shapeId == shapeId ? previous?.progress : null));
       if (snap != null) {
         if (snap.perpendicularDistance > RouteGeometry.offRouteMeters) {
           offRoute = true;
@@ -207,10 +227,14 @@ class BusTrackStore {
   /// The feed's seconds-since-midnight, placed on the day nearest [fetchTime].
   DateTime _gpsTime(int secondsOfDay, DateTime fetchTime) {
     if (secondsOfDay <= 0 || secondsOfDay >= Duration.secondsPerDay) return fetchTime;
-    var t = DateTime(fetchTime.year, fetchTime.month, fetchTime.day).add(Duration(seconds: secondsOfDay));
+    // The feed's seconds are local wall-clock time, so build the DateTime
+    // from calendar fields: adding a Duration is an hour off on DST days.
+    DateTime onDay(int dayOffset) =>
+        DateTime(fetchTime.year, fetchTime.month, fetchTime.day + dayOffset, 0, 0, secondsOfDay);
+    var t = onDay(0);
     final diff = fetchTime.difference(t).inSeconds;
-    if (diff > 43200) t = t.add(const Duration(days: 1));
-    if (diff < -43200) t = t.subtract(const Duration(days: 1));
+    if (diff > 43200) t = onDay(1);
+    if (diff < -43200) t = onDay(-1);
     return t;
   }
 

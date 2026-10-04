@@ -67,6 +67,47 @@ void main() {
     final t = store.tracks['2573']!;
     expect(t.fixes, hasLength(2));
     expect(t.fixes.last.tripId, 'next-trip');
+    // On the outbound pass (about 980 m), not the return pass (about 1055 m+).
+    expect(t.fixes.last.progress, closeTo(980, 40));
+  });
+
+  for (final unknownTrip in ['', 'unknown-trip']) {
+    test('a fix with ${unknownTrip.isEmpty ? 'a missing' : 'an unknown'} trip ID continues on the same pass', () {
+      for (var i = 0; i < 3; i++) {
+        poll(i, [fix(meters: 300.0 + i * 80, seconds: 43200 + i * 10)]);
+      }
+      poll(3, [fix(meters: 540, seconds: 43230, tripId: unknownTrip)]);
+      final t = store.tracks['2573']!;
+      expect(t.fixes, hasLength(4));
+      expect(t.latest.progress, closeTo(540, 40));
+      expect(t.latest.tripId, outAndBackTripId);
+      expect(t.latest.shapeId, outAndBackShapeId);
+    });
+  }
+
+  test('a frozen GPS timestamp goes stale, is dropped, and is never re-created', () {
+    for (var i = 0; i <= 72; i++) {
+      final now = start.add(Duration(seconds: i * 10));
+      poll(i, [fix(meters: 100, seconds: 43200)]);
+      final t = store.tracks['2573'];
+      if (now.difference(start) > BusTrackStore.dropAfter) {
+        expect(t, isNull, reason: 'at ${i * 10} s');
+      } else {
+        expect(t, isNotNull, reason: 'at ${i * 10} s');
+        expect(store.isStale(t!, now), now.difference(start) > BusTrackStore.staleAfter, reason: 'at ${i * 10} s');
+        expect(t.fixes, hasLength(1));
+      }
+    }
+  });
+
+  test('a first fix with a GPS time hours old creates no track', () {
+    store.ingest([fix(meters: 100, seconds: 43200 - 3 * 3600)], start);
+    expect(store.tracks, isEmpty);
+  });
+
+  test('a GPS time 10 minutes in the future is ignored', () {
+    store.ingest([fix(meters: 100, seconds: 43200 + 600)], start);
+    expect(store.tracks, isEmpty);
   });
 
   test('duplicate and out-of-order GPS timestamps are ignored', () {
