@@ -14,7 +14,7 @@ void main() {
     )));
     expect(tester.getSize(find.byType(BBChip)).height, greaterThanOrEqualTo(44));
     expect(
-      tester.getSemantics(find.byType(BBChip)),
+      find.semantics.byLabel('MUN Centre · 1150'),
       isSemantics(label: 'MUN Centre · 1150', isButton: true, hasTapAction: true),
     );
     await tester.tap(find.byType(BBChip));
@@ -47,6 +47,29 @@ void main() {
     expect(tester.getSize(find.byType(BBChip)).width, lessThanOrEqualTo(320));
     expect(tester.widget<Text>(find.text(label)).overflow, TextOverflow.ellipsis);
     expect(tester.renderObject<RenderParagraph>(find.text(label)).didExceedMaxLines, isTrue);
+  });
+
+  testWidgets('an unselected chip is a plain button, not an unselected toggle', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(kitHost(Center(child: BBChip(label: 'Route 10', onTap: () {}))));
+    expect(
+      find.semantics.byLabel('Route 10'),
+      isSemantics(label: 'Route 10', isButton: true, hasSelectedState: false, isSelected: false),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('an unselected control pill button is not an unselected toggle', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(kitHost(Center(
+      child: BBControlPill(items: [
+        BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: () {}),
+        BBControlPillItem(icon: BBIcons.layers, semanticLabel: 'Layers', onPressed: () {}, selected: true),
+      ]),
+    )));
+    expect(find.semantics.byLabel('My location'), isSemantics(label: 'My location', hasSelectedState: false, isSelected: false));
+    expect(find.semantics.byLabel('Layers'), isSemantics(label: 'Layers', hasSelectedState: true, isSelected: true));
+    handle.dispose();
   });
 
   testWidgets('control pill buttons are 44 pt, labelled, and dim when disabled', (tester) async {
