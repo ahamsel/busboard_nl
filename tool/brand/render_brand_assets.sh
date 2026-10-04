@@ -41,7 +41,7 @@ magick -size 1024x500 "xc:$BLUE" \
   -fill "$CREAM" -gravity west \
   -font assets/fonts/Figtree-ExtraBold.ttf -pointsize 88 -annotate +460-24 'BusBoard NL' \
   -font assets/fonts/Figtree-SemiBold.ttf -pointsize 34 -annotate +464+56 "Live arrivals for St. John's buses" \
-  "$I/feature_graph_gplay.png"
+  -alpha off "$I/feature_graph_gplay.png"   # Play rejects a feature graphic with alpha.
 
 magick identify "$I/app_icon.png" "$I/app_icon_foreground.png" "$I/splash_logo.png" \
   "$I/splash_logo_android12.png" "$I/app_icon_gplay.png" "$I/feature_graph_gplay.png"
