@@ -1,283 +1,148 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+
 import '../../domain/arrival/arrival_models.dart';
+import '../kit/kit.dart';
 
-/// Single row on the arrival board showing one departure.
+/// One departure on the Board: route badge · destination + status · minutes.
 class ArrivalRowTile extends StatelessWidget {
-  final ArrivalRow arrival;
-
   const ArrivalRowTile({super.key, required this.arrival});
 
+  final ArrivalRow arrival;
+
+  /// Minutes at or below which the countdown uses the `soon` colour.
+  static const int soonThresholdMinutes = 5;
+
+  /// Largest share of the row the minutes column may take, so large text scales
+  /// make its lines wrap instead of pushing the row past the card edge.
+  static const double _maxTrailingShare = 0.45;
+
+  /// Plain-words status pill for a row (spec §6.2).
+  static (String, BBPillTone) statusOf(ArrivalRow a) {
+    if (a.isEnhanced) {
+      return a.isLive
+          ? ('Live', BBPillTone.live)
+          : ('Scheduled', BBPillTone.neutral);
+    }
+    if (a.isLive) {
+      return switch (a.liveStatus) {
+        LiveStatus.ahead => ('Early', BBPillTone.live),
+        LiveStatus.behind => ('Late', BBPillTone.warn),
+        LiveStatus.onTime => ('On time', BBPillTone.live),
+        null => ('Live', BBPillTone.live),
+      };
+    }
+    return ('Scheduled', BBPillTone.neutral);
+  }
+
+  /// One sentence for screen readers, e.g. "Route 29 Signal Hill Rd, live, 4 minutes".
+  static String semanticsLabel(ArrivalRow a) {
+    final (status, _) = statusOf(a);
+    final when = a.minutesAway <= 0
+        ? 'now'
+        : a.minutesAway == 1
+        ? '1 minute'
+        : '${a.minutesAway} minutes';
+    return 'Route ${a.routeShortName} ${a.headsign}, ${status.toLowerCase()}, $when';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final bb = context.bb;
+    final a = arrival;
+    final (status, tone) = statusOf(a);
+    final meta = [
+      if (a.routeRun != null) a.routeRun!,
+      if (a.isLive && a.vehicleNumber != null) 'Bus ${a.vehicleNumber}',
+    ].join(' · ');
+    final showPredicted = a.isLive && a.predictedTime != null;
+    final timeLine = showPredicted
+        ? 'exp ${a.displayTime.toDisplayString()}'
+        : a.scheduledDisplay;
+    final showSched = showPredicted && a.scheduledTime != a.predictedTime;
+    final soon = a.minutesAway <= soonThresholdMinutes;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Route number badge
-          Container(
-            width: 52,
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.primary.withValues(alpha: 0.8),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    return Semantics(
+      label: semanticsLabel(a),
+      excludeSemantics: true,
+      child: BBCard(
+        child: LayoutBuilder(
+          builder: (context, box) => Row(
+            children: [
+              RouteBadge(
+                routeNumber: int.tryParse(a.routeShortName) ?? 0,
+                label: a.routeShortName,
               ),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Center(
-              child: Text(
-                arrival.routeShortName,
-                style: TextStyle(
-                  color: theme.colorScheme.onPrimary,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 16,
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-
-          // Headsign + live status
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  arrival.headsign,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 14.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Row(
+              const SizedBox(width: BBSpace.m),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Stop-specific Metrobus prediction status.
-                    if (arrival.isEnhanced) ...[
-                      _StopPredictionBadge(isRealtime: arrival.isLive),
-                      const SizedBox(width: 4),
-                    ],
-                    // Fleet-derived live status when no stop prediction exists.
-                    if (arrival.isLive && !arrival.isEnhanced) ...[
-                      _LiveBadge(status: arrival.liveStatus),
-                    ],
-                    if (arrival.routeRun != null ||
-                        (arrival.isLive && arrival.vehicleNumber != null)) ...[
-                      const SizedBox(width: 6),
-                      Flexible(
+                    Text(
+                      a.headsign,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: bb.text.headline,
+                    ),
+                    const SizedBox(height: 3),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        BBPill(
+                          label: status,
+                          tone: tone,
+                          leadingDot: tone == BBPillTone.live,
+                        ),
+                        if (meta.isNotEmpty) Text(meta, style: bb.text.caption),
+                      ],
+                    ),
+                    if (a.isLive && (a.currentLocation?.isNotEmpty ?? false))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
                         child: Text(
-                          [
-                            if (arrival.routeRun != null) arrival.routeRun!,
-                            if (arrival.isLive && arrival.vehicleNumber != null)
-                              'Bus ${arrival.vehicleNumber}',
-                          ].join(' • '),
+                          'Near ${a.currentLocation}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.5,
-                            ),
-                            fontSize: 11,
-                          ),
+                          style: bb.text.caption,
                         ),
                       ),
-                    ],
                   ],
                 ),
-                if (arrival.isLive &&
-                    arrival.currentLocation?.isNotEmpty == true) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    'Near ${arrival.currentLocation}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: 0.45,
+              ),
+              const SizedBox(width: BBSpace.m),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: box.maxWidth * _maxTrailingShare,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      a.minutesAway <= 0 ? 'Now' : '${a.minutesAway}',
+                      style: bb.text.minutes.copyWith(
+                        color: soon ? bb.colors.soon : bb.colors.ink,
                       ),
-                      fontSize: 10.5,
                     ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-
-          // Countdown + expected arrival time
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                arrival.countdownText,
-                style: TextStyle(
-                  color: _countdownColor(arrival.minutesAway, theme),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 17,
-                  letterSpacing: -0.3,
+                    if (a.minutesAway > 0)
+                      Text('min', style: bb.text.minutesUnit),
+                    const SizedBox(height: 2),
+                    Text(timeLine, style: bb.text.caption),
+                    if (showSched)
+                      Text(
+                        'sched ${a.scheduledDisplay}',
+                        style: bb.text.caption.copyWith(
+                          decoration: TextDecoration.lineThrough,
+                          decorationColor: bb.colors.muted,
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 1),
-              Text(
-                arrival.isLive && arrival.predictedTime != null
-                    ? 'exp ${arrival.displayTime.toDisplayString()}'
-                    : arrival.scheduledDisplay,
-                style: TextStyle(
-                  color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (arrival.isLive &&
-                  arrival.predictedTime != null &&
-                  arrival.scheduledTime != arrival.predictedTime)
-                Text(
-                  'sched ${arrival.scheduledDisplay}',
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
-                    fontSize: 10,
-                    decoration: TextDecoration.lineThrough,
-                    decorationColor: theme.colorScheme.onSurface.withValues(
-                      alpha: 0.3,
-                    ),
-                  ),
-                ),
             ],
           ),
-        ],
+        ),
       ),
     );
-  }
-
-  Color _countdownColor(int minutes, ThemeData theme) {
-    final isLight = theme.brightness == Brightness.light;
-    if (minutes <= 2) {
-      return isLight ? const Color(0xFFD32F2F) : const Color(0xFFEF5350); // Red
-    }
-    if (minutes <= 5) {
-      return isLight
-          ? const Color(0xFFF57C00)
-          : const Color(0xFFFFB74D); // Orange
-    }
-    if (minutes <= 10) return theme.colorScheme.secondary; // Green
-    return theme.colorScheme.onSurface.withValues(alpha: 0.7); // Default
-  }
-}
-
-/// Explicitly distinguishes Metrobus predictions from schedule-only rows.
-class _StopPredictionBadge extends StatelessWidget {
-  final bool isRealtime;
-
-  const _StopPredictionBadge({required this.isRealtime});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isLight = theme.brightness == Brightness.light;
-    final color = isRealtime
-        ? (isLight ? const Color(0xFF7B1FA2) : const Color(0xFFCE93D8))
-        : theme.colorScheme.onSurface.withValues(alpha: 0.5);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            isRealtime ? 'PRED' : 'SCHEDULE',
-            style: TextStyle(
-              color: color,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// LIVE badge with status indicator.
-class _LiveBadge extends StatelessWidget {
-  final LiveStatus? status;
-
-  const _LiveBadge({this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = _statusColor(theme);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            status?.label ?? 'LIVE',
-            style: TextStyle(
-              color: color,
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _statusColor(ThemeData theme) {
-    final isLight = theme.brightness == Brightness.light;
-    switch (status) {
-      case LiveStatus.ahead:
-        return isLight
-            ? const Color(0xFF2E7D32)
-            : const Color(0xFF81C784); // Green
-      case LiveStatus.onTime:
-        return isLight
-            ? const Color(0xFF0277BD)
-            : const Color(0xFF4FC3F7); // Blue
-      case LiveStatus.behind:
-        return isLight
-            ? const Color(0xFFF57C00)
-            : const Color(0xFFFFB74D); // Orange
-      case null:
-        return isLight ? const Color(0xFF0277BD) : const Color(0xFF4FC3F7);
-    }
   }
 }

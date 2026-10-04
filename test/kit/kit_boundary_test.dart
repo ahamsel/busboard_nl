@@ -36,7 +36,6 @@ const _legacyAllowList = {
   'lib/ui/alerts/alerts_screen.dart',
   'lib/ui/alerts/service_alert_card.dart',
   'lib/ui/board/arrival_board_screen.dart',
-  'lib/ui/board/arrival_row_tile.dart',
   'lib/ui/map/bus_bottom_sheet.dart',
   'lib/ui/map/map_screen.dart',
   'lib/ui/map/stop_bottom_sheet.dart',
