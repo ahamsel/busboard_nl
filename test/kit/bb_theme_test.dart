@@ -1,7 +1,15 @@
+import 'dart:math' as math;
+
 import 'package:busboard_nl/ui/kit/bb_theme.dart';
 import 'package:busboard_nl/ui/kit/tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+double _contrast(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+}
 
 Widget _app({required TargetPlatform platform}) {
   return MaterialApp(
@@ -35,6 +43,20 @@ void main() {
       expect(theme.textTheme.bodyMedium!.fontFamily, BBText.family);
       for (final p in [TargetPlatform.android, TargetPlatform.iOS]) {
         expect(theme.pageTransitionsTheme.builders[p], isA<BBPageTransitionsBuilder>());
+      }
+    }
+  });
+
+  test('colorScheme.secondary is legible as text (legacy screens use it for text)', () {
+    for (final (name, theme) in [('light', BBTheme.light()), ('dark', BBTheme.dark())]) {
+      final secondary = theme.colorScheme.secondary;
+      for (final (bgName, bg) in [
+        ('surface', theme.colorScheme.surface),
+        ('scaffold', theme.scaffoldBackgroundColor),
+      ]) {
+        final ratio = _contrast(secondary, bg);
+        expect(ratio, greaterThanOrEqualTo(4.5),
+            reason: '$name secondary/$bgName is ${ratio.toStringAsFixed(2)}:1');
       }
     }
   });
