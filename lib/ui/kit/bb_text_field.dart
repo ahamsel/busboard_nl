@@ -44,29 +44,34 @@ class BBTextField extends StatelessWidget {
             const SizedBox(width: BBSpace.s),
           ],
           Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              onSubmitted: onSubmitted,
-              keyboardType: keyboardType,
-              textInputAction: textInputAction,
-              autofocus: autofocus,
-              style: bb.text.body,
-              cursorColor: bb.colors.brand,
-              // Fully bare field: BBTextField draws its own container, so the
-              // theme's filled/outlined InputDecorationTheme must not leak in.
-              decoration: InputDecoration(
-                isCollapsed: true,
-                filled: false,
-                contentPadding: EdgeInsets.zero,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                focusedErrorBorder: InputBorder.none,
-                hintText: hint,
-                hintStyle: bb.text.body.copyWith(color: bb.colors.muted),
+            // TextField needs a Material ancestor; supply an invisible one so the
+            // field also works on kit pages that (correctly) have none.
+            child: Material(
+              type: MaterialType.transparency,
+              child: TextField(
+                controller: controller,
+                onChanged: onChanged,
+                onSubmitted: onSubmitted,
+                keyboardType: keyboardType,
+                textInputAction: textInputAction,
+                autofocus: autofocus,
+                style: bb.text.body,
+                cursorColor: bb.colors.brand,
+                // Fully bare field: BBTextField draws its own container, so the
+                // theme's filled/outlined InputDecorationTheme must not leak in.
+                decoration: InputDecoration(
+                  isCollapsed: true,
+                  filled: false,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                  hintText: hint,
+                  hintStyle: bb.text.body.copyWith(color: bb.colors.muted),
+                ),
               ),
             ),
           ),
