@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:busboard_nl/ui/kit/bb_theme.dart';
@@ -186,5 +187,50 @@ void main() {
     await tester.dragFrom(const Offset(5, 300), const Offset(300, 0));
     await tester.pumpAndSettle();
     expect(find.text('PAGE B'), findsOneWidget);
+  });
+
+  testWidgets('iOS: a horizontal list on the root route scrolls from the left edge', (tester) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(MaterialApp(
+      theme: BBTheme.light().copyWith(platform: TargetPlatform.iOS),
+      scrollBehavior: const BBScrollBehavior(),
+      home: Scaffold(
+        body: SizedBox(
+          height: 120,
+          child: ListView(
+            controller: controller,
+            scrollDirection: Axis.horizontal,
+            children: [for (var i = 0; i < 20; i++) SizedBox(width: 100, child: Text('item $i'))],
+          ),
+        ),
+      ),
+    ));
+    expect(controller.offset, 0);
+    await tester.dragFrom(const Offset(5, 60), const Offset(-200, 0));
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(100), reason: 'the edge strip swallowed the drag on the root route');
+  });
+
+  testWidgets('iOS: a late drag end does not pop a page pushed over the dragged one', (tester) async {
+    await tester.pumpWidget(_app(platform: TargetPlatform.iOS));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+
+    final gesture = await tester.startGesture(const Offset(5, 300));
+    await gesture.moveBy(const Offset(400, 0)); // well past the pop threshold
+    await tester.pump();
+    expect(navigator.userGestureInProgress, isTrue);
+
+    // Something else navigates while the finger is still down.
+    unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('PAGE C')))));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('PAGE C'), findsOneWidget, reason: 'the swipe popped a page it never dragged');
+    expect(navigator.userGestureInProgress, isFalse);
   });
 }
