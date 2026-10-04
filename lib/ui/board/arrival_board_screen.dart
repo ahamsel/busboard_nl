@@ -165,9 +165,12 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     final updated = DateFormat('HH:mm:ss').format(_lastUpdate);
     // The live region carries only the state, so assistive tech announces
     // live <-> schedule transitions but not every refresh timestamp.
-    final stateText = _liveAvailable
-        ? 'Live'
-        : '${_liveIssue ?? 'Live unavailable'} · showing schedule';
+    final checking = _loading && _error == null;
+    final stateText = checking
+        ? 'Checking live data…'
+        : _liveAvailable
+            ? 'Live'
+            : '${_liveIssue ?? 'Live unavailable'} · showing schedule';
 
     return BBScaffold(
       body: Column(
@@ -176,13 +179,23 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.xs, 0),
             child: Row(children: [
-              BBPill(
-                label: 'STOP ${widget.stopId}',
-                background: bb.colors.ink,
-                foreground: bb.colors.bg,
+              // Pill and Change share the width the 44 pt settings button leaves,
+              // so large text ellipsises them instead of overflowing the row.
+              Expanded(
+                flex: 3,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: BBPill(
+                    label: 'STOP ${widget.stopId}',
+                    background: bb.colors.ink,
+                    foreground: bb.colors.bg,
+                  ),
+                ),
               ),
-              const Spacer(),
-              BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop()),
+              Flexible(
+                flex: 2,
+                child: BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop()),
+              ),
               BBIconButton(
                 icon: BBIcons.settings,
                 semanticLabel: 'Settings',
@@ -211,7 +224,9 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               const SizedBox(width: BBSpace.s),
               Flexible(
                 child: Semantics(
-                  liveRegion: true,
+                  // Silent while the first refresh is in flight so assistive
+                  // tech never hears a provisional negative state.
+                  liveRegion: !checking,
                   child: Text(stateText, style: bb.text.caption),
                 ),
               ),
@@ -264,6 +279,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
 
     // Every state is a scrollable list so pull-to-refresh always works.
     Widget centered(Widget child) => ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.only(bottom: bottom),
           children: [const SizedBox(height: 64), Center(child: child)],
         );
@@ -280,6 +296,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
       ));
     }
     return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.screen, bottom),
       itemCount: _arrivals.length,
       separatorBuilder: (_, _) => const SizedBox(height: BBSpace.s),
