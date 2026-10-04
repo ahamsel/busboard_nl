@@ -1,0 +1,199 @@
+# Harbour Phase 3 — Kit polish and the live map
+
+**Date:** 2026-10-04
+**Status:** Approved in brainstorming, pending written-spec review
+**Parent spec:** [2026-10-04-harbour-redesign-design.md](2026-10-04-harbour-redesign-design.md). This document **supersedes its §7 (Map) and §8 item 3**. Everything else in the parent spec, including its constraints, still applies.
+
+## 1. Intent
+
+**What the rider gets**
+- Every detail feels like BusBoard's own design, never Google's Material, Apple's, or "made in Flutter". It's the same on iPhone and Android.
+- On the map, a rider can pick one bus and follow it smoothly through its whole trip to their stop. The bus never freezes, lurches, goes backward or turns into a different bus.
+
+**Constraints**
+- Free and open-licensed parts only.
+- No cloud project, no accounts and no API keys.
+- Accessibility stays at least as good as today.
+- Anything the phone itself draws stays native: keyboard, text selection, permission prompts, share sheets.
+
+**Success criteria**
+- No Material Rounded glyph, Material refresh circle or Material spinner is visible anywhere.
+- The kit boundary guard's legacy allow-list is empty, meaning the map files no longer use Material.
+- In a replay of the 2026-10-04 live capture through the new renderer:
+  - no followed or unfollowed bus is drawn moving backward along its own trip;
+  - no rendered speed exceeds what the GPS fixes imply;
+  - the drawn bus advances in at least 95% of frames whenever the fixes on both sides of the frame show it moving.
+- A followed bus is identified by its vehicle number on screen, and that number never changes while following.
+
+**Prerequisite (done):** the "drifts back" bug. When Fleet View answered only some of the time, `routeRun` flapped and the engine reset buses onto the wrong pass. It's fixed by deciding route changes by route number (PR [#2](https://github.com/ahamSel/busboard_nl/pull/2)) and is also on this branch.
+
+## 2. Phase 3a — kit polish
+
+All changes are in `lib/ui/kit/`, so every screen picks them up at once.
+
+### 2.1 Icons: Phosphor plus our own glyphs
+- **Phosphor icons** (`phosphor_flutter`, MIT; add its licence to `registerAppLicenses()`):
+  - The **regular** weight is the default.
+  - The **fill** weight marks active and selected states: the active nav tab, a starred stop, a selected route chip.
+  - `BBIcons` keeps its names (`board`, `map`, `alerts`, …), so screen code doesn't change. Only the glyph source moves from Material Rounded to Phosphor.
+  - Release builds keep `--tree-shake-icons`, so only the glyphs we use ship.
+- **Custom glyphs** (`lib/ui/kit/glyphs/`, `CustomPainter`, drawn in the B2 logo's style):
+  - `bus`: the logo's bus silhouette, front three-quarter view;
+  - `stopPole`: a stop sign on a pole, as riders see it on the street;
+  - `liveDot`: the "live" indicator, a solid dot with a soft ring and no animation.
+  - Each glyph takes a size and colour like an icon, and gets a semantics label from its caller.
+- The `BBIcons.*` set loses its `material.dart` import, so `Icons.` disappears from the kit entirely.
+
+### 2.2 Pull-to-refresh and loading: route dots
+- **`BBRefresh`** is a custom indicator that replaces Material's `RefreshIndicator`:
+  - **Motion:** three dots in route-palette colours (red, yellow, green hues from `RoutePalette`) grow in turn as you pull. Past the threshold there's one `selectionClick` haptic. On release they hop in sequence until the refresh finishes.
+  - **Reduce Motion:** the dots appear filled and stay still, with no hop.
+  - **Accessibility:**
+    - The scrollable gets a custom semantics action, **Refresh**, because screen-reader users can't pull.
+    - While refreshing, a live region announces "Refreshing" once, then "Updated" once.
+  - **API:** it keeps `onRefresh: Future<void> Function()`, so existing screens don't change.
+- **`BBSkeleton`** shows placeholder rows for first loads:
+  - Shapes: `arrivalRow`, `alertCard`, `stopCard`.
+  - It replaces the spinner on the Board, Alerts and the stop picker's "Near me" list.
+  - It's static, with no shimmer, which also makes it reduce-motion safe.
+  - Semantics: a single "Loading" label for the group.
+- **`BBLoading`** stays for small inline waits. It becomes a small version of the hopping dots, still with no Material spinner.
+
+### 2.3 Sheets: floating card
+**`BBSheet`** becomes an inset floating card:
+- **Shape:** an 8 pt margin on both sides, radius 24 on every corner, and the shared shadow (a 1 px `line` border in dark mode).
+- **Placement:** it sits **above the floating nav bar**, so tabs stay reachable. At full height it stops below the status bar and keeps its margins.
+- **Detents:** peek / half / full, as today, with the same settle haptic and spring.
+- **New: `header` slot.** The header stays pinned while the body scrolls, and dragging the header moves the sheet.
+- **New: `BBSheetController.animateToDetent(detent)`.**
+- **Dismissal:** tapping the map collapses the sheet to peek. Swiping down from peek closes it when `dismissible`.
+- **Grab handle:** a 34 × 4 pill inside the card. For screen readers it's announced as "Sheet, adjustable", with actions *Expand*, *Collapse* and (when dismissible) *Close*.
+
+### 2.4 Smaller kit items (defaults, carried over from Phase 2)
+- `BBToast` and `BBDialog` are restyled in the floating-card language: inset, radius 24, the shared shadow. `BBToast` also reserves space for the nav bar on any screen; this fixes the Settings offset.
+- `BBScaffold(reserveNavBar: bool)` replaces the AppShell's ad-hoc `_mapBranch` bottom padding. The map branch uses `reserveNavBar: false` and lays out its own sheet.
+- New kit pieces needed by the map: `BBChip` and `BBControlPill`. `BBChip` is a floating map chip with an optional leading glyph and trailing chevron; `BBControlPill` is a vertical stack of 44 pt icon buttons.
+
+## 3. Phase 3b — the map
+
+### 3.1 Map style: "Harbour quiet"
+- **Files:** two style JSONs, `assets/map/harbour_light.json` and `assets/map/harbour_dark.json`. They're generated by `tool/build_map_styles.dart` from OpenFreeMap's upstream styles and committed. Tiles, glyphs and sprites still load from OpenFreeMap, with no key.
+- **Light colours:** land `#EEF1F4`, water `#BFD6EA`, parks `#DCE8DC`, roads white with `#D5DCE3` casing, labels `#7A8794`.
+- **Dark colours:** land `#141C25`, water `#0E2A40`, parks `#16261F`, roads `#24303C` / `#2E3B48`, labels `#7D8B99`.
+- **Clutter removed:** POI icons, building outlines below zoom 16, minor road labels below zoom 15, and transit layers from the base map (we draw our own).
+- **Theme:** the map follows the app theme, or the Settings → Map theme override.
+- **Gestures:** rotation and tilt are off, so the map stays north-up and there's no compass. The default MapLibre "i" attribution control is replaced by a small kit text link, "© OpenStreetMap · OpenFreeMap", at the bottom-left above the sheet. It's always visible and opens the credits.
+
+### 3.2 Layers (bottom to top)
+1. **Route line** (follow mode only):
+   - It shows the followed trip's shape in the route colour, 6 px, over a 30%-ink casing.
+   - The part the bus has already driven is drawn at 40% opacity.
+2. **Stops:**
+   - Small white dots with an ink ring, hidden below zoom ~14.5.
+   - Your stop is a brand-blue disc with a white star, visible at every zoom.
+3. **Buses:** one **route badge** marker per bus.
+   - **Badge:** the board's rounded badge (radius 6.5, route `fill`, route ink number, 2 px white outline), so a yellow 10 on the board is the yellow 10 on the map.
+   - **Heading notch:** a small triangle in the route colour, rotated to the bus's heading.
+   - **Rendering:** the badges are generated per route at runtime with `dart:ui`, registered with `addImage`, and drawn as a symbol layer with `icon-allow-overlap`. The notch is a second symbol layer using `icon-rotate`, aligned to the map.
+   - **Followed bus:** drawn 1.35× larger with a 2.6 px outline. Other buses fade to 35% opacity.
+   - **Stale bus** (no fix for over 90 s): grey badge.
+
+### 3.3 Default layout
+- **Map:** full screen, under the status bar.
+- **Top-left `BBChip`:** "★ MUN Centre · 1150 ▾". Tapping it opens the stop picker.
+- **Top-right `BBChip`:** "All routes ▾". Tapping it opens a floating card of route badges for multi-select, using the fill state for selected.
+- **Right-hand `BBControlPill`:** my location.
+- **Bottom `BBSheet`:** at peek it shows the selected stop's next 1–2 arrivals, and dragging it up shows the full list.
+- **Tapping a stop:** opens its stop card, with arrivals, *Set as my stop* and *Open board*.
+- **Tapping a bus:** opens its bus card, with route, destination, bus number, early/late, a **Follow** button, and a collapsed *Technical details* section (speed, heading, last GPS time).
+
+### 3.4 Motion: drawn a few seconds behind, always smooth
+`BusMotionEngine`'s live extrapolation is replaced by **delayed interpolation** along the route between real GPS fixes. This is pure Dart in `lib/domain/map/`, with no Flutter imports and an injected clock.
+- **`BusTrackStore`:** one track per physical **vehicle ID**.
+  - A track is an ordered list of fixes (GPS time, lat/lon, heading, speed, trip ID, shape ID, progress along the shape).
+  - Progress is computed with **progress-hinted snapping**, `ShapeMatcher.snapNear` (prototyped on 2026-10-04):
+    - **Known bus:** the hint is the previous progress plus speed × time.
+    - **New bus or trip change:** the hint is the trip's next stop, or else the timetable position shifted by the reported delay.
+    - Stops are placed along the shape in sequence order.
+  - **Reset rule:** a route-number change starts a new track. A trip change continues the same track across the terminal.
+  - Duplicate or out-of-order GPS timestamps are ignored.
+- **`DelayedTrackRenderer`:**
+  - It draws each bus at **render time = now − D**.
+  - **D** is the rolling median interval between a bus's new fixes, plus 2 s, clamped to 8–20 s. It's ~12 s with today's feed.
+  - **Position:** the renderer interpolates progress along the shape between the two fixes around the render time.
+    - Progress is clamped so the drawn position never moves backward on the same trip. GPS that runs backward, for example in a detour, holds the bus still until the GPS passes that point again.
+    - **Trip change:** the bus is interpolated across the terminal in plain geographic space.
+    - **Off-route** (perpendicular distance over 150 m): it interpolates the raw GPS in a straight line.
+    - **When the next fix is late:** it extrapolates at the last segment's speed for at most 5 s, then holds.
+- **Other effects:**
+  - **ETAs aren't delayed.** Countdowns on the board and in the follow card still come from live predictions, so only the dot runs a few seconds behind.
+  - **Code removed:** `BusMotionEngine` and its special cases (stop anchor, Kalman progress filter, blend origins, backward counters) are deleted, along with the GTFS-RT adapter's misuse of `gtfsStopSequenceMinsFromStop` as the delay.
+  - **Provider changes:** `busMotionEngineProvider` and `busTrackingStreamProvider` are replaced by `busTrackStoreProvider` (a poll-driven notifier) and a map-scoped renderer ticker.
+
+### 3.5 Follow mode
+- **Entry:**
+  - Tapping a **live** arrival row on the Board switches to the Map tab and follows that row's vehicle. Rows without a live vehicle can't be tapped.
+  - Or press **Follow** on a bus card.
+- **State:** `followedVehicleIdProvider` (map-scoped) holds a vehicle ID, never a route or trip.
+- **Camera:** it keeps the bus and your stop in view, with padding for the sheet and chips, and zooms in as the bus approaches.
+  - If you pan or zoom by gesture, following pauses and a "Back to bus 2573" `BBChip` appears.
+  - Camera moves respect Reduce Motion: they jump instead of animating.
+- **Top chip:** "● Following bus 2573".
+- **Card (sheet at peek):**
+  - header: route badge · "to <headsign>" · "Bus 2573 · 1 min late" · minutes to your stop, from live predictions (`soon` colour at 5 min or less);
+  - "2 stops to MUN Centre";
+  - a stop strip showing driven, the bus's position, upcoming stops and your stop;
+  - buttons: *Stop following* and *See all stops*.
+- **See all stops (half or full):** a timeline from the bus to the end of its trip, with ETAs (scheduled + current delay) and your stop emphasised. If your stop isn't on this trip, it shows the next ~6 stops.
+- **Ending:**
+  - **Arrival:** when the bus reaches your stop, the card shows "Arrived at MUN Centre", follows for 10 s more, then ends.
+  - **Past your stop or trip ended:** following ends with a `BBToast`.
+  - **Feed gap:** the marker turns grey and shows "Last seen 1 min ago". After 5 min, following ends with a toast.
+  - Following never switches to a different vehicle.
+- **Screen readers:** the card has a live region that announces only changes in stops remaining (at most once per stop). Every control has a label and an action.
+
+### 3.6 Map-screen cleanup
+- `map_screen.dart`, `bus_bottom_sheet.dart` and `stop_bottom_sheet.dart` are rebuilt on the kit.
+- They lose every Material widget they use today: FAB, FilterChip, `showModalBottomSheet`, ListTile, SnackBar and `Icons.*`.
+- They're split by responsibility under `lib/ui/map/`:
+  - `map_screen.dart`: layout;
+  - `map_layers.dart`: style and layers;
+  - `follow_controller.dart`: camera and follow state;
+  - `bus_card.dart`, `stop_card.dart`, `follow_card.dart`.
+- The kit guard's `_legacyAllowList` becomes empty.
+- Debug snackbars are removed. Debug logging stays behind `kDebugMode`.
+
+## 4. Testing and verification
+- **Kit (3a):**
+  - widget tests for `BBRefresh` (threshold haptic, Refresh semantics action, reduce-motion state), `BBSkeleton`, `BBSheet` (header drag, `animateToDetent`, handle actions, collapse on map tap), `BBChip` and `BBControlPill`;
+  - regenerated goldens, light/dark at text ×1.0 and ×2.0;
+  - the screen overflow guard (320 and 360 pt at ×2.0) is extended to the map cards.
+- **Motion (3b), pure Dart:**
+  - **Unit tests:** interpolation between fixes, the never-backward clamp, off-route fallback, terminal crossing, capped extrapolation, choosing D, duplicate and out-of-order fixes, and `snapNear` on an out-and-back shape.
+  - **Replay tests** on committed fixtures:
+    - `route_run_flap_2026-10-04`, already on this branch;
+    - a 22-bus slice of the 2026-10-04 capture;
+    - a rush-hour slice from the 2026-10-05 capture.
+    - They assert the §1 success criteria, measured inside the renderer and not by projecting drawn points onto the shape (that is fooled by routes that reuse a road).
+- **Follow mode:**
+  - widget tests for entry from a Board row, pause on pan, the Back chip, the end-of-trip and arrival endings, the stale marker, and live-region announcements;
+  - a test that the followed vehicle ID never changes over a replay.
+- **Parity:** iOS simulator and Android emulator, light and dark, large text, live data.
+
+## 5. Phasing
+- **3a, kit polish:** §2. It ships on its own and every screen benefits.
+- **3b, the map:** §3, after 3a. Within it, the order is:
+  1. motion (store + renderer behind the existing map, verified by replay);
+  2. map style and layers;
+  3. cards and chips;
+  4. follow mode.
+- **Phase 4, on-device arrival alerts (not in this spec):**
+  - **Android:** a live "Route 10 · 2 stops · 4 min" ongoing notification while following, via a foreground service. It needs a Play declaration.
+  - **iOS:** a scheduled local "should arrive in ~5 min" reminder, labelled as an estimate, set when the app goes to the background.
+  - It needs no cloud. It gets its own short design once Phase 3 has shipped.
+
+## 6. Risks
+- **The ~12 s delay** may surprise riders who compare the dot with the bus in the street. The follow card always shows "Last GPS update 12 s ago" in its technical details, and countdowns stay live.
+- **OpenFreeMap availability:** it's a donation-funded free service. If the tiles fail, the map shows the kit error state and the Board keeps working. The style generator also lets us retarget another OpenMapTiles-schema source later.
+- **Fleet View is currently "Forbidden"** from some networks. Nothing in Phase 3 depends on it, and the route-number reset rule makes its flapping harmless.
+- **Phosphor package size:** icon tree-shaking keeps release size in check. If a platform build ever disables it, we can vendor a subset font instead.
