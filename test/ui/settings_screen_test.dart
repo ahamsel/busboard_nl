@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Future<ProviderContainer> _pump(WidgetTester tester, {Future<GtfsRepository> Function()? gtfs, double textScale = 1}) async {
-  SharedPreferences.setMockInitialValues({});
+Future<ProviderContainer> _pump(WidgetTester tester, {Future<GtfsRepository> Function()? gtfs, double textScale = 1, Map<String, Object> prefs = const {}}) async {
+  SharedPreferences.setMockInitialValues(prefs);
   // Riverpod 3 retries failed providers with backoff (~38 s in total), which
   // would keep the refresh future pending; fail immediately in tests.
   final container = ProviderContainer(retry: (_, _) => null, overrides: [
@@ -77,11 +80,75 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('no overflow at text scale 2.0 on 320pt', (tester) async {
+  testWidgets('no overflow at text scale 2.0 on 320pt, top to bottom', (tester) async {
     tester.view.physicalSize = const Size(320 * 3, 700 * 3);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     await _pump(tester, textScale: 2.0);
     expect(tester.takeException(), isNull);
+    // The list is lazy: scroll through all of it so every card gets laid out.
+    final bottom = find.text(LegalCopy.mapCredit).hitTestable();
+    var drags = 0;
+    while (bottom.evaluate().isEmpty && drags++ < 40) {
+      await tester.drag(find.byType(ListView), const Offset(0, -300));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    }
+    expect(bottom, findsOneWidget);
+  });
+
+  testWidgets('while refreshing the button reads Downloading... and is disabled', (tester) async {
+    final never = Completer<GtfsRepository>();
+    final c = await _pump(tester, gtfs: () => never.future);
+    await tester.scrollUntilVisible(find.text('Refresh schedule now'), 200);
+    await tester.ensureVisible(find.text('Refresh schedule now'));
+    await tester.pumpAndSettle();
+    expect(c.read(settingsProvider).forceGtfsRefresh, isFalse);
+    await tester.tap(find.text('Refresh schedule now'));
+    await tester.pump();
+    expect(find.text('Downloading...'), findsOneWidget);
+    expect(find.text('Refresh schedule now'), findsNothing);
+    final button = tester.widget<BBButton>(find.ancestor(of: find.text('Downloading...'), matching: find.byType(BBButton)));
+    expect(button.onPressed, isNull);
+    expect(c.read(settingsProvider).forceGtfsRefresh, isTrue);
+  });
+
+  testWidgets('a successful refresh returns to Refresh schedule now with no toast', (tester) async {
+    final c = await _pump(tester, gtfs: () async => GtfsRepository());
+    await tester.scrollUntilVisible(find.text('Refresh schedule now'), 200);
+    await tester.ensureVisible(find.text('Refresh schedule now'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Refresh schedule now'));
+    await tester.pumpAndSettle();
+    expect(find.text('Refresh schedule now'), findsOneWidget);
+    expect(find.text('Downloading...'), findsNothing);
+    expect(find.text("Couldn't refresh schedule data. Try again later."), findsNothing);
+    expect(c.read(settingsProvider).forceGtfsRefresh, isTrue);
+  });
+
+  testWidgets('a stored legacy ThemeMode.system map theme selects Match app', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, prefs: {'mapThemeMode': 0});
+    expect(tester.getSemantics(find.bySemanticsLabel('Match app')), isSemantics(isSelected: true));
+    handle.dispose();
+  });
+
+  testWidgets('an out-of-range stored interval shows 60 and cannot be increased', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, prefs: {'refreshInterval': 100});
+    expect(find.text('60 seconds'), findsOneWidget);
+    expect(tester.getSemantics(find.bySemanticsLabel('Increase Refresh interval')), isSemantics(isEnabled: false));
+    handle.dispose();
+  });
+
+  testWidgets('at the 60 s maximum, Increase leaves the value unchanged', (tester) async {
+    final handle = tester.ensureSemantics();
+    final c = await _pump(tester, prefs: {'refreshInterval': 60});
+    expect(find.text('60 seconds'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Increase Refresh interval'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(c.read(settingsProvider).refreshIntervalSeconds, 60);
+    expect(find.text('60 seconds'), findsOneWidget);
+    handle.dispose();
   });
 }
