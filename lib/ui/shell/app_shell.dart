@@ -23,36 +23,38 @@ class AppShell extends ConsumerWidget {
         ref.watch(serviceUpdatesProvider).value?.activeAlertsAt(DateTime.now()).length ?? 0;
     final index = navigationShell.currentIndex;
 
-    return ColoredBox(
-      color: context.bb.colors.bg,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: index == _mapBranch ? BBNavBar.reservedHeight(context) : 0),
-              child: navigationShell,
+    return BBNavBarScope(
+      child: ColoredBox(
+        color: context.bb.colors.bg,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: index == _mapBranch ? BBNavBar.reservedHeight(context) : 0),
+                child: navigationShell,
+              ),
             ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: BBNavBar(
-              items: [
-                const BBNavItem(label: 'Board', icon: BBIcons.board, activeIcon: BBIcons.boardFill),
-                const BBNavItem(label: 'Map', icon: BBIcons.map, activeIcon: BBIcons.mapFill),
-                BBNavItem(
-                  label: 'Alerts',
-                  icon: BBIcons.alerts,
-                  activeIcon: BBIcons.alertsFill,
-                  badgeCount: activeAlertCount,
-                ),
-              ],
-              currentIndex: index,
-              onSelect: (i) => navigationShell.goBranch(i, initialLocation: i == index),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: BBNavBar(
+                items: [
+                  const BBNavItem(label: 'Board', icon: BBIcons.board, activeIcon: BBIcons.boardFill),
+                  const BBNavItem(label: 'Map', icon: BBIcons.map, activeIcon: BBIcons.mapFill),
+                  BBNavItem(
+                    label: 'Alerts',
+                    icon: BBIcons.alerts,
+                    activeIcon: BBIcons.alertsFill,
+                    badgeCount: activeAlertCount,
+                  ),
+                ],
+                currentIndex: index,
+                onSelect: (i) => navigationShell.goBranch(i, initialLocation: i == index),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

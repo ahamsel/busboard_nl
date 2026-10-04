@@ -129,3 +129,16 @@ class _Tab extends StatelessWidget {
     );
   }
 }
+
+/// Marks the subtree where the floating nav bar is on screen (the tab shell).
+/// Overlays such as [BBToast] reserve the bar's height only inside it, so a
+/// pushed screen without the bar (Settings) doesn't float its toasts high.
+class BBNavBarScope extends InheritedWidget {
+  const BBNavBarScope({super.key, required super.child});
+
+  static bool isPresent(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<BBNavBarScope>() != null;
+
+  @override
+  bool updateShouldNotify(BBNavBarScope oldWidget) => false;
+}
