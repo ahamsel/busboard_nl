@@ -42,7 +42,8 @@ class RenderedBus {
 ///
 /// [render] updates per-vehicle state (the never-backward mark and the
 /// smoothed delay), so call it once per bus per frame with a monotonic
-/// `now`. [renderAll] also drops the state of vehicles it was not given.
+/// `now`; a second call at the same `now` returns the frame already drawn.
+/// [renderAll] also drops the state of vehicles it was not given.
 class DelayedTrackRenderer {
   DelayedTrackRenderer(this._geometry);
 
@@ -142,6 +143,10 @@ class DelayedTrackRenderer {
   RenderedBus render(BusTrack track, DateTime now) {
     final fixes = track.fixes;
     final state = _state.putIfAbsent(track.vehicleId, _VehicleState.new);
+    // Rendering again at the instant already drawn (two views of one frame)
+    // repeats that frame: no recompute, no change to the mark or the delay.
+    final drawn = state.drawn;
+    if (drawn != null && state.drawnAt == now) return drawn;
     final at = now.subtract(_slewedDelay(track, state, now));
     RenderedBus bus;
     if (!at.isAfter(fixes.first.gpsTime)) {
@@ -157,9 +162,11 @@ class DelayedTrackRenderer {
       final b = fixes[i + 1];
       final span = b.gpsTime.difference(a.gpsTime).inMicroseconds;
       final f = span <= 0 ? 1.0 : at.difference(a.gpsTime).inMicroseconds / span;
-      bus = _between(track.vehicleId, a, b, f.clamp(0.0, 1.0));
+      bus = _between(track.vehicleId, a, b, f.clamp(0.0, 1.0), at, state.anchor);
     }
-    return _limitStep(_neverBackward(bus, at, state), now, state);
+    final guarded = _neverBackward(bus, at, state);
+    if (state.mark != null) state.anchor = state.mark;
+    return _limitStep(guarded, now, state);
   }
 
   /// The delay for this frame: the target, approached at most
@@ -227,15 +234,34 @@ class DelayedTrackRenderer {
     return _raw(id, f.lat, f.lon, f.heading, f.tripId);
   }
 
-  RenderedBus _between(String id, TrackFix a, TrackFix b, double f) {
+  /// A pair that is not interpolated along one shape (a trip change, an
+  /// off-route stretch, a pass correction) is drawn in a straight line from
+  /// [a] to [b]. If the bus was already drawn further along [a]'s trip than
+  /// [a] itself (extrapolated past it), the line starts at that drawn point
+  /// ([mark], the vehicle's last on-shape high-water mark, which survives the
+  /// off-shape frames of the glide), so the bus is not pulled back to [a].
+  RenderedBus _between(String id, TrackFix a, TrackFix b, double f, DateTime at, _Mark? mark) {
     final sameAxis = a.tripId == b.tripId && a.shapeId != null && a.shapeId == b.shapeId && a.progress != null && b.progress != null && b.progress! >= a.progress! - _glideBackwardMeters;
     if (sameAxis) {
       final p = a.progress! + (b.progress! - a.progress!) * f;
       final onShape = _onShape(id, a.shapeId!, p, b.tripId);
       if (onShape != null) return onShape;
     }
-    final aLat = a.snappedLat ?? a.lat;
-    final aLon = a.snappedLon ?? a.lon;
+    var aLat = a.snappedLat ?? a.lat;
+    var aLon = a.snappedLon ?? a.lon;
+    if (mark != null &&
+        a.progress != null &&
+        a.shapeId != null &&
+        mark.tripId == a.tripId &&
+        mark.progress > a.progress! &&
+        !at.isBefore(mark.at.subtract(_clockBackTolerance)) &&
+        !at.isAfter(mark.at.add(_markLifetime))) {
+      final start = _geometry.poseAt(a.shapeId!, mark.progress);
+      if (start != null) {
+        aLat = start.lat;
+        aLon = start.lon;
+      }
+    }
     final bLat = b.snappedLat ?? b.lat;
     final bLon = b.snappedLon ?? b.lon;
     final heading = (aLat == bLat && aLon == bLon) ? b.heading : bearingDegrees(aLat, aLon, bLat, bLon);
@@ -337,6 +363,10 @@ class _Mark {
 
 class _VehicleState {
   _Mark? mark;
+
+  /// The last mark set on a shape. Unlike [mark] it is not cleared by an
+  /// off-shape frame, so a glide that follows can start from it.
+  _Mark? anchor;
 
   /// The delay currently applied, seconds; null before the first render.
   double? delaySeconds;

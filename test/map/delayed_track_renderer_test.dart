@@ -395,7 +395,7 @@ void main() {
       var now = _t0.add(const Duration(seconds: 30));
       final start = r.render(first, now);
       expect(start.progress, closeTo(1000, 1e-6));
-      // The second fix arrives; render time is now inside the pair, 350 m on.
+      // The second fix arrives; render time is now inside the pair, 141 m on.
       final both = _track([_fix(0, 1000), _fix(16, 1160)]);
       var last = start.progress!;
       var firstStep = true;
@@ -485,6 +485,43 @@ void main() {
       // target 180 + 720 * 13.12 / 20 m. (Limited it would be 223.6 m.)
       final bus = r.render(far, _t0.add(const Duration(milliseconds: 45120)));
       expect(bus.progress, closeTo(180 + 720 * 13.12 / 20, 1e-6));
+    });
+
+    test('two renders at the same now return the same bus, whatever the track says', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final late = _track([_fix(0, 100), _fix(10, 180)]);
+      final now = _t0.add(const Duration(seconds: 27));
+      final first = r.render(late, now);
+      final delay = r.currentDelayFor('2573');
+      // A fix arrives between two frames drawn at the same instant: the
+      // second call must not recompute (it would jump to the new target).
+      final far = _track([_fix(0, 100), _fix(10, 180), _fix(30, 900)]);
+      final again = r.render(far, now);
+      expect(again.lat, first.lat);
+      expect(again.lon, first.lon);
+      expect(again.progress, first.progress);
+      expect(r.currentDelayFor('2573'), delay);
+      // And the next real frame still moves at most 30 m/s from there.
+      final next = r.render(far, now.add(frame));
+      expect(next.progress! - first.progress!, inInclusiveRange(0.0, stepMax));
+    });
+
+    test('a trip-change glide starts at the drawn (extrapolated) point, not behind it', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 1000), _fix(10, 1080)]);
+      var now = _t0.add(const Duration(seconds: 27)); // render time 15 s: 5 s past the last fix
+      final extrapolated = r.render(before, now);
+      expect(extrapolated.progress, closeTo(1120, 1e-6));
+      // The next fix is 20 s after the last, on a new trip further along: the
+      // pair a -> b is a trip change, drawn geographically from where the bus
+      // already is, never from the older fix behind it.
+      final after = _track([_fix(0, 1000), _fix(10, 1080), _fix(30, 1200, trip: 'next-trip')]);
+      for (var i = 0; i < 20; i++) {
+        now = now.add(frame);
+        final bus = r.render(after, now);
+        final along = _geometry.snap(bus.lat, bus.lon, outAndBackShapeId, expectedAlong: 1120, minAlong: 1000, maxAlong: 1400)!.distanceAlongRoute;
+        expect(along, greaterThanOrEqualTo(1120 - 0.5), reason: 'frame $i');
+      }
     });
   });
 }
