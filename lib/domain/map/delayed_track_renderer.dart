@@ -41,11 +41,14 @@ class RenderedBus {
 /// straight line (progress null). The first frame of a vehicle, and a frame
 /// more than [_continuityGap] after the previous one (an app resume, a clock
 /// jump), snap straight to the target. So does the frame on which a data
-/// discontinuity shows: a newest fix more than [_dataGapSnap] after the
-/// previous newest one (a resumed stream, a feed outage, a stale bus coming
-/// back), or a track re-created for the vehicle (a route change). The limiter
-/// is for catching up after a skipped fix, not for walking a bus along its
-/// route for 40 s after the data stopped.
+/// discontinuity shows: a track re-created for the vehicle (a route change),
+/// or a newest fix more than [_dataGapSnap] after the previous newest one (a
+/// resumed stream, a feed outage, a stale bus coming back) unless the gap is
+/// short, at most [_longDataGap]. A short gap is no reason to jump: it keeps
+/// the never-backward rules (so a target behind the mark of the same trip
+/// and shape is held, never snapped back), and the limiter catches up at
+/// [_gapCatchUpMps] until it reaches the target, along the shape or across
+/// a trip change in a straight line.
 ///
 /// [render] updates per-vehicle state (the never-backward mark and the
 /// smoothed delay), so call it once per bus per frame with a monotonic
@@ -103,8 +106,19 @@ class DelayedTrackRenderer {
   static const double _maxCatchUpMps = 30;
 
   /// A newest fix this much later than the previous newest one is a data gap:
-  /// the frame that sees it snaps to the target.
+  /// the frame that sees it snaps to the target, unless the gap is short on a
+  /// continuing track (see [_longDataGap]).
   static const Duration _dataGapSnap = Duration(seconds: 60);
+
+  /// A data gap up to this long glides instead of snapping: the bus is still
+  /// near where its track says. Longer, the old place is too stale to glide
+  /// from.
+  static const Duration _longDataGap = Duration(minutes: 3);
+
+  /// The limiter's speed while catching up after a short data gap, m/s: the
+  /// bus may be several hundred metres ahead, and at 30 m/s the catch-up
+  /// would take most of a minute.
+  static const double _gapCatchUpMps = 60;
 
   /// Frames further apart than this (wall time) are not continuous.
   static const Duration _continuityGap = Duration(seconds: 2);
@@ -172,7 +186,8 @@ class DelayedTrackRenderer {
     if (drawn != null && state.drawnAt == now) return drawn;
     final at = now.subtract(_slewedDelay(track, state, now));
     final discontinuity = _dataDiscontinuity(track, state);
-    final snap = discontinuity != _Discontinuity.none;
+    if (discontinuity == _Discontinuity.shortGap) state.catchingUp = true;
+    final snap = discontinuity == _Discontinuity.gap || discontinuity == _Discontinuity.recreated;
     // A track re-created for the vehicle starts afresh: nothing of the old
     // one (mark, anchor) applies to it.
     if (discontinuity == _Discontinuity.recreated) {
@@ -201,10 +216,11 @@ class DelayedTrackRenderer {
   }
 
   /// Whether this frame sees a break in the vehicle's data: a new newest fix
-  /// more than [_dataGapSnap] after the previous newest, or one whose track no
-  /// longer holds the previous newest fix (a track re-created for the
-  /// vehicle; the store trims only the oldest fixes, so a continuing track
-  /// always keeps it). Records the newest fix seen.
+  /// more than [_dataGapSnap] after the previous newest (a short gap when it
+  /// is at most [_longDataGap]), or one whose track no longer holds the
+  /// previous newest fix (a track re-created for the vehicle; the store trims
+  /// only the oldest fixes, so a continuing track always keeps it). Records
+  /// the newest fix seen.
   _Discontinuity _dataDiscontinuity(BusTrack track, _VehicleState state) {
     final latest = track.fixes.last.gpsTime;
     final previous = state.latestGps;
@@ -212,13 +228,16 @@ class DelayedTrackRenderer {
     state.latestGps = latest;
     if (previous == null) return _Discontinuity.none;
     if (!track.fixes.any((f) => f.gpsTime == previous)) return _Discontinuity.recreated;
-    return latest.difference(previous) > _dataGapSnap ? _Discontinuity.gap : _Discontinuity.none;
+    final gap = latest.difference(previous);
+    if (gap <= _dataGapSnap) return _Discontinuity.none;
+    return gap <= _longDataGap ? _Discontinuity.shortGap : _Discontinuity.gap;
   }
 
   /// A snap draws the target as is and starts the never-backward mark at it.
   /// The one exception is a target at most [_jitterMeters] behind the mark of
-  /// the same trip and shape (a gap on a continuing track): that is the
-  /// extrapolation overshoot the jitter band exists for, so it is held.
+  /// the same trip and shape (after a long gap on a continuing track): that
+  /// is the extrapolation overshoot the jitter band exists for, so it is
+  /// held.
   RenderedBus _startMark(RenderedBus bus, DateTime at, _VehicleState state) {
     final p = bus.progress;
     final shapeId = bus.shapeId;
@@ -259,8 +278,9 @@ class DelayedTrackRenderer {
     return Duration(microseconds: (current * 1e6).round());
   }
 
-  /// Final stage: the drawn bus moves at most [_maxCatchUpMps] per second from
-  /// where this vehicle was last drawn toward [target]. See the class doc.
+  /// Final stage: the drawn bus moves at most [_maxCatchUpMps] per second
+  /// ([_gapCatchUpMps] while catching up after a short data gap) from where
+  /// this vehicle was last drawn toward [target]. See the class doc.
   RenderedBus _limitStep(RenderedBus target, DateTime now, _VehicleState state, {bool snap = false}) {
     final prev = state.drawn;
     final prevNow = state.drawnAt;
@@ -268,9 +288,12 @@ class DelayedTrackRenderer {
     if (!snap && prev != null && prevNow != null) {
       final gap = now.difference(prevNow);
       if (gap > Duration.zero && gap <= _continuityGap) {
-        out = _towards(prev, target, _maxCatchUpMps * gap.inMicroseconds / 1e6);
+        final mps = state.catchingUp ? _gapCatchUpMps : _maxCatchUpMps;
+        out = _towards(prev, target, mps * gap.inMicroseconds / 1e6);
       }
     }
+    // The fast catch-up ends once the bus is drawn where it should be.
+    if (identical(out, target)) state.catchingUp = false;
     state.drawn = out;
     state.drawnAt = now;
     return out;
@@ -457,8 +480,9 @@ class _Mark {
   DateTime? holdStart;
 }
 
-/// How a frame's newest fix breaks from the vehicle's earlier data.
-enum _Discontinuity { none, gap, recreated }
+/// How a frame's newest fix breaks from the vehicle's earlier data: no break,
+/// a short gap (glides), a long gap (snaps), or a re-created track (snaps).
+enum _Discontinuity { none, shortGap, gap, recreated }
 
 class _VehicleState {
   _Mark? mark;
@@ -475,6 +499,10 @@ class _VehicleState {
 
   /// GPS time of the newest fix the last frame saw.
   DateTime? latestGps;
+
+  /// Catching up after a short data gap: the limiter runs at
+  /// DelayedTrackRenderer._gapCatchUpMps until the bus reaches its target.
+  bool catchingUp = false;
 
   /// The bus last drawn, and the `now` it was drawn at.
   RenderedBus? drawn;

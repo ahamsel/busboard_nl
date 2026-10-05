@@ -83,12 +83,15 @@ void main() {
       expect(frames.length, greaterThan(20));
 
       const step = Duration(milliseconds: 120);
-      final last = <String, ({String? trip, double? p, double lat, double lon})>{};
+      final last = <String, ({String? trip, double? p, double lat, double lon, DateTime t})>{};
       final backward = <String>[];
       var movingFrames = 0;
       var advancedFrames = 0;
       var maxKmh = 0.0;
+      var maxCatchUpKmh = 0.0;
       var maxImpliedKmh = 0.0;
+      // Vehicles catching up after a short data gap (see below).
+      final catchingUp = <String>{};
       // Backward check on every frame: the drawn point projected on the shape,
       // against the vehicle's high-water projection on its trip.
       final projected = <String, ({String? trip, double? along})>{};
@@ -104,7 +107,7 @@ void main() {
           for (final track in store.tracks.values) {
             final bus = renderer.render(track, t);
             final prev = last[bus.vehicleId];
-            last[bus.vehicleId] = (trip: bus.tripId, p: bus.progress, lat: bus.lat, lon: bus.lon);
+            last[bus.vehicleId] = (trip: bus.tripId, p: bus.progress, lat: bus.lat, lon: bus.lon, t: t);
             final prevProj = projected[bus.vehicleId];
             final proj = _project(geometry, bus, bus.progress ?? (prevProj?.trip == bus.tripId ? prevProj?.along : null));
             final along = proj.along;
@@ -137,7 +140,11 @@ void main() {
             //    more than their map distance, the renderer's 1.6× / +200 m
             //    rule): the bus skipped a loop or spur, so the renderer glides
             //    across its base, which projects behind the high water at
-            //    first.
+            //    first;
+            //  - an off-route glide (either fix off route): the renderer
+            //    draws the raw GPS in a straight line, so the projection of a
+            //    dot coming back onto the shape can fall (v1628 at 13:31:56Z
+            //    rejoins its new trip's shape obliquely near its start).
             // The high water restarts when such a glide ends.
             final renderAt = t.subtract(renderer.currentDelayFor(track.vehicleId) ?? renderer.delayFor(track));
             var exemptGlide = false;
@@ -147,7 +154,8 @@ void main() {
                 final tripChange = a.tripId != b.tripId;
                 final passCorrection = !tripChange && a.progress != null && b.progress != null && b.progress! < a.progress! - 150;
                 final reverseRun = a.progressWithheld || b.progressWithheld;
-                exemptGlide = tripChange || passCorrection || reverseRun || (!tripChange && _spurStep(a, b));
+                final offRoute = a.offRoute || b.offRoute;
+                exemptGlide = tripChange || passCorrection || reverseRun || offRoute || _spurStep(a, b);
                 break;
               }
             }
@@ -162,18 +170,30 @@ void main() {
               label: '+${t.difference(frames.first.$1).inSeconds}s',
             );
             if (flagged != null) backwardProjected.add(flagged);
-            // The frame that sees a data gap (a newest fix over 60 s after the
-            // previous one, or a re-created track) snaps by design, so the
-            // continuity limit does not apply to it.
+            // The frame that sees a data break snaps by design, so the
+            // continuity limit does not apply to it: a re-created track, or a
+            // newest fix more than 3 min after the previous one. After a
+            // shorter gap of over 60 s the renderer instead catches up at up
+            // to 60 m/s until it reaches its target; that window ends at the
+            // first frame drawn at 30 m/s or less.
             final latestGps = track.fixes.last.gpsTime;
             final prevLatest = lastLatest[bus.vehicleId];
             lastLatest[bus.vehicleId] = latestGps;
-            final snapFrame = prevLatest != null &&
-                prevLatest != latestGps &&
-                (latestGps.difference(prevLatest) > const Duration(seconds: 60) || !track.fixes.any((f) => f.gpsTime == prevLatest));
+            final newFix = prevLatest != null && prevLatest != latestGps;
+            final recreated = newFix && !track.fixes.any((f) => f.gpsTime == prevLatest);
+            final gap = newFix ? latestGps.difference(prevLatest) : Duration.zero;
+            final shortGap = newFix && !recreated && gap > const Duration(seconds: 60) && gap <= const Duration(minutes: 3);
+            final snapFrame = recreated || gap > const Duration(minutes: 3);
+            if (shortGap) catchingUp.add(bus.vehicleId);
             if (prev == null) continue;
             final meters = NearestStopService.haversineDistance(prev.lat, prev.lon, bus.lat, bus.lon);
-            if (!snapFrame) maxKmh = math.max(maxKmh, meters / 0.12 * 3.6);
+            final dt = t.difference(prev.t).inMicroseconds / 1e6;
+            if (catchingUp.contains(bus.vehicleId) && dt > 0 && meters / dt <= 30 * 1.05) catchingUp.remove(bus.vehicleId);
+            if (catchingUp.contains(bus.vehicleId)) {
+              maxCatchUpKmh = math.max(maxCatchUpKmh, meters / 0.12 * 3.6);
+            } else if (!snapFrame) {
+              maxKmh = math.max(maxKmh, meters / 0.12 * 3.6);
+            }
             if (prev.trip == bus.tripId && prev.p != null && bus.progress != null) {
               if (bus.progress! < prev.p! - 0.01) backward.add('${bus.vehicleId} ${prev.p!.round()}→${bus.progress!.round()}');
               // "Moving" = the two fixes around this frame are on the same
@@ -207,6 +227,7 @@ void main() {
       // frame-time rounding at poll boundaries.
       expect(maxKmh, lessThanOrEqualTo(30 * 1.05 * 3.6),
           reason: 'max drawn ${maxKmh.round()} km/h, max implied ${maxImpliedKmh.round()} km/h');
+      expect(maxCatchUpKmh, lessThanOrEqualTo(60 * 1.05 * 3.6), reason: 'max drawn after a short gap ${maxCatchUpKmh.round()} km/h');
     });
   }
 }
