@@ -19,7 +19,11 @@ Personalized arrival board and live bus tracking map for **Metrobus** — St. Jo
 - **My location** control to recentre on where you are
 - **One floating sheet** that follows what you tap: your stop's next arrivals by default, a stop card (arrivals, *Set as my stop*, *Open board*) when you tap a stop, and a bus card (route, destination, early/late, technical details) when you tap a bus; drag it between peek, half and full
 - **Map credit link** — "© OpenStreetMap · OpenFreeMap" opens the full credits
-- Follow mode (a bus's route line and a camera that stays with it) arrives in Plan 3b-3
+- **Follow mode** — follow one bus from **Follow** on a bus card, or by tapping a live row on the Board
+  - the bus's route line is drawn in the route colour (the part already driven fades), the followed bus is drawn larger and the other buses fade
+  - the camera keeps the bus and your stop in view and closes in as the bus nears; a pan or zoom pauses it and shows a "Back to bus" chip that resumes it
+  - the follow card shows the stops to your stop, a stop strip (driven, the bus, upcoming, your stop) and *Stop following* and *See all stops* (a timeline of the rest of the trip with ETAs)
+  - it ends on its own: "Arrived at …" and 10 s later, a toast when the bus passes your stop or its trip ends, and "Last seen …" when the bus drops out of the feed (a toast after 5 min); it never switches to another bus
 
 ### Settings
 - **Configurable refresh interval** (5–60s, default 5s) — controls both map and board polling
