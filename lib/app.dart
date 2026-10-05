@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'routing/router.dart';
-import 'ui/theme/app_theme.dart';
+import 'ui/kit/bb_theme.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'state/providers.dart';
@@ -33,9 +33,10 @@ class _BusboardAppState extends ConsumerState<BusboardApp> {
     return MaterialApp.router(
       title: 'BusBoard NL',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      theme: BBTheme.light(),
+      darkTheme: BBTheme.dark(),
       themeMode: settings.themeMode,
+      scrollBehavior: const BBScrollBehavior(),
       routerConfig: appRouter,
     );
   }

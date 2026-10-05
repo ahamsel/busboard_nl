@@ -11,13 +11,22 @@ Personalized arrival board and live bus tracking map for **Metrobus** — St. Jo
 - **Pull-to-refresh** for immediate updates
 
 ### Live Map
-- **Real-time bus positions** as red markers on a MapLibre map
-- **Smooth animation** — buses glide along route shapes between GPS updates using interpolation and dead-reckoning
-- **Tap a bus** to see route info and draw its full route shape on the map (persists while you pan/zoom)
-- **Tap a stop** to see stop info and set it as your selected stop
-- **Route filter** — filter visible buses by route number
-- **Legend** — collapsible overlay explaining map symbols
-- **Center on selected stop** — quick-navigate button when you've drifted far on the map
+- **Harbour map styles** — quiet light and dark basemaps built on OpenFreeMap (no API key), following the app theme or the Settings map-theme override
+- **Real-time bus positions** as route-badge markers (the route's number on its colour) with a heading notch; a bus with no recent fix turns grey
+- **Smooth animation** — buses are drawn a little behind live and glide along route shapes between GPS updates (see Bus Motion)
+- **Your stop** is marked with a brand-blue star; other stops appear as small dots once you zoom in
+- **Stop and route chips** — the top-left chip names your stop and opens the stop picker; the top-right chip opens the route filter, a card of route badges to show only the routes you choose
+- **My location** control to recentre on where you are
+- **One floating sheet** that follows what you tap: your stop's next arrivals by default, a stop card (arrivals, *Set as my stop*, *Open board*) when you tap a stop, and a bus card (route, destination, early/late, technical details) when you tap a bus; drag it between peek, half and full
+- **Map credit link** — "© OpenStreetMap · OpenFreeMap" opens the full credits
+- **Follow mode** — follow one bus from **Follow** on a bus card, or by tapping a live row on the Board
+  - the bus's route line is drawn in the route colour (the part already driven fades), the followed bus is drawn larger and the other buses fade
+  - the camera keeps the bus and your stop in view and closes in as the bus nears; a pan or zoom pauses it and shows a "Back to bus" chip that resumes it
+  - the follow card shows the stops to your stop, a stop strip (driven, the bus, upcoming, your stop) and *Stop following* and *See all stops* (a timeline of the rest of the trip with ETAs)
+  - it ends on its own: "Arrived at …" and 10 s later, a toast when the bus passes your stop or its trip ends, and "Last seen …" when the bus drops out of the feed (a toast after 5 min); it never switches to another bus
+  - a bus that never shows up on the map ("Finding bus …") ends the follow with a toast after 60 s
+  - the feed relabels trips on the timetable clock, so a new trip ID alone does not end it: it keeps the old trip while the bus is still driving it, and moves to the new trip when that one serves your stop
+  - after the phone has been locked, nothing ends until the first fresh poll
 
 ### Settings
 - **Configurable refresh interval** (5–60s, default 5s) — controls both map and board polling
@@ -40,21 +49,15 @@ Each vehicle reports: lat/lon, speed (km/h), compass heading, route number, head
 - **Live data**: Polled every **5s** by default (configurable 5–60s). Applies to both the arrival board and map bus tracking.
 - **Settings**: Persisted via SharedPreferences (selected stop, refresh interval, last GTFS update).
 
-## Bus Motion Engine
+## Bus Motion
 
-The motion engine (`bus_motion_engine.dart`) provides smooth bus animation between GPS updates:
+Buses on the map are drawn a little behind live and glide along their route between real GPS fixes (`lib/domain/map/`, pure Dart):
 
-- **Route shape snapping** — raw GPS positions snapped to GTFS route geometry
-- **Shape fallback matching** — resolves routes by route number + headsign when GTFS trip ID is unavailable
-- **Measurement-time aware timing** — uses `position_time_seconds` (bus measurement time), not fetch time, for motion deltas
-- **Interpolation** — interpolation/extrapolation primarily in route-progress space (meters along GTFS shape)
-- **Kalman progress filter** — 1D position/velocity filter per bus for smoother prediction between updates
-- **Adaptive measurement trust** — measurement noise scales with snap quality (larger snap distance = less trust)
-- **Auto-adjust mode** — bounded on-device tuning of Kalman and blend parameters using live innovation/correction metrics
-- **Dead-reckoning** — extrapolates forward up to 35s beyond the last GPS point with decay and stop-aware slowdown
-- **Road-follow blend smoothing** — correction blend follows route geometry through turns (avoids straight-line glides)
-- **Anti-typewriter clamp** — active buses are visually monotonic (no tiny backward jitter); true backtracking still allowed
-- **Outlier rejection** — rejects GPS points implying speeds >140 km/h
+- **`BusTrackStore`** — one track per physical vehicle ID, built from each poll. Fixes are snapped to the GTFS route shape with a progress hint, so a bus on an out-and-back route stays on its own pass. Duplicate or out-of-order GPS timestamps are ignored; a bus with no new fix for 90 s is stale, and its track is dropped after 5 min.
+- **`DelayedTrackRenderer`** — draws each bus at `now − D`, interpolated by distance along the shape between two real fixes. D is latency-aware (the largest recent feed lag plus 1 s, clamped to 8–40 s, typically about 40 s at rush hour) and eased in at 0.1 s per second.
+- **Never backward** — a bus never moves backward along the same trip; when GPS runs backward it holds.
+- **Edge cases** — geographic interpolation across a trip change, for off-route buses (over 150 m from the shape), for a bus driving its shape backward (a late trip switch), and for a step along the shape far longer than the map distance (a skipped loop or spur). Past the newest fix the bus dead-reckons, slowing, for at most 20 s and 55 m, then holds. Drawn motion is capped at 30 m/s, or 60 m/s along the route while catching up after a data gap of up to 3 min.
+- **Replay fixtures** — `test/map/motion_replay_test.dart` replays recorded captures from `test/fixtures/timetrack/` through the pipeline (see the README there).
 
 ## Architecture
 
@@ -69,20 +72,38 @@ lib/
     arrival/                        → Arrival computation & live merging
     location/                       → Nearest stop (haversine)
     map/
-      bus_motion_engine.dart        → Interpolation, dead-reckoning, blend smoothing
-      bus_tracking_state.dart       → Per-bus state (position, route, status)
-      bus_observation.dart          → Individual GPS observation
+      route_geometry.dart           → Snap to shapes, poses along them, stop/timetable hints
+      bus_track.dart                → GPS fixes and tracks per vehicle
+      bus_track_store.dart          → Ingests each poll into per-vehicle tracks
+      delayed_track_renderer.dart   → Where to draw each bus now (about 40 s behind, gliding)
+      bus_tracking_state.dart       → Per-bus snapshot for the map and sheet
+      heading_smoother.dart         → Eases bus heading changes so notches don't flick
       shape_matcher.dart            → Snap GPS to route geometry
   ui/
     stop_picker/                    → Stop ID entry + Near Me list
     board/                          → Arrival board + row tiles
     map/
-      map_screen.dart               → MapLibre map with bus/stop layers
-      bus_bottom_sheet.dart         → Bus info sheet (route, speed, status)
-      stop_bottom_sheet.dart        → Stop info sheet with "set as stop" action
+      map_screen.dart               → The Map tab: chips, my-location, credit link, one floating sheet
+      map_view.dart                 → MapLibre widget behind an injectable builder (tests stub it)
+      map_surface.dart              → The slice of MapLibre the screen uses (camera, sources, layers), faked in tests
+      map_layers.dart               → Stop, your-stop and bus layers; bus markers for each frame
+      marker_images.dart            → Draws the badge, notch and star marker images
+      map_style.dart                → Picks the light or dark Harbour style asset
+      map_hit_test.dart             → Tap to nearest bus or stop
+      stop_card.dart                → Stop card and arrivals list
+      bus_card.dart                 → Bus card and technical details
+      my_stop_card.dart             → Your-stop card (the sheet's default)
+      route_filter_card.dart        → Floating route filter
     settings/                       → Refresh interval & GTFS management
-  state/providers.dart              → Riverpod providers (polling stream, engine, settings)
+  state/providers.dart              → Riverpod providers (polling stream, track store, renderer, settings)
+  state/map_providers.dart          → Map selection, route filter, per-stop arrivals, app foreground state
 ```
+
+## Building
+
+- Android builds need JDK 21 (maplibre_gl 0.27 targets Java 21). Point Gradle at it, for example with `JAVA_HOME` and `GRADLE_OPTS=-Dorg.gradle.java.home=<jdk21>`.
+- The iOS deployment target is 15.0 (the minimum Flutter 3.47 supports).
+- Release builds are signed from `android/key.properties`, which is not checked in.
 
 ## How to Run
 
@@ -96,28 +117,26 @@ flutter run
 # Run tests
 flutter test
 
-# Run movement replay harness (turns, lag, noise, stability metrics)
-flutter test test/map/bus_motion_replay_harness_test.dart
+# Replay recorded captures through the motion pipeline
+flutter test test/map/motion_replay_test.dart
+
+# Measure the motion on a full local capture (skipped without these files)
+PROBE_CAPTURE=test/fixtures/timetrack/capture_2026-10-05.json PROBE_GTFS=build/gtfs_2026-09-01 \
+  flutter test test/map/probe_rush_hour_test.dart
+
+# Regenerate the two map styles from OpenFreeMap Positron
+dart run tool/build_map_styles.dart
 
 # Capture the app's real production live-data chain (example: 15 minutes)
 dart run tool/capture_timetrack_snapshots.dart \
   --interval 5 \
   --duration 900 \
-  --out test/fixtures/timetrack/capture.json
+  --out /tmp/capture.json
 
 # Inspect raw physical IDs, duplicate assignments, teleports, and A→B→A
 # ping-pongs before replaying what the app renders.
 dart run tool/analyze_live_vehicle_trace.dart \
-  test/fixtures/timetrack/capture.json
-
-# Replay captured snapshots through BusMotionEngine
-BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
-flutter test test/map/bus_motion_snapshot_replay_test.dart
-
-# Optional: write replay metrics JSON (for commit-to-commit trend tracking)
-BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
-BUS_MOTION_METRICS_OUT=build/bus_motion/replay_metrics.json \
-flutter test test/map/bus_motion_snapshot_replay_test.dart
+  /tmp/capture.json
 ```
 
 ## Key Technical Notes
@@ -126,5 +145,4 @@ flutter test test/map/bus_motion_snapshot_replay_test.dart
 - **Live ETA**: `predicted = scheduled − sched_difference_mins` (positive diff = bus ahead = arrives earlier)
 - **Timezone**: App uses device local time; designed for America/St_Johns
 - **No database**: All GTFS data is held in-memory via indexed maps for fast lookup
-- **MapLibre GeoJSON bug**: `setGeoJsonSource` doesn't re-render circle layers reliably on this stack — buses are rendered with circle annotations.
 - **GPS update cadence**: Bus GPS hardware reports periodically; the app polls every 5s to catch new observations promptly.

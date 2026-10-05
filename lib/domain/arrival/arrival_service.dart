@@ -44,7 +44,7 @@ class ArrivalService {
 
     // Build live vehicle index if available
     final liveIndex = liveVehicles != null
-        ? TimeTrackApi.buildTripIndex(liveVehicles)
+        ? TimeTrackApi.buildTripIndex(liveVehicles, now: now)
         : <String, TimeTrackVehicle>{};
 
     final arrivals = <ArrivalRow>[];

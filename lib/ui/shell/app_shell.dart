@@ -1,74 +1,52 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../state/providers.dart';
+import '../kit/kit.dart';
 
+/// Tab shell: branch content with the floating Harbour nav bar on top.
+/// Every branch runs under the bar. Board and Alerts reserve
+/// [BBNavBar.reservedHeight] at the end of their lists; the map lays out its
+/// own sheet above the bar (spec §2.4).
 class AppShell extends ConsumerWidget {
-  final StatefulNavigationShell navigationShell;
-
   const AppShell({super.key, required this.navigationShell});
+
+  final StatefulNavigationShell navigationShell;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final activeAlertCount =
-        ref
-            .watch(serviceUpdatesProvider)
-            .value
-            ?.activeAlertsAt(DateTime.now())
-            .length ??
-        0;
+        ref.watch(serviceUpdatesProvider).value?.activeAlertsAt(DateTime.now()).length ?? 0;
+    final index = navigationShell.currentIndex;
 
-    return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: (index) {
-          navigationShell.goBranch(
-            index,
-            initialLocation: index == navigationShell.currentIndex,
-          );
-        },
-        backgroundColor: theme.scaffoldBackgroundColor,
-        indicatorColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-        destinations: [
-          NavigationDestination(
-            icon: Icon(
-              Icons.departure_board_outlined,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-            ),
-            selectedIcon: Icon(
-              Icons.departure_board,
-              color: theme.colorScheme.primary,
-            ),
-            label: 'Bus Board',
-          ),
-          NavigationDestination(
-            icon: Icon(
-              Icons.map_outlined,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-            ),
-            selectedIcon: Icon(Icons.map, color: theme.colorScheme.primary),
-            label: 'Map',
-          ),
-          NavigationDestination(
-            icon: Badge.count(
-              count: activeAlertCount,
-              isLabelVisible: activeAlertCount > 0,
-              child: Icon(
-                Icons.campaign_outlined,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+    return BBNavBarScope(
+      child: ColoredBox(
+        color: context.bb.colors.bg,
+        child: Stack(
+          children: [
+            Positioned.fill(child: navigationShell),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: BBNavBar(
+                items: [
+                  const BBNavItem(label: 'Board', icon: BBIcons.board, activeIcon: BBIcons.boardFill),
+                  const BBNavItem(label: 'Map', icon: BBIcons.map, activeIcon: BBIcons.mapFill),
+                  BBNavItem(
+                    label: 'Alerts',
+                    icon: BBIcons.alerts,
+                    activeIcon: BBIcons.alertsFill,
+                    badgeCount: activeAlertCount,
+                  ),
+                ],
+                currentIndex: index,
+                onSelect: (i) => navigationShell.goBranch(i, initialLocation: i == index),
               ),
             ),
-            selectedIcon: Badge.count(
-              count: activeAlertCount,
-              isLabelVisible: activeAlertCount > 0,
-              child: Icon(Icons.campaign, color: theme.colorScheme.primary),
-            ),
-            label: 'Alerts',
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local App Store Connect CLI release checkpoints
+.asc/
+
 # Local TimeTrack capture fixtures (can be large)
 test/fixtures/timetrack/*.json
 
@@ -46,3 +49,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Brainstorming companion mockups (local only)
+.superpowers/

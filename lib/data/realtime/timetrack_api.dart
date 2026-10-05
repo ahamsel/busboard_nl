@@ -182,14 +182,16 @@ class TimeTrackApi {
             // Metrobus currently publishes the same numeric km/h value in
             // both this field and its Fleet View JSON, despite GTFS-Realtime
             // specifying m/s. Keep the agency value in the km/h unit expected
-            // by the motion engine instead of multiplying it by 3.6.
+            // by the map's motion pipeline instead of multiplying it by 3.6.
             speed: position.hasSpeed() ? position.speed : 0.0,
             positionTime: measuredAt.toIso8601String(),
             positionTimeSeconds: _secondsSinceMidnight(measuredAt),
             gtfsTripHeadsign: _readString(routeStatus, 'headsign'),
             gtfsServiceId: '',
             gtfsStopSequenceStatus: status,
-            gtfsStopSequenceMinsFromStop: delayMins?.abs() ?? 0,
+            // GTFS-Realtime has no "minutes to the closest stop"; the delay
+            // is reported separately (gtfsStopSequenceSchedDifferenceMins).
+            gtfsStopSequenceMinsFromStop: 0,
             gtfsStopSequenceDeviation: _delayDescription(delayMins),
             gtfsStopSequenceClosestStop: vehiclePosition.stopId.isNotEmpty
                 ? vehiclePosition.stopId
@@ -384,7 +386,13 @@ class TimeTrackApi {
       'EARLY' || 'AHEAD' => rawMins.abs(),
       _ => 0,
     };
-    final delayMins = -scheduleDifferenceMins;
+    // 'NO DATA', empty or unrecognised statuses carry no delay; reporting 0
+    // would read as "on time". Same as the GTFS-Realtime path with no delay.
+    final delayKnown = switch (opStatus) {
+      'BEHIND' || 'LATE' || 'EARLY' || 'AHEAD' || 'ON TIME' => true,
+      _ => false,
+    };
+    final int? delayMins = delayKnown ? -scheduleDifferenceMins : null;
     final positionTime = _readString(row, 'positionTime');
 
     return TimeTrackVehicle(
@@ -404,7 +412,9 @@ class TimeTrackApi {
       gtfsTripHeadsign: _readString(row, 'headsign'),
       gtfsServiceId: '',
       gtfsStopSequenceStatus: opStatus,
-      gtfsStopSequenceMinsFromStop: delayMins.abs(),
+      // Fleet View has no "minutes to the closest stop" either; the delay is
+      // reported separately (gtfsStopSequenceSchedDifferenceMins).
+      gtfsStopSequenceMinsFromStop: 0,
       gtfsStopSequenceDeviation: _delayDescription(delayMins),
       gtfsStopSequenceClosestStop: _readString(row, 'nearestStopName'),
       gtfsStopSequenceSchedDifferenceMins: scheduleDifferenceMins,
@@ -557,16 +567,46 @@ class TimeTrackApi {
   }
 
   /// Build a lookup map of trip_id → vehicle for arrival matching.
+  ///
+  /// The feed can report one trip on two vehicles: a ghost frozen at an old
+  /// position next to the bus really running it. The one whose position is
+  /// newest at [now] wins, so a fix over 5 minutes old never beats a fresher
+  /// one. A vehicle with no usable position time ranks as exactly 5 minutes
+  /// old; among equals the later one wins.
   static Map<String, TimeTrackVehicle> buildTripIndex(
-    List<TimeTrackVehicle> vehicles,
-  ) {
+    List<TimeTrackVehicle> vehicles, {
+    DateTime? now,
+  }) {
+    final at = now ?? DateTime.now();
     final map = <String, TimeTrackVehicle>{};
+    final ages = <String, Duration>{};
     for (final vehicle in vehicles) {
-      if (vehicle.gtfsTripId.isNotEmpty) {
-        map[vehicle.gtfsTripId] = vehicle;
+      final trip = vehicle.gtfsTripId;
+      if (trip.isEmpty) continue;
+      final age = _positionAge(vehicle, at) ?? _unknownPositionAge;
+      final best = ages[trip];
+      if (best == null || age <= best) {
+        map[trip] = vehicle;
+        ages[trip] = age;
       }
     }
     return map;
+  }
+
+  static const Duration _unknownPositionAge = Duration(minutes: 5);
+
+  /// How old [v]'s position is at [now]: from its full timestamp when it has
+  /// one, else from its seconds of the day, read as the most recent such
+  /// time (so 00:00:30 is newer than 23:40 just after midnight).
+  static Duration? _positionAge(TimeTrackVehicle v, DateTime now) {
+    final stamp = DateTime.tryParse(v.positionTime);
+    if (stamp != null) return now.difference(stamp);
+    final seconds = v.positionTimeSeconds;
+    if (seconds <= 0 || seconds >= Duration.secondsPerDay) return null;
+    final nowSeconds = now.hour * 3600 + now.minute * 60 + now.second;
+    var age = (nowSeconds - seconds) % Duration.secondsPerDay;
+    if (age > Duration.secondsPerDay ~/ 2) age -= Duration.secondsPerDay; // slightly ahead of us
+    return Duration(seconds: age);
   }
 
   void dispose() {
