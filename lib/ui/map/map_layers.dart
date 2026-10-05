@@ -183,25 +183,51 @@ class MapLayers {
     }
   }
 
+  /// The ids of [m]'s two images.
+  (String badge, String notch) _imageIds(BusMarker m) =>
+      (MarkerImages.badgeId(m.label, stale: m.stale, brightness: brightness), MarkerImages.notchId(m.hue, stale: m.stale));
+
+  bool _hasImages(BusMarker m) {
+    final (badge, notch) = _imageIds(m);
+    return _images.contains(badge) && _images.contains(notch);
+  }
+
+  Map<String, dynamic> _busFeature(BusMarker m) {
+    final (badge, notch) = _imageIds(m);
+    return _point(m.lat, m.lon, {
+      'vehicleId': m.vehicleId,
+      'badge': badge,
+      'notch': notch,
+      'heading': m.heading,
+      'sort': m.stale ? 0 : 1,
+    }, id: m.vehicleId);
+  }
+
+  /// Draws [markers]. Marker images are made one at a time, and on a busy or
+  /// slow device (an emulator takes seconds per image) a whole fleet's worth
+  /// would keep every bus off the map for a minute or more. So the buses whose
+  /// images are already registered are published first, and again each time
+  /// another route's images arrive; the last publish has every marker.
   Future<void> updateBuses(List<BusMarker> markers) async {
-    final features = <Map<String, dynamic>>[];
+    var published = markers.where(_hasImages).length;
+    if (published > 0 && published < markers.length) {
+      await surface.setGeoJsonSource(busesSource, _collection([for (final m in markers.where(_hasImages)) _busFeature(m)]));
+    }
     for (final m in markers) {
-      final badge = MarkerImages.badgeId(m.label, stale: m.stale, brightness: brightness);
+      if (_hasImages(m)) continue;
+      final (badge, notch) = _imageIds(m);
       await _ensureImage(
         badge,
         () => MarkerImages.badge(label: m.label, hue: m.hue, stale: m.stale, brightness: brightness, pixelRatio: pixelRatio),
       );
-      final notch = MarkerImages.notchId(m.hue, stale: m.stale);
       await _ensureImage(notch, () => MarkerImages.notch(hue: m.hue, stale: m.stale, pixelRatio: pixelRatio));
-      features.add(_point(m.lat, m.lon, {
-        'vehicleId': m.vehicleId,
-        'badge': badge,
-        'notch': notch,
-        'heading': m.heading,
-        'sort': m.stale ? 0 : 1,
-      }, id: m.vehicleId));
+      final ready = markers.where(_hasImages).length;
+      if (ready > published && ready < markers.length) {
+        published = ready;
+        await surface.setGeoJsonSource(busesSource, _collection([for (final b in markers.where(_hasImages)) _busFeature(b)]));
+      }
     }
-    await surface.setGeoJsonSource(busesSource, _collection(features));
+    await surface.setGeoJsonSource(busesSource, _collection([for (final m in markers) _busFeature(m)]));
   }
 
   Future<void> updateMyStop(StopInfo? stop) => surface.setGeoJsonSource(

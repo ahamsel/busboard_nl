@@ -441,7 +441,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       );
       final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - BBSpace.s));
       final creditEnd = _creditLeft + creditWidth + BBSpace.s;
-      final ratio = defaultTargetPlatform == TargetPlatform.android ? media.devicePixelRatio : 1.0;
       // iOS (MLNMapView) measures the attribution margin from the safe area, so
       // the bottom inset is already in it; Android measures from the view edge.
       final attributionBottom = defaultTargetPlatform == TargetPlatform.iOS
@@ -458,7 +457,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 initialTarget: myStop == null ? _defaultTarget : LatLng(myStop.stopLat, myStop.stopLon),
                 initialZoom: _defaultZoom,
                 myLocationEnabled: _myLocationEnabled,
-                attributionMargin: math.Point(creditEnd * ratio, attributionBottom * ratio),
+                attributionMargin: math.Point(creditEnd, attributionBottom),
                 attributionColor: bb.colors.muted,
                 onReady: _onReady,
                 onStyleLoaded: () => unawaited(_onStyleLoaded()),
