@@ -1,0 +1,6 @@
+route_id,service_id,trip_id,trip_headsign,trip_short_name,direction_id,block_id,shape_id,wheelchair_accessible,bikes_allowed
+1,2,261742,MUN - CROSBIE RD - THE VILLAGE,,1,01-1,21477,,
+10,2,262389,AVALON MALL - MUN CENTRE - DOWNTOWN,,0,10-3,21530,,
+10,2,262373,AVALON MALL - MUN CENTRE - DOWNTOWN,,0,10-1,21526,,
+10,2,262395,MUN CENTRE - AVALON MALL - KELSEY DRIVE,,1,10-1,21540,,
+21,2,263246,MOUNT PEARL SQUARE - THE VILLAGE,,1,21-1,21611,,

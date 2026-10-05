@@ -1,0 +1,335 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
+import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
+import 'package:busboard_nl/data/realtime/service_alert_models.dart';
+import 'package:busboard_nl/data/realtime/timetrack_api.dart';
+import 'package:busboard_nl/domain/arrival/arrival_models.dart';
+import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
+import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/domain/map/follow_tracker.dart';
+import 'package:busboard_nl/domain/map/route_geometry.dart';
+import 'package:busboard_nl/state/map_providers.dart';
+import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
+import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
+import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:busboard_nl/ui/map/bus_card.dart';
+import 'package:busboard_nl/ui/map/follow_card.dart';
+import 'package:busboard_nl/ui/map/my_stop_card.dart';
+import 'package:busboard_nl/ui/map/stop_card.dart';
+import 'package:busboard_nl/ui/settings/settings_screen.dart';
+import 'package:busboard_nl/ui/stop_picker/stop_picker_screen.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../kit/kit_test_helpers.dart';
+
+/// Large-text guard: every Phase 2 screen is scrolled to its end at 2x text on
+/// the two smallest supported phones, and any layout exception fails the test.
+const _sizes = [Size(320, 568), Size(360, 640)];
+
+const _longStopName = 'Elizabeth Avenue at Allandale Road Westbound';
+const _stop = StopInfo(stopId: '1150', stopName: _longStopName, stopLat: 47.57, stopLon: -52.73);
+const _routes = ['1', '2', '3', '6', '9', '10', '10A', '11', '12'];
+
+GtfsRepository _repo() {
+  final repo = GtfsRepository()..stopsById['1150'] = _stop;
+  final times = <StopTimeRow>[];
+  for (var i = 0; i < _routes.length; i++) {
+    repo.routesById['r$i'] = RouteInfo(routeId: 'r$i', routeShortName: _routes[i], routeLongName: '');
+    repo.tripsById['t$i'] = TripInfo(tripId: 't$i', routeId: 'r$i', serviceId: 's', tripHeadsign: '', directionId: 0);
+    times.add(StopTimeRow(
+        tripId: 't$i', arrivalTime: '08:00:00', departureTime: '08:00:00', stopId: '1150', stopSequence: 1));
+  }
+  repo.stopTimesByStopId['1150'] = times;
+  return repo;
+}
+
+ServiceAlert _alert(String header, {String description = ''}) => ServiceAlert(
+      sourceIds: {header},
+      header: header,
+      description: description,
+      cause: ServiceAlertCause.construction,
+      effect: ServiceAlertEffect.detour,
+      severity: ServiceAlertSeverity.warning,
+      activePeriods: [
+        ServiceAlertPeriod(
+          start: DateTime.now().subtract(const Duration(days: 1)),
+          end: DateTime.now().add(const Duration(days: 20)),
+        ),
+      ],
+      targets: const [
+        ServiceAlertTarget(routeId: '10'),
+        ServiceAlertTarget(routeId: '10A'),
+        ServiceAlertTarget(routeId: '29'),
+        ServiceAlertTarget(stopId: '1150'),
+        ServiceAlertTarget(stopId: '9999'),
+      ],
+    );
+
+ServiceUpdates _updates(List<ServiceAlert> alerts) => ServiceUpdates(
+      alerts: alerts,
+      serviceStatus: const MetrobusServiceStatus(
+          serviceOperating: true, serviceId: '1', day: 'Weekday', message: 'Weekday service operating'),
+      fetchedAt: DateTime(2026, 10, 4),
+      feedTimestamp: null,
+    );
+
+final _failing = MockClient((_) async => http.Response('down', 500));
+final _emptyKiosk = MockClient((_) async => http.Response('{"arrivals":[]}', 200));
+
+class _Screen {
+  const _Screen(this.name, this.build, {this.afterPump});
+  final String name;
+  final Widget Function(WidgetTester tester) build;
+
+  /// Runs once after the first settle, e.g. to expand a collapsed section.
+  final Future<void> Function(WidgetTester tester)? afterPump;
+}
+
+// The way the map screen hosts a card: header and body as sliver boxes.
+Widget _card(Widget header, Widget body) => CustomScrollView(
+      slivers: [SliverToBoxAdapter(child: header), SliverToBoxAdapter(child: body)],
+    );
+
+ArrivalRow _arrival(int minutes, {bool live = true}) => ArrivalRow(
+      routeShortName: '10A',
+      headsign: 'Signal Hill Road via Elizabeth Avenue',
+      scheduledTime: GtfsTime.parse('09:52:00'),
+      predictedTime: live ? GtfsTime.parse('09:55:00') : null,
+      minutesAway: minutes,
+      liveStatus: live ? LiveStatus.behind : null,
+      isLive: live,
+      tripId: 't',
+      vehicleNumber: '2134',
+      isEnhanced: false,
+      routeRun: '10A-1',
+      currentLocation: _longStopName,
+    );
+
+final _arrivals = [_arrival(2), _arrival(9), _arrival(17, live: false)];
+
+BusTrackingState _bus({BusStatus status = BusStatus.stale}) => BusTrackingState(
+      routeRun: 'Rt 10',
+      vehicleId: '2573',
+      routeNumber: 10,
+      headsign: 'Signal Hill Road via Elizabeth Avenue',
+      lat: 47.56,
+      lon: -52.71,
+      heading: 270,
+      speedKmh: 29,
+      lastGpsTime: DateTime.now().subtract(const Duration(minutes: 3)),
+      status: status,
+      lastUpdateTime: DateTime.now(),
+      schedDiffMins: -12,
+    );
+
+FollowSnapshot _followSnapshot({bool arrived = false}) => FollowSnapshot(
+      vehicleId: '2573',
+      bus: _bus(status: BusStatus.active),
+      tripId: 't1',
+      stale: false,
+      lastSeenAgo: const Duration(seconds: 10),
+      stops: [
+        for (var i = 0; i < 8; i++)
+          TripStop(
+            stopId: 's$i',
+            name: 'Elizabeth Avenue at Allandale Road Westbound, stop $i',
+            sequence: i + 1,
+            progress: i / 8,
+            departureSeconds: 43200 + i * 240,
+          ),
+      ],
+      busIndex: 1,
+      yourStopIndex: 5,
+      stopsToYourStop: 4,
+      arrived: arrived,
+      ended: null,
+    );
+
+Widget _followCard({bool arrived = false}) {
+  final snapshot = _followSnapshot(arrived: arrived);
+  return _card(
+    FollowCardHeader(
+      snapshot: snapshot,
+      yourStopName: _longStopName,
+      minutesToYourStop: 14,
+      tripHeadsign: 'Signal Hill Road via Elizabeth Avenue',
+      onStop: () {},
+      onSeeAll: () {},
+    ),
+    FollowCardBody(snapshot: snapshot),
+  );
+}
+
+List<Override> _mapOverrides({List<ArrivalRow> arrivals = const []}) => [
+      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
+      busTrackingStreamProvider.overrideWith((ref) => Stream.value({'2573': _bus()})),
+      serviceUpdatesProvider.overrideWith(
+          (ref) => Stream.value(_updates([_alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.')]))),
+    ];
+
+Widget _app(Widget screen, List<Override> overrides) {
+  final container = ProviderContainer(retry: (_, _) => null, overrides: overrides);
+  addTearDown(container.dispose);
+  return UncontrolledProviderScope(
+    container: container,
+    child: MaterialApp.router(theme: BBTheme.light(), builder: _scaled, routerConfig: _router(screen)),
+  );
+}
+
+Widget _scaled(BuildContext context, Widget? app) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(2.0)),
+      child: app!,
+    );
+
+GoRouter _router(Widget screen) => GoRouter(routes: [
+      GoRoute(path: '/', builder: (_, _) => screen),
+      GoRoute(path: '/settings', builder: (_, _) => const SizedBox()),
+      GoRoute(path: '/alerts', builder: (_, _) => const SizedBox()),
+    ]);
+
+final _screens = <_Screen>[
+  _Screen('picker (last stop + nearby with 9 routes)', (t) {
+    SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
+    return _app(const StopPickerScreen(), [
+      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      nearestStopsProvider.overrideWith((ref) async => const [
+            NearbyStop(stop: _stop, distanceMeters: 80),
+            NearbyStop(stop: _stop, distanceMeters: 640),
+          ]),
+    ]);
+  }),
+  _Screen('picker (schedule failed to load)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(const StopPickerScreen(), [
+      gtfsRepositoryProvider.overrideWith((ref) async =>
+          throw const SocketException('Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, errno = 8)')),
+    ]);
+  }),
+  _Screen('board (alert + failing live feed)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(const ArrivalBoardScreen(stopId: '1150'), [
+      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      timetrackApiProvider.overrideWithValue(TimeTrackApi(client: _failing)),
+      metrobusMobileApiProvider.overrideWithValue(MetrobusMobileApi(client: _emptyKiosk)),
+      serviceUpdatesProvider.overrideWith((ref) => Stream.value(_updates([
+            _alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.'),
+            _alert('Second alert'),
+          ]))),
+    ]);
+  }),
+  _Screen('alerts (data)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(const AlertsScreen(), [
+      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      serviceUpdatesProvider.overrideWith((ref) => Stream.value(_updates([
+            for (var i = 0; i < 4; i++)
+              _alert('Water Street detour number $i',
+                  description: 'Routes 10, 10A and 29 use Harbour Drive between Duckworth Street and Prescott Street.'),
+          ]))),
+    ]);
+  }),
+  _Screen('alerts (error)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(const AlertsScreen(), [
+      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      serviceUpdatesProvider.overrideWith((ref) => Stream<ServiceUpdates>.error(const SocketException(
+          'Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, or not known, errno = 8), address = busboard.example.com, port = 443'))),
+    ]);
+  }),
+  _Screen('map: stop card (3 arrivals, alert)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(
+      _card(const StopCardHeader(stop: _stop), const StopCardBody(stop: _stop)),
+      _mapOverrides(arrivals: _arrivals),
+    );
+  }),
+  _Screen('map: bus card (technical details open, alert)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(
+      _card(const BusCardHeader(vehicleId: '2573'), const BusCardBody(vehicleId: '2573')),
+      _mapOverrides(),
+    );
+  }, afterPump: (tester) async {
+    await tester.tap(find.text('Technical details'));
+    await tester.pumpAndSettle();
+    expect(find.text('29 km/h'), findsOneWidget, reason: 'technical details are open');
+  }),
+  _Screen('map: your-stop card (2 arrivals)', (t) {
+    SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
+    return _app(
+      _card(MyStopCard.header(), MyStopCard.body()),
+      _mapOverrides(arrivals: _arrivals.take(2).toList()),
+    );
+  }),
+  _Screen('map: your-stop card (3 arrivals)', (t) {
+    SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
+    return _app(
+      _card(MyStopCard.header(), MyStopCard.body()),
+      _mapOverrides(arrivals: _arrivals),
+    );
+  }),
+  _Screen('map: your-stop card (no stop chosen)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(
+      _card(MyStopCard.header(), MyStopCard.body()),
+      _mapOverrides(),
+    );
+  }),
+  _Screen('map: follow card (8 long stops, your stop 4 away)', (t) => _app(_followCard(), const [])),
+  _Screen('map: follow card (arrived)', (t) => _app(_followCard(arrived: true), const [])),
+  _Screen('settings', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(const SettingsScreen(), [
+      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+    ]);
+  }),
+];
+
+/// Drags the first scrollable up repeatedly (past its end), failing on any
+/// exception recorded by the framework (RenderFlex overflow, etc.).
+Future<void> _scrollThrough(WidgetTester tester) async {
+  final scrollable = find.byType(Scrollable).first;
+  for (var i = 0; i < 14; i++) {
+    await tester.drag(scrollable, const Offset(0, -300), warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.takeException(), isNull, reason: 'after drag ${i + 1}');
+  }
+}
+
+void main() {
+  setUpAll(loadAppFonts);
+
+  for (final size in _sizes) {
+    for (final screen in _screens) {
+      testWidgets('${screen.name} at ${size.width.toInt()}x${size.height.toInt()}, 2.0x text', (tester) async {
+        tester.view.physicalSize = Size(size.width * 3, size.height * 3);
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(screen.build(tester));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: 'initial layout');
+        await screen.afterPump?.call(tester);
+        expect(tester.takeException(), isNull, reason: 'after setup');
+        await _scrollThrough(tester);
+
+        // Unmount and let the board's refresh timer / request timeouts drain.
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 11));
+      });
+    }
+  }
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "name": "1.1.0",
+    "versionCodes": [
+      "4"
+    ],
+    "releaseNotes": [
+      {
+        "language": "en-US",
+        "text": "New in 1.1.0:\n• Service alerts with stop and route impacts\n• Better live arrival predictions\n• More reliable individual-bus tracking and smoother map movement\n• Cleaner route-number map markers, with bus IDs kept in details\n• Live refresh while arrival and map sheets are open\n• Reliability and layout improvements"
+      }
+    ],
+    "status": "completed"
+  }
+]

@@ -1,5 +1,6 @@
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/ui/alerts/service_alert_card.dart';
+import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,9 +21,10 @@ void main() {
     );
 
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
+      MaterialApp(
+        theme: BBTheme.light(),
+        home: const Center(
+          child: SizedBox(
             width: 320,
             child: ServiceAlertCard(
               alert: alert,

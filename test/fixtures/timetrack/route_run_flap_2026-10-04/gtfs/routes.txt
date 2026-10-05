@@ -1,0 +1,4 @@
+route_id,agency_id,route_short_name,route_long_name,route_desc,route_type,route_url,route_color,route_text_color
+1,MB,1,Village-Institutes,,3,https://www.metrobus.com/schedules/fall/route1/,003333,FFFFFF
+10,MB,10,Downtown-MUN-Avalon-Kelsey,,3,https://www.metrobus.com/schedules/fall/route10/,330000,FFFFFF
+21,MB,21,Mount Pearl,,3,https://www.metrobus.com/schedules/fall/route21/,A8DADC,000000

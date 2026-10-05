@@ -1,11 +1,12 @@
-import 'bus_observation.dart';
+import 'bus_track.dart';
 
-enum BusStatus { active, stopped, stale, offRoute, backtracking }
+enum BusStatus { active, offRoute, stale }
 
-/// Smoothed tracking state for a single physical bus.
-///
-/// The map engine keys by [vehicleId] when Metrobus supplies it, with
-/// route-run and trip identifiers used only as fallbacks.
+/// What the map and bus sheet know about one physical bus right now: its
+/// identity, its latest fix and whether it is still reporting. [lat] and [lon]
+/// are the latest fix's snapped position (raw when off-route) and [heading]
+/// is the feed heading; nothing smooths them. Where to draw it this frame
+/// comes from DelayedTrackRenderer.
 class BusTrackingState {
   final String routeRun;
   final String vehicleId;
@@ -13,13 +14,18 @@ class BusTrackingState {
   final String headsign;
   final String? currentTripId;
   final String? shapeId;
-  final List<BusObservation> observations;
-  final double smoothedLat;
-  final double smoothedLon;
-  final double smoothedHeading;
-  final double? progressAlongRoute;
+  final double lat;
+  final double lon;
+  final double heading;
+  final double? progress;
+  final double speedKmh;
+  final DateTime lastGpsTime;
   final BusStatus status;
   final DateTime lastUpdateTime;
+
+  /// Minutes ahead (positive) or behind (negative) schedule; null when the
+  /// feed reported no delay.
+  final int? schedDiffMins;
 
   const BusTrackingState({
     required this.routeRun,
@@ -28,44 +34,35 @@ class BusTrackingState {
     required this.headsign,
     this.currentTripId,
     this.shapeId,
-    required this.observations,
-    required this.smoothedLat,
-    required this.smoothedLon,
-    required this.smoothedHeading,
-    this.progressAlongRoute,
+    required this.lat,
+    required this.lon,
+    required this.heading,
+    this.progress,
+    required this.speedKmh,
+    required this.lastGpsTime,
     required this.status,
     required this.lastUpdateTime,
+    this.schedDiffMins,
   });
 
-  BusTrackingState copyWith({
-    String? routeRun,
-    String? vehicleId,
-    int? routeNumber,
-    String? headsign,
-    String? currentTripId,
-    String? shapeId,
-    List<BusObservation>? observations,
-    double? smoothedLat,
-    double? smoothedLon,
-    double? smoothedHeading,
-    double? progressAlongRoute,
-    BusStatus? status,
-    DateTime? lastUpdateTime,
-  }) {
+  factory BusTrackingState.fromTrack(BusTrack track, {required bool stale}) {
+    final f = track.latest;
     return BusTrackingState(
-      routeRun: routeRun ?? this.routeRun,
-      vehicleId: vehicleId ?? this.vehicleId,
-      routeNumber: routeNumber ?? this.routeNumber,
-      headsign: headsign ?? this.headsign,
-      currentTripId: currentTripId ?? this.currentTripId,
-      shapeId: shapeId ?? this.shapeId,
-      observations: observations ?? this.observations,
-      smoothedLat: smoothedLat ?? this.smoothedLat,
-      smoothedLon: smoothedLon ?? this.smoothedLon,
-      smoothedHeading: smoothedHeading ?? this.smoothedHeading,
-      progressAlongRoute: progressAlongRoute ?? this.progressAlongRoute,
-      status: status ?? this.status,
-      lastUpdateTime: lastUpdateTime ?? this.lastUpdateTime,
+      routeRun: track.routeRun,
+      vehicleId: track.vehicleId,
+      routeNumber: track.routeNumber,
+      headsign: track.headsign,
+      currentTripId: f.tripId,
+      shapeId: f.shapeId,
+      lat: f.snappedLat ?? f.lat,
+      lon: f.snappedLon ?? f.lon,
+      heading: f.heading,
+      progress: f.progress,
+      speedKmh: f.speedKmh,
+      lastGpsTime: f.gpsTime,
+      status: stale ? BusStatus.stale : (f.offRoute ? BusStatus.offRoute : BusStatus.active),
+      lastUpdateTime: track.lastFixAt,
+      schedDiffMins: f.schedDiffMins,
     );
   }
 }

@@ -1,9 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../state/providers.dart';
 
-/// Settings screen for changing refresh interval and forcing GTFS re-download.
+import '../../state/providers.dart';
+import '../copy/legal_copy.dart';
+import '../kit/kit.dart';
+
+enum _MapThemeChoice { matchApp, light, dark }
+
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -14,337 +19,145 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _refreshing = false;
 
+  Future<void> _refreshSchedule() async {
+    setState(() => _refreshing = true);
+    try {
+      ref.read(settingsProvider.notifier).requestForceRefresh();
+      ref.invalidate(gtfsRepositoryProvider);
+      await ref.read(gtfsRepositoryProvider.future);
+    } catch (_) {
+      if (mounted) BBToast.show(context, "Couldn't refresh schedule data. Try again later.");
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final bb = context.bb;
     final settings = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+    final mapChoice = switch (settings.mapThemeMode) {
+      BBThemeMode.light => _MapThemeChoice.light,
+      BBThemeMode.dark => _MapThemeChoice.dark,
+      _ => _MapThemeChoice.matchApp,
+    };
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: SafeArea(
-        bottom: true,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            // Appearance
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.palette_outlined,
-                          color: theme.colorScheme.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Text('Appearance', style: theme.textTheme.titleMedium),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    SegmentedButton<ThemeMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: ThemeMode.system,
-                          label: Text('System'),
-                          icon: Icon(Icons.brightness_auto),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.light,
-                          label: Text('Light'),
-                          icon: Icon(Icons.wb_sunny),
-                        ),
-                        ButtonSegment(
-                          value: ThemeMode.dark,
-                          label: Text('Dark'),
-                          icon: Icon(Icons.nightlight_round),
-                        ),
-                      ],
-                      selected: {settings.themeMode},
-                      onSelectionChanged: (Set<ThemeMode> newSelection) {
-                        ref
-                            .read(settingsProvider.notifier)
-                            .setThemeMode(newSelection.first);
-                      },
-                      style: ButtonStyle(
-                        padding: WidgetStateProperty.all(
-                          const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
+    Widget section(String title, IconData icon, List<Widget> children) => BBCard(
+          padding: const EdgeInsets.all(BBSpace.xl),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Icon(icon, size: 20, color: bb.colors.brandInk),
+              const SizedBox(width: BBSpace.s),
+              Expanded(child: Semantics(header: true, child: Text(title, style: bb.text.headline))),
+            ]),
+            const SizedBox(height: BBSpace.m),
+            ...children,
+          ]),
+        );
 
-            // Refresh interval
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.timer_outlined,
-                          color: theme.colorScheme.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Refresh Interval',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ],
+    return BBScaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          BBTopBar(title: 'Settings', onBack: () => context.pop()),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(
+                  BBSpace.screen, 0, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
+              children: [
+                section('Appearance', BBIcons.palette, [
+                  Text('App theme', style: bb.text.label.copyWith(color: bb.colors.muted)),
+                  const SizedBox(height: BBSpace.s),
+                  BBSegmented<BBThemeMode>(
+                    segments: const [
+                      BBSegment(value: BBThemeMode.system, label: 'System'),
+                      BBSegment(value: BBThemeMode.light, label: 'Light'),
+                      BBSegment(value: BBThemeMode.dark, label: 'Dark'),
+                    ],
+                    selected: settings.themeMode,
+                    onChanged: notifier.setThemeMode,
+                  ),
+                  const SizedBox(height: BBSpace.l),
+                  Text('Map theme', style: bb.text.label.copyWith(color: bb.colors.muted)),
+                  const SizedBox(height: BBSpace.s),
+                  BBSegmented<_MapThemeChoice>(
+                    segments: const [
+                      BBSegment(value: _MapThemeChoice.matchApp, label: 'Match app'),
+                      BBSegment(value: _MapThemeChoice.light, label: 'Light'),
+                      BBSegment(value: _MapThemeChoice.dark, label: 'Dark'),
+                    ],
+                    selected: mapChoice,
+                    onChanged: (choice) => notifier.setMapThemeMode(switch (choice) {
+                      _MapThemeChoice.matchApp => null,
+                      _MapThemeChoice.light => BBThemeMode.light,
+                      _MapThemeChoice.dark => BBThemeMode.dark,
+                    }),
+                  ),
+                ]),
+                const SizedBox(height: BBSpace.l),
+                section('Refresh interval', BBIcons.timer, [
+                  Text('How often to check for new live coordinates', style: bb.text.caption),
+                  const SizedBox(height: BBSpace.m),
+                  BBStepper(
+                    value: settings.refreshIntervalSeconds.clamp(5, 60),
+                    min: 5,
+                    max: 60,
+                    step: 5,
+                    format: (v) => '$v seconds',
+                    semanticLabel: 'Refresh interval',
+                    onChanged: notifier.setRefreshInterval,
+                  ),
+                  const SizedBox(height: BBSpace.s),
+                  Text(
+                    'Metrobus currently refreshes GPS snapshots about every 10 seconds. '
+                    'The map animates smoothly between them.',
+                    textAlign: TextAlign.center,
+                    style: bb.text.caption,
+                  ),
+                ]),
+                const SizedBox(height: BBSpace.l),
+                section('Schedule data (GTFS)', BBIcons.download, [
+                  Text.rich(TextSpan(children: [
+                    TextSpan(text: 'Last updated: ', style: bb.text.caption),
+                    TextSpan(
+                      text: settings.lastGtfsUpdate != null
+                          ? DateFormat('MMM d, yyyy HH:mm').format(settings.lastGtfsUpdate!)
+                          : 'Never',
+                      style: bb.text.label,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'How often to check for new live coordinates',
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.4,
-                        ),
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Text(
-                          '5s',
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.4,
-                            ),
-                            fontSize: 12,
-                          ),
-                        ),
-                        Expanded(
-                          child: Slider(
-                            value: settings.refreshIntervalSeconds
-                                .toDouble()
-                                .clamp(5, 60),
-                            min: 5,
-                            max: 60,
-                            divisions: 11,
-                            label: '${settings.refreshIntervalSeconds}s',
-                            onChanged: (val) {
-                              ref
-                                  .read(settingsProvider.notifier)
-                                  .setRefreshInterval(val.round());
-                            },
-                          ),
-                        ),
-                        Text(
-                          '60s',
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.4,
-                            ),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Center(
-                      child: Text(
-                        '${settings.refreshIntervalSeconds} seconds',
-                        style: TextStyle(
-                          color: theme.colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Metrobus currently refreshes GPS snapshots about every '
-                      '10 seconds. The map animates smoothly between them.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.4,
-                        ),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                  ])),
+                  const SizedBox(height: BBSpace.xs),
+                  Text('Auto-refreshes every 7 days', style: bb.text.caption),
+                  const SizedBox(height: BBSpace.m),
+                  BBButton(
+                    label: _refreshing ? 'Downloading...' : 'Refresh schedule now',
+                    icon: BBIcons.refresh,
+                    kind: BBButtonKind.quiet,
+                    expand: true,
+                    onPressed: _refreshing ? null : _refreshSchedule,
+                  ),
+                ]),
+                const SizedBox(height: BBSpace.l),
+                section('About', BBIcons.info, [
+                  Text('BusBoard NL v1.1.0', style: bb.text.label),
+                  const SizedBox(height: BBSpace.xs),
+                  Text(
+                    'Personalized arrival board for Metrobus\n'
+                    "St. John's, Mount Pearl & Paradise, NL",
+                    style: bb.text.caption,
+                  ),
+                  const SizedBox(height: BBSpace.m),
+                  Text(LegalCopy.independence, style: bb.text.label),
+                  const SizedBox(height: BBSpace.s),
+                  Text(LegalCopy.dataCredit, style: bb.text.caption),
+                  const SizedBox(height: 2),
+                  Text(LegalCopy.mapCredit, style: bb.text.caption),
+                ]),
+              ],
             ),
-            const SizedBox(height: 16),
-
-            // Schedule data
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.cloud_download_outlined,
-                          color: theme.colorScheme.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Text(
-                          'Schedule Data (GTFS)',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Text(
-                          'Last updated:',
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.4,
-                            ),
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          settings.lastGtfsUpdate != null
-                              ? DateFormat(
-                                  'MMM d, yyyy HH:mm',
-                                ).format(settings.lastGtfsUpdate!)
-                              : 'Never',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Auto-refreshes every 7 days',
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.3,
-                        ),
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _refreshing
-                            ? null
-                            : () async {
-                                setState(() => _refreshing = true);
-                                ref
-                                    .read(settingsProvider.notifier)
-                                    .requestForceRefresh();
-                                ref.invalidate(gtfsRepositoryProvider);
-                                // Wait for the provider to complete
-                                await ref.read(gtfsRepositoryProvider.future);
-                                if (mounted) {
-                                  setState(() => _refreshing = false);
-                                }
-                              },
-                        icon: _refreshing
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.refresh, size: 18),
-                        label: Text(
-                          _refreshing
-                              ? 'Downloading...'
-                              : 'Refresh Schedule Now',
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: theme.colorScheme.primary,
-                          side: BorderSide(
-                            color: theme.colorScheme.primary.withValues(
-                              alpha: 0.3,
-                            ),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // About
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: theme.colorScheme.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Text('About', style: theme.textTheme.titleMedium),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'BusBoard NL v1.1.0',
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.7,
-                        ),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Personalized arrival board for Metrobus\n'
-                      'St. John\'s, Mount Pearl & Paradise, NL',
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.4,
-                        ),
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Data: Metrobus public GTFS, GTFS-Realtime and '
-                      'TimeTrack JSON feeds. No webpage scraping.',
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.3,
-                        ),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

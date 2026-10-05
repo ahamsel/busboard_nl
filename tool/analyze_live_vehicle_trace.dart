@@ -64,8 +64,8 @@ void main(List<String> args) {
   stdout.writeln(
     '[Verdict] rawIdentity=${metrics.missingVehicleIds == 0 ? "stable" : "incomplete"} '
     'rawMotion=${rawFeedStable ? "stable" : "anomalies-found"}; '
-    'run bus_motion_snapshot_replay_test.dart on this capture to verify '
-    'the app-rendered path.',
+    'build a replay fixture from this capture (tool/build_replay_fixture.py) '
+    'and run test/map/motion_replay_test.dart to verify the app-rendered path.',
   );
 }
 

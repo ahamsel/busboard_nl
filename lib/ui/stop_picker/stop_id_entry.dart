@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../state/providers.dart';
 
-/// Text field for entering a 4-digit stop ID.
+import '../../state/providers.dart';
+import '../kit/kit.dart';
+
 class StopIdEntry extends ConsumerStatefulWidget {
   const StopIdEntry({super.key});
 
@@ -46,70 +47,36 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
+    final bb = context.bb;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Enter Stop ID',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-          ),
-        ),
-        const SizedBox(height: 10),
+        Text('Stop number', style: bb.text.label.copyWith(color: bb.colors.muted)),
+        const SizedBox(height: BBSpace.s),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: TextField(
+              child: BBTextField(
                 controller: _controller,
                 focusNode: _focusNode,
+                hint: 'Stop number on the pole',
+                leadingIcon: BBIcons.pin,
                 keyboardType: TextInputType.number,
-                maxLength: 4,
+                textInputAction: TextInputAction.go,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(4),
                 ],
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 6,
-                  color: theme.colorScheme.onSurface,
-                ),
-                textAlign: TextAlign.center,
-                decoration: InputDecoration(
-                  hintText: '0000',
-                  hintStyle: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 6,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.15),
-                  ),
-                  counterText: '',
-                  errorText: _errorText,
-                  prefixIcon: Icon(
-                    Icons.pin_drop_outlined,
-                    color: theme.colorScheme.primary.withValues(alpha: 0.7),
-                  ),
-                ),
+                errorText: _errorText,
+                onChanged: (_) {
+                  if (_errorText != null) setState(() => _errorText = null);
+                },
                 onSubmitted: (_) => _submit(),
               ),
             ),
-            const SizedBox(width: 12),
-            SizedBox(
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _submit,
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.search, size: 20),
-                    SizedBox(width: 6),
-                    Text('GO'),
-                  ],
-                ),
-              ),
-            ),
+            const SizedBox(width: BBSpace.s),
+            BBButton(label: 'Go', icon: BBIcons.search, onPressed: _submit),
           ],
         ),
       ],
