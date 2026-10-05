@@ -11,13 +11,15 @@ Personalized arrival board and live bus tracking map for **Metrobus** — St. Jo
 - **Pull-to-refresh** for immediate updates
 
 ### Live Map
-- **Real-time bus positions** as red markers on a MapLibre map
-- **Smooth animation** — buses glide along route shapes between GPS updates using interpolation and dead-reckoning
-- **Tap a bus** to see route info and draw its full route shape on the map (persists while you pan/zoom)
-- **Tap a stop** to see stop info and set it as your selected stop
-- **Route filter** — filter visible buses by route number
-- **Legend** — collapsible overlay explaining map symbols
-- **Center on selected stop** — quick-navigate button when you've drifted far on the map
+- **Harbour map styles** — quiet light and dark basemaps built on OpenFreeMap (no API key), following the app theme or the Settings map-theme override
+- **Real-time bus positions** as route-badge markers (the route's number on its colour) with a heading notch; a bus with no recent fix turns grey
+- **Smooth animation** — buses are drawn a little behind live and glide along route shapes between GPS updates (see Bus Motion)
+- **Your stop** is marked with a brand-blue star; other stops appear as small dots once you zoom in
+- **Stop and route chips** — the top-left chip names your stop and opens the stop picker; the top-right chip opens the route filter, a card of route badges to show only the routes you choose
+- **My location** control to recentre on where you are
+- **One floating sheet** that follows what you tap: your stop's next arrivals by default, a stop card (arrivals, *Set as my stop*, *Open board*) when you tap a stop, and a bus card (route, destination, early/late, technical details) when you tap a bus; drag it between peek, half and full
+- **Map credit link** — "© OpenStreetMap · OpenFreeMap" opens the full credits
+- Follow mode (a bus's route line and a camera that stays with it) arrives in Plan 3b-3
 
 ### Settings
 - **Configurable refresh interval** (5–60s, default 5s) — controls both map and board polling
@@ -68,16 +70,26 @@ lib/
       bus_track_store.dart          → Ingests each poll into per-vehicle tracks
       delayed_track_renderer.dart   → Where to draw each bus now (about 25 s behind, gliding)
       bus_tracking_state.dart       → Per-bus snapshot for the map and sheet
+      heading_smoother.dart         → Eases bus heading changes so notches don't flick
       shape_matcher.dart            → Snap GPS to route geometry
   ui/
     stop_picker/                    → Stop ID entry + Near Me list
     board/                          → Arrival board + row tiles
     map/
-      map_screen.dart               → MapLibre map with bus/stop layers
-      bus_bottom_sheet.dart         → Bus info sheet (route, speed, status)
-      stop_bottom_sheet.dart        → Stop info sheet with "set as stop" action
+      map_screen.dart               → The Map tab: chips, my-location, credit link, one floating sheet
+      map_view.dart                 → MapLibre widget behind an injectable builder (tests stub it)
+      map_surface.dart              → The slice of MapLibre the screen uses (camera, sources, layers), faked in tests
+      map_layers.dart               → Stop, your-stop and bus layers; bus markers for each frame
+      marker_images.dart            → Draws the badge, notch and star marker images
+      map_style.dart                → Picks the light or dark Harbour style asset
+      map_hit_test.dart             → Tap to nearest bus or stop
+      stop_card.dart                → Stop card and arrivals list
+      bus_card.dart                 → Bus card and technical details
+      my_stop_card.dart             → Your-stop card (the sheet's default)
+      route_filter_card.dart        → Floating route filter
     settings/                       → Refresh interval & GTFS management
   state/providers.dart              → Riverpod providers (polling stream, track store, renderer, settings)
+  state/map_providers.dart          → Map selection, route filter, per-stop arrivals, app foreground state
 ```
 
 ## Building
@@ -122,5 +134,4 @@ dart run tool/analyze_live_vehicle_trace.dart \
 - **Live ETA**: `predicted = scheduled − sched_difference_mins` (positive diff = bus ahead = arrives earlier)
 - **Timezone**: App uses device local time; designed for America/St_Johns
 - **No database**: All GTFS data is held in-memory via indexed maps for fast lookup
-- **MapLibre GeoJSON bug**: `setGeoJsonSource` doesn't re-render circle layers reliably on this stack — buses are rendered with circle annotations.
 - **GPS update cadence**: Bus GPS hardware reports periodically; the app polls every 5s to catch new observations promptly.

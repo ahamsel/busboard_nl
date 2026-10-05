@@ -10,13 +10,14 @@ import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_screen.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
+import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
+import 'package:maplibre_gl/maplibre_gl.dart' show CircleLayerProperties, LatLng, SymbolLayerProperties;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../map/support/fake_map_surface.dart';
@@ -46,10 +47,20 @@ var _surface = FakeMapSurface();
 /// Stands in for the map tab going offstage in the shell.
 final _tickerMode = ValueNotifier<bool>(true);
 
+/// Taps that reached the "map" (a tap on empty map is forwarded to onTap).
+var _mapTaps = 0;
+
 Widget _stubMap(MapViewConfig config) {
   _config = config;
   scheduleMicrotask(() => config.onReady(_surface, _surface));
-  return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4));
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: () {
+      _mapTaps++;
+      config.onTap(const LatLng(47.0, -52.0));
+    },
+    child: const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4)),
+  );
 }
 
 
@@ -59,6 +70,21 @@ class _RecordingSurface extends FakeMapSurface {
   final _held = <Completer<void>>[];
   bool hold = false;
   bool failImages = false;
+
+  /// Real-time pause per layer call, so overlapping installs would interleave.
+  Duration layerDelay = Duration.zero;
+
+  @override
+  Future<void> addCircleLayer(String sourceId, String layerId, CircleLayerProperties p, {double? minzoom}) async {
+    await Future<void>.delayed(layerDelay);
+    return super.addCircleLayer(sourceId, layerId, p, minzoom: minzoom);
+  }
+
+  @override
+  Future<void> addSymbolLayer(String sourceId, String layerId, SymbolLayerProperties p, {double? minzoom}) async {
+    await Future<void>.delayed(layerDelay);
+    return super.addSymbolLayer(sourceId, layerId, p, minzoom: minzoom);
+  }
 
   void releaseHeld() {
     hold = false;
@@ -160,6 +186,7 @@ void main() {
       (call) async => call.method == 'checkPermission' ? 0 : null,
     );
     _config = null;
+    _mapTaps = 0;
     _tickerMode.value = true;
     _surface = FakeMapSurface();
   });
@@ -263,6 +290,17 @@ void main() {
       await _pump(tester, size: const Size(390, 844));
       final hit = tester.getRect(find.ancestor(of: find.text(credit), matching: find.byType(BBPressable)));
       expect(hit.height, greaterThanOrEqualTo(44));
+      final text = tester.getRect(find.text(credit));
+      expect(hit.width, lessThanOrEqualTo(text.width + 8), reason: 'the tap target hugs the text');
+    });
+
+    testWidgets('a tap beside the text, in the same band, reaches the map', (tester) async {
+      await _pump(tester, size: const Size(390, 844));
+      final text = tester.getRect(find.text(credit)); // test fonts are wide: it ends at x=360
+      await tester.tapAt(Offset(text.right + 16, text.center.dy));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(_mapTaps, 1);
+      expect(find.text('Map credits'), findsNothing);
     });
 
     testWidgets("the map's own attribution button starts right after the link", (tester) async {
@@ -317,7 +355,59 @@ void main() {
     });
   });
 
+  testWidgets('choosing a new stop recentres the map on it', (tester) async {
+    await _pump(tester);
+    expect(_surface.moves, isEmpty);
+    final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
+    await container.read(settingsProvider.notifier).setSelectedStop('1150');
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, true)]);
+  });
+
   group('map layers over time', () {
+    testWidgets('two style loads in a row install one after the other', (tester) async {
+      final surface = _RecordingSurface()..layerDelay = const Duration(milliseconds: 15);
+      _surface = surface;
+      await _pump(tester, prefs: {'selectedStopId': '1150'});
+      await tester.runAsync(() async {
+        _config!.onStyleLoaded();
+        _config!.onStyleLoaded();
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+      });
+      final firstImages = [
+        for (var i = 0; i < surface.calls.length; i++)
+          if (surface.calls[i] == 'image ${MarkerImages.myStopId}') i,
+      ];
+      expect(firstImages, hasLength(2), reason: 'each load installs');
+      final layers = [
+        for (var i = 0; i < surface.calls.length; i++)
+          if (surface.calls[i].startsWith('layer ')) i,
+      ];
+      expect(layers.length.isEven, isTrue);
+      final firstInstallLayers = layers.length ~/ 2;
+      expect(layers.where((i) => i < firstImages[1]).length, firstInstallLayers,
+          reason: 'the second install starts only after the first has added all its layers');
+    });
+
+    testWidgets('the draw ticker stops while offstage and restarts on return', (tester) async {
+      final surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(tester, buses: {'2573': _bus()});
+      await tester.runAsync(() => _styleLoaded(surface));
+      await _frames(tester, 2);
+      expect(tester.binding.transientCallbackCount, greaterThan(0));
+
+      _tickerMode.value = false;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.binding.transientCallbackCount, 0, reason: 'no frames are requested offstage');
+
+      _tickerMode.value = true;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.binding.transientCallbackCount, greaterThan(0));
+    });
+
     testWidgets('a failed style reload leaves the stale layers undrawn', (tester) async {
       final printed = debugPrint;
       debugPrint = (message, {wrapWidth}) {}; // the expected install failure is logged

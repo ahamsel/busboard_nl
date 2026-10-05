@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding, WidgetsBindingObserver;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/realtime/metrobus_mobile_api.dart';
@@ -59,15 +60,43 @@ class RouteFilterNotifier extends Notifier<Set<int>> {
 
 final mapRouteFilterProvider = NotifierProvider<RouteFilterNotifier, Set<int>>(RouteFilterNotifier.new);
 
+/// Whether the app is on screen (resumed). Polling providers pause while it is
+/// not, like the board does.
+class AppForegroundNotifier extends Notifier<bool> with WidgetsBindingObserver {
+  @override
+  bool build() {
+    final binding = WidgetsBinding.instance..addObserver(this);
+    ref.onDispose(() => binding.removeObserver(this));
+    final lifecycle = binding.lifecycleState;
+    return lifecycle == null || lifecycle == AppLifecycleState.resumed;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => setForeground(state == AppLifecycleState.resumed);
+
+  void setForeground(bool foreground) => state = foreground;
+}
+
+final appForegroundProvider = NotifierProvider<AppForegroundNotifier, bool>(AppForegroundNotifier.new);
+
 /// Upcoming arrivals at any stop (the map's stop card and your-stop peek), from
 /// the schedule, the live vehicle feed and the stop-prediction feed. Re-fetches
-/// every refresh interval while something watches it.
+/// every refresh interval while something watches it and the app is in the
+/// foreground; coming back to the foreground fetches once and resumes polling.
 final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>, String>((ref, stopId) async {
   final repo = ref.watch(gtfsRepositoryProvider).value;
   if (repo == null) return const [];
   final seconds = ref.watch(settingsProvider.select((s) => s.refreshIntervalSeconds));
-  final timer = Timer(Duration(seconds: seconds), ref.invalidateSelf);
-  ref.onDispose(timer.cancel);
+  // Background: no timer. Foreground again: refresh now, which re-arms it.
+  ref.listen(appForegroundProvider, (_, foreground) {
+    if (foreground) ref.invalidateSelf();
+  });
+  if (ref.read(appForegroundProvider)) {
+    final timer = Timer(Duration(seconds: seconds), () {
+      if (ref.read(appForegroundProvider)) ref.invalidateSelf();
+    });
+    ref.onDispose(timer.cancel);
+  }
 
   List<TimeTrackVehicle>? liveVehicles;
   try {
