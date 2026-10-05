@@ -1,11 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/location/nearest_stop_service.dart';
 import 'map_layers.dart';
 
-/// Tap radius in metres: ~200 m at zoom 13, halving per zoom level to ~6 m at 18.
-double tapRadiusMeters(double zoom) => 200.0 / (1 << (zoom - 13).clamp(0, 5).toInt());
+/// Tap radius in metres: ~200 m at zoom 13, halving per zoom level (smoothly) to ~6 m at 18.
+double tapRadiusMeters(double zoom) => 200.0 / math.pow(2, zoom.clamp(13, 18) - 13);
 
 double _dist(LatLng a, double lat, double lon) =>
     NearestStopService.haversineDistance(a.latitude, a.longitude, lat, lon);

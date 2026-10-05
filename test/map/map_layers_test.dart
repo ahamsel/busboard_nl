@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/map/delayed_track_renderer.dart';
@@ -7,6 +9,7 @@ import 'package:busboard_nl/ui/map/map_layers.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 
 import 'support/fake_map_surface.dart';
 
@@ -26,6 +29,15 @@ BusTrackingState _bus(String id, {int route = 10, String routeRun = 'Rt 10', Bus
       status: status,
       lastUpdateTime: _now,
     );
+
+class _FlakySurface extends FakeMapSurface {
+  String? failOn;
+  @override
+  Future<void> addImage(String name, Uint8List bytes) async {
+    if (name == failOn) throw StateError('addImage failed');
+    return super.addImage(name, bytes);
+  }
+}
 
 const _mun = StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 47.57, stopLon: -52.73);
 
@@ -69,6 +81,11 @@ void main() {
       expect(busLabel(_bus('a', route: 10)), '10');
       expect(busLabel(_bus('a', route: 0, routeRun: 'Rt 10A')), '10A');
       expect(busLabel(_bus('a', route: 0, routeRun: '')), '?');
+      expect(busLabel(_bus('a', route: 0, routeRun: 'Rt 10-1')), '10');
+      expect(busLabel(_bus('a', route: 0, routeRun: 'RT 10')), '10');
+      expect(busLabel(_bus('a', route: 0, routeRun: '10A')), '10A');
+      expect(busLabel(_bus('a', route: 0, routeRun: 'route:0')), '?');
+      expect(busLabel(_bus('a', route: 0, routeRun: 'trip:12345-abc')), '?');
       expect(busMarkers(tracking: {'a': _bus('a', route: 0, routeRun: 'Rt 10A')}, drawn: const {}, routeFilter: const {}, headings: HeadingSmoother(), now: _now).single.hue,
           RoutePalette.ofName('10A'));
     });
@@ -81,6 +98,8 @@ void main() {
         await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const [_mun]);
         final layerOrder = [for (final c in surface.calls) if (c.startsWith('layer ')) c.substring(6)];
         expect(layerOrder, [MapLayers.stopsLayer, MapLayers.myStopLayer, MapLayers.notchLayer, MapLayers.badgeLayer]);
+        expect((surface.layers[MapLayers.notchLayer]! as SymbolLayerProperties).symbolSortKey, isNotNull,
+            reason: 'stale notches sit under fresh ones');
         expect(surface.images.keys, contains(MarkerImages.myStopId));
         expect(surface.layerMinZoom[MapLayers.stopsLayer], MapLayers.stopsMinZoom);
         expect(surface.layerMinZoom[MapLayers.myStopLayer], isNull, reason: 'your stop shows at every zoom');
@@ -108,6 +127,31 @@ void main() {
         expect(f, hasLength(3));
         expect(f.first['properties']['badge'], MarkerImages.badgeId('10', stale: false, brightness: Brightness.light));
         expect(f.first['properties']['heading'], 90);
+      });
+    });
+
+    testWidgets('a failed badge image is retried and does not block the other buses', (tester) async {
+      await tester.runAsync(() async {
+        final surface = _FlakySurface();
+        final layers = MapLayers(surface, brightness: Brightness.light, pixelRatio: 1);
+        await layers.install(stops: const []);
+        final markers = busMarkers(
+          tracking: {'a': _bus('a'), 'b': _bus('b', route: 2, routeRun: 'Rt 2')},
+          drawn: const {},
+          routeFilter: const {},
+          headings: HeadingSmoother(),
+          now: _now,
+        );
+        final badge10 = MarkerImages.badgeId('10', stale: false, brightness: Brightness.light);
+        surface.failOn = badge10;
+        surface.calls.clear();
+        await layers.updateBuses(markers);
+        expect(surface.calls, contains('set ${MapLayers.busesSource}'), reason: 'one bad image must not skip the update');
+        expect(surface.images.keys, contains(MarkerImages.badgeId('2', stale: false, brightness: Brightness.light)));
+        expect(surface.images.keys, isNot(contains(badge10)));
+        surface.failOn = null;
+        await layers.updateBuses(markers);
+        expect(surface.images.keys, contains(badge10), reason: 'retried on the next update');
       });
     });
 
