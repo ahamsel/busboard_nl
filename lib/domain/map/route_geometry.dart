@@ -19,6 +19,25 @@ double bearingDegrees(double lat1, double lon1, double lat2, double lon2) {
   return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
 }
 
+/// One stop of a trip, in stop_sequence order (follow mode's strip and
+/// timeline). [progress] is null where the stop could not be placed on the
+/// shape; [departureSeconds] is seconds since midnight (over 86400 past it).
+class TripStop {
+  const TripStop({
+    required this.stopId,
+    required this.name,
+    required this.sequence,
+    required this.progress,
+    required this.departureSeconds,
+  });
+
+  final String stopId;
+  final String name;
+  final int sequence;
+  final double? progress;
+  final int? departureSeconds;
+}
+
 /// Read-only route geometry for the motion pipeline, over [GtfsRepository]:
 /// snapping to shapes, poses along them, stops in trip order and where the
 /// timetable says a bus should be. Caches per trip and shape.
@@ -176,6 +195,46 @@ class RouteGeometry {
       }
     }
     return _stopProgressCache[key] = List.unmodifiable(result);
+  }
+
+  /// [tripId]'s stops in stop_sequence order, each with its progress on
+  /// [shapeId] and its departure time. Empty for an unknown trip.
+  List<TripStop> tripStops(String tripId, String shapeId) {
+    final rows = _stopTimesByTripId[tripId] ?? const <StopTimeRow>[];
+    final progresses = stopProgresses(tripId, shapeId);
+    return [
+      for (var i = 0; i < rows.length; i++)
+        TripStop(
+          stopId: rows[i].stopId,
+          name: _repo.stopsById[rows[i].stopId]?.stopName ?? 'Stop ${rows[i].stopId}',
+          sequence: rows[i].stopSequence,
+          progress: i < progresses.length ? progresses[i] : null,
+          departureSeconds: _secondsOf(rows[i].departureTime),
+        ),
+    ];
+  }
+
+  /// [shapeId]'s line split at [progress] (clamped to the shape) into the part
+  /// already driven and the part ahead, as [lon, lat] pairs. The split point
+  /// ends one and starts the other; each has at least two points.
+  ({List<List<double>> driven, List<List<double>> ahead})? splitShape(String shapeId, double progress) {
+    final points = _repo.shapesById[shapeId];
+    final dists = _repo.shapeCumulativeDistances[shapeId];
+    if (points == null || dists == null || points.length < 2 || dists.length != points.length) return null;
+    final p = progress.clamp(0.0, dists.last);
+    var i = 0;
+    while (i < dists.length - 2 && dists[i + 1] < p) {
+      i++;
+    }
+    final span = dists[i + 1] - dists[i];
+    final f = span <= 0 ? 0.0 : (p - dists[i]) / span;
+    final split = [
+      points[i].lon + (points[i + 1].lon - points[i].lon) * f,
+      points[i].lat + (points[i + 1].lat - points[i].lat) * f,
+    ];
+    final driven = [for (var k = 0; k <= i; k++) [points[k].lon, points[k].lat], split];
+    final ahead = [split, for (var k = i + 1; k < points.length; k++) [points[k].lon, points[k].lat]];
+    return (driven: driven, ahead: ahead);
   }
 
   /// Progress of the stop [tripId] departs closest to [departureSeconds]

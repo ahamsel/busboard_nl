@@ -169,4 +169,44 @@ void main() {
       expect(g.stopProgressAtTime(outAndBackTripId, outAndBackShapeId, 60), closeTo(500, 15));
     });
   });
+
+  group('tripStops', () {
+    test('lists the trip stops in order with their progress and departure', () {
+      final g = RouteGeometry(outAndBackRepo());
+      final stops = g.tripStops(outAndBackTripId, outAndBackShapeId);
+      expect([for (final s in stops) s.stopId], ['s1', 's2', 's3', 's4']);
+      expect(stops.first.progress, closeTo(200, 15));
+      expect(stops.first.departureSeconds, 12 * 3600);
+      expect(stops.last.progress, greaterThan(stops[2].progress!), reason: 's4 is on the return leg');
+      expect(stops.first.name, isNotEmpty);
+    });
+
+    test('an unknown trip has no stops', () {
+      expect(RouteGeometry(outAndBackRepo()).tripStops('nope', outAndBackShapeId), isEmpty);
+    });
+  });
+
+  group('splitShape', () {
+    test('splits the line at a progress; the split point is shared', () {
+      final g = RouteGeometry(outAndBackRepo());
+      final split = g.splitShape(outAndBackShapeId, 500)!;
+      final pose = g.poseAt(outAndBackShapeId, 500)!;
+      expect(split.driven.last[0], closeTo(pose.lon, 1e-9));
+      expect(split.driven.last[1], closeTo(pose.lat, 1e-9));
+      expect(split.ahead.first, split.driven.last);
+      final points = outAndBackRepo().shapesById[outAndBackShapeId]!;
+      expect(split.driven.first, [points.first.lon, points.first.lat]);
+      expect(split.ahead.last, [points.last.lon, points.last.lat]);
+    });
+
+    test('ends of the line still give two points on each side', () {
+      final g = RouteGeometry(outAndBackRepo());
+      for (final p in [-50.0, 0.0, 1e9]) {
+        final split = g.splitShape(outAndBackShapeId, p)!;
+        expect(split.driven.length, greaterThanOrEqualTo(2), reason: 'p=$p');
+        expect(split.ahead.length, greaterThanOrEqualTo(2), reason: 'p=$p');
+      }
+      expect(g.splitShape('nope', 10), isNull);
+    });
+  });
 }
