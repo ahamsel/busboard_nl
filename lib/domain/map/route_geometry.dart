@@ -19,7 +19,7 @@ double bearingDegrees(double lat1, double lon1, double lat2, double lon2) {
   return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
 }
 
-/// Read-only route geometry for the motion engine, over [GtfsRepository]:
+/// Read-only route geometry for the motion pipeline, over [GtfsRepository]:
 /// snapping to shapes, poses along them, stops in trip order and where the
 /// timetable says a bus should be. Caches per trip and shape.
 class RouteGeometry {

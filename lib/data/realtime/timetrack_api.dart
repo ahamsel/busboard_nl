@@ -182,7 +182,7 @@ class TimeTrackApi {
             // Metrobus currently publishes the same numeric km/h value in
             // both this field and its Fleet View JSON, despite GTFS-Realtime
             // specifying m/s. Keep the agency value in the km/h unit expected
-            // by the motion engine instead of multiplying it by 3.6.
+            // by the map's motion pipeline instead of multiplying it by 3.6.
             speed: position.hasSpeed() ? position.speed : 0.0,
             positionTime: measuredAt.toIso8601String(),
             positionTimeSeconds: _secondsSinceMidnight(measuredAt),
@@ -406,7 +406,9 @@ class TimeTrackApi {
       gtfsTripHeadsign: _readString(row, 'headsign'),
       gtfsServiceId: '',
       gtfsStopSequenceStatus: opStatus,
-      gtfsStopSequenceMinsFromStop: delayMins.abs(),
+      // Fleet View has no "minutes to the closest stop" either; the delay is
+      // reported separately (gtfsStopSequenceSchedDifferenceMins).
+      gtfsStopSequenceMinsFromStop: 0,
       gtfsStopSequenceDeviation: _delayDescription(delayMins),
       gtfsStopSequenceClosestStop: _readString(row, 'nearestStopName'),
       gtfsStopSequenceSchedDifferenceMins: scheduleDifferenceMins,

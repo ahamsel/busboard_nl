@@ -140,7 +140,7 @@ class TimeTrackVehicle {
   }
 
   /// Serialize the normalized model for diagnostic capture and deterministic
-  /// replay through the same motion engine used by the map.
+  /// replay through the same motion pipeline used by the map.
   Map<String, dynamic> toJson() {
     return {
       'routeRun': routeRun,
