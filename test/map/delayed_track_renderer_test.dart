@@ -529,18 +529,72 @@ void main() {
   group('final fix wave', () {
     const frame = Duration(milliseconds: 120);
 
-    test('a 2 min gap in the fixes snaps to the target instead of walking at 30 m/s', () {
+    test('a 2 min gap on the same trip glides at up to 60 m/s instead of snapping', () {
       final r = DelayedTrackRenderer(_geometry);
       final before = _track([_fix(0, 100), _fix(10, 180)]);
-      var now = _t0.add(const Duration(seconds: 112)); // render time 100 s: held 5 s past the last fix
-      expect(r.render(before, now).progress, closeTo(220, 1e-6));
+      var now = _t0.add(const Duration(seconds: 112)); // render time 100 s: past the last fix
+      var last = r.render(before, now).progress!;
       // A fix 2 min after the last arrives; render time (100 s) is 75% along
-      // the pair, 800+ m ahead of where the bus is drawn.
+      // the pair, 500+ m ahead of where the bus is drawn.
       final after = _track([_fix(0, 100), _fix(10, 180), _fix(130, 1000)]);
+      const fastStep = 60 * 0.12;
+      var fast = 0;
+      double? firstStep;
+      var step = 0.0;
+      for (var i = 0; i < 400; i++) {
+        now = now.add(frame);
+        final p = r.render(after, now).progress!;
+        step = p - last;
+        firstStep ??= step;
+        expect(step, inInclusiveRange(0.0, fastStep + 1e-6), reason: 'frame $i');
+        if (step > 30 * 0.12 + 1e-6) fast++;
+        last = p;
+      }
+      expect(firstStep, closeTo(fastStep, 1e-6));
+      expect(fast, greaterThan(50));
+      // Caught up: the bus then moves at its own pace (820 m in 120 s).
+      expect(step, lessThan(1.5));
+    });
+
+    test('a gap fix behind the mark of the same trip is held, never snapped back', () {
+      final r = DelayedTrackRenderer(_geometry);
+      // Render time 75 s: past the last fix, a slow bus, drawn near 400 m.
+      final before = _track([_fix(0, 390), _fix(10, 400)]);
+      var now = _t0.add(const Duration(seconds: 87));
+      final mark = r.render(before, now).progress!;
+      expect(mark, inInclusiveRange(400, 410));
+      // 70 s later the bus is seen 145 m back: render time 75 s is ~140 m
+      // behind the mark. The old rule snapped there.
+      final after = _track([_fix(0, 390), _fix(10, 400), _fix(80, 255)]);
+      for (var i = 0; i < 20; i++) {
+        now = now.add(frame);
+        expect(r.render(after, now).progress, closeTo(mark, 1e-6), reason: 'frame $i');
+      }
+    });
+
+    test('a trip change after a 90 s gap glides too, in a straight line', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 900), _fix(10, 950)]);
+      var now = _t0.add(const Duration(seconds: 92)); // render time 80 s
+      final start = r.render(before, now);
+      // The next fix, 90 s on, is on the next trip 400 m back along the shape
+      // (the return leg, on the map ~400 m west): no snap, a glide.
+      final after = _track([_fix(0, 900), _fix(10, 950), _fix(100, 1500, trip: 'next-trip')]);
       now = now.add(frame);
       final bus = r.render(after, now);
-      expect(bus.progress, greaterThan(700));
-      expect(bus.progress, closeTo(180 + 820 * (100.12 - 10 - 0.0) / 120, 5));
+      expect(NearestStopService.haversineDistance(start.lat, start.lon, bus.lat, bus.lon), closeTo(60 * 0.12, 0.05));
+    });
+
+    test('a gap of more than 3 min still snaps to the target', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 100), _fix(10, 180)]);
+      var now = _t0.add(const Duration(seconds: 212)); // render time 200 s
+      r.render(before, now);
+      final after = _track([_fix(0, 100), _fix(10, 180), _fix(250, 1000)]);
+      now = now.add(frame);
+      final bus = r.render(after, now);
+      // Render time ~200 s (the delay is slewing), ~79% along the pair.
+      expect(bus.progress, closeTo(180 + 820 * (200.12 - 10) / 240, 5));
     });
 
     test('a data-gap snap still holds a target within 60 m behind the mark of the same trip', () {
