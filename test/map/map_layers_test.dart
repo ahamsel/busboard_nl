@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
@@ -29,6 +30,33 @@ BusTrackingState _bus(String id, {int route = 10, String routeRun = 'Rt 10', Bus
       status: status,
       lastUpdateTime: _now,
     );
+
+/// Images arrive slowly (a busy phone or emulator): addImage for the held ids
+/// waits until released.
+class _SlowImageSurface extends FakeMapSurface {
+  final held = <String>{};
+  final _gates = <String, Completer<void>>{};
+  final published = <List<String>>[];
+
+  void release(String id) => _gates.remove(id)?.complete();
+
+  @override
+  Future<void> addImage(String name, Uint8List bytes) async {
+    if (held.contains(name)) {
+      final gate = _gates[name] = Completer<void>();
+      await gate.future;
+    }
+    return super.addImage(name, bytes);
+  }
+
+  @override
+  Future<void> setGeoJsonSource(String id, Map<String, dynamic> data) async {
+    await super.setGeoJsonSource(id, data);
+    if (id == MapLayers.busesSource) {
+      published.add([for (final f in features(id)) f['properties']['vehicleId'] as String]);
+    }
+  }
+}
 
 class _FlakySurface extends FakeMapSurface {
   String? failOn;
@@ -199,6 +227,31 @@ void main() {
         final surface = FakeMapSurface();
         await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const []);
         expect(surface.layers, hasLength(4));
+      });
+    });
+
+    testWidgets('buses show up route by route while the rest of the images are still being made', (tester) async {
+      await tester.runAsync(() async {
+        final surface = _SlowImageSurface();
+        final layers = MapLayers(surface, brightness: Brightness.light, pixelRatio: 1);
+        await layers.install(stops: const []);
+        final slowBadge = MarkerImages.badgeId('2', stale: false, brightness: Brightness.light);
+        surface.held.add(slowBadge);
+        final markers = busMarkers(
+          tracking: {'a': _bus('a'), 'b': _bus('b', route: 2, routeRun: 'Rt 2'), 'c': _bus('c')},
+          drawn: const {},
+          routeFilter: const {},
+          headings: HeadingSmoother(),
+          now: _now,
+        );
+        final done = layers.updateBuses(markers);
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        // Route 10's images are in; route 2's badge is still being added.
+        expect(surface.published, isNotEmpty, reason: 'do not wait for every image before drawing anything');
+        expect(surface.published.last, unorderedEquals(['a', 'c']));
+        surface.release(slowBadge);
+        await done;
+        expect(surface.published.last, unorderedEquals(['a', 'b', 'c']));
       });
     });
 

@@ -142,10 +142,10 @@ Future<void> _frames(WidgetTester tester, int n) async {
   }
 }
 
-Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, Map<String, BusTrackingState> buses = const {}, double textScale = 1, Size? size, List<ArrivalRow> arrivals = const []}) async {
+Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, Map<String, BusTrackingState> buses = const {}, double textScale = 1, Size? size, double dpr = 1, List<ArrivalRow> arrivals = const []}) async {
   if (size != null) {
-    tester.view.physicalSize = size;
-    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size * dpr;
+    tester.view.devicePixelRatio = dpr;
     addTearDown(tester.view.reset);
   }
   SharedPreferences.setMockInitialValues(prefs);
@@ -326,9 +326,18 @@ void main() {
       for (final (size, scale) in [(const Size(390, 844), 1.0), (const Size(320, 568), 2.0)]) {
         await _pump(tester, size: size, textScale: scale);
         final text = tester.getRect(find.text(credit));
-        // Tests run as Android: margins are in pixels, and dpr is 1 here.
         expect(_config!.attributionMargin.x, closeTo(text.right + BBSpace.s, 1.5));
       }
+    });
+
+    testWidgets("the attribution margin is in logical pixels on a dense Android screen", (tester) async {
+      // maplibre_gl's Android side multiplies the margins by the screen density
+      // itself: scaling them here too pushed the button off the screen.
+      await _pump(tester, size: const Size(390, 844), dpr: 2.625);
+      final text = tester.getRect(find.text(credit));
+      final hit = tester.getRect(find.ancestor(of: find.text(credit), matching: find.byType(BBPressable)));
+      expect(_config!.attributionMargin.x, closeTo(text.right + BBSpace.s, 1.5));
+      expect(_config!.attributionMargin.y, closeTo(844 - hit.bottom, 1.5));
     });
   });
 

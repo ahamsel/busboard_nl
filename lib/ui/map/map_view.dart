@@ -27,7 +27,8 @@ class MapViewConfig {
   final bool myLocationEnabled;
 
   /// Where MapLibre's own attribution button sits (bottom-left): next to our
-  /// credit link, in the platform's units (Android: pixels; iOS: points).
+  /// credit link, in logical pixels on both platforms (maplibre_gl's Android side
+  /// multiplies by the screen density itself).
   final Point<num> attributionMargin;
   final Color attributionColor;
   final void Function(MapSurface surface, MapCamera camera) onReady;
