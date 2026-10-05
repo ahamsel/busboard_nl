@@ -178,7 +178,7 @@ Full-screen map under the status bar. Top-left chip: `📍 MUN Centre · 1150 �
 
 ### 7.4 Follow mode
 - **Entry:** tap a bus on the map, or a live arrival row on the Board.
-- **State:** the followed vehicle ID (keyed the same way as `BusMotionEngine` states), held in a map-scoped provider.
+- **State:** the followed vehicle ID (the physical vehicle ID, as `BusTrackStore` keys tracks — `BusMotionEngine` was removed in Phase 3b-1), held in a map-scoped provider.
 - **Visuals:** the followed route's shape is highlighted; other buses fade to ~35% opacity; the camera eases to the bus each tick. If the user pans or zooms by gesture, auto-follow pauses and a **Recenter** chip appears.
 - **Sheet:** header = `RouteBadge` · destination · "Following Bus 2134 · live" · ETA to your stop (`soon` colour ≤ 5 min). Body = a **stop timeline** from the bus's current position to your stop: past segment dimmed, current position marked, upcoming stops with ETAs (scheduled + current delay), your stop emphasised. If your stop isn't on this trip, the timeline shows the next ~6 stops.
 - **Details:** "Last GPS update 12 s ago" is always visible. Speed / heading / GPS fix (currently shown in `bus_bottom_sheet.dart`) move into a collapsed **Technical details** section.
