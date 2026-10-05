@@ -13,6 +13,10 @@ void main() {
     expect(tapRadiusMeters(13), 200);
     expect(tapRadiusMeters(15), 50);
     expect(tapRadiusMeters(10), 200, reason: 'clamped below zoom 13');
+    expect(tapRadiusMeters(14.5), inExclusiveRange(50, 100));
+    expect(tapRadiusMeters(14.5), closeTo(70.7, 0.1));
+    expect(tapRadiusMeters(18), closeTo(6.25, 0.001));
+    expect(tapRadiusMeters(22), closeTo(6.25, 0.001), reason: 'clamped above zoom 18');
   });
 
   test('nearestBus picks the closest drawn bus within the radius', () {

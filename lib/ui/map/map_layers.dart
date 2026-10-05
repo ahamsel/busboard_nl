@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
@@ -31,11 +32,11 @@ class BusMarker {
 }
 
 /// The number on a bus badge: the route number, else the route from
-/// "Rt 10A"-style routeRun, else "?".
+/// "Rt 10A"-style routeRun when that is digits plus an optional letter, else "?".
 String busLabel(BusTrackingState s) {
   if (s.routeNumber > 0) return '${s.routeNumber}';
-  final run = s.routeRun.replaceFirst(RegExp(r'^Rt\s*'), '').split('-').first.trim();
-  return run.isEmpty ? '?' : run;
+  final run = s.routeRun.replaceFirst(RegExp(r'^rt\s*', caseSensitive: false), '').split('-').first.trim();
+  return RegExp(r'^[0-9]+[A-Za-z]?$').hasMatch(run) ? run : '?';
 }
 
 /// Markers for this frame. The renderer's drawn position wins; a bus it has
@@ -140,6 +141,7 @@ class MapLayers {
         iconRotationAlignment: 'map',
         iconAllowOverlap: true,
         iconIgnorePlacement: true,
+        symbolSortKey: [Expressions.get, 'sort'],
       ),
     );
     await surface.addSymbolLayer(
@@ -154,20 +156,29 @@ class MapLayers {
     );
   }
 
+  /// Registers [id] once. It joins [_images] only after the surface accepted
+  /// it, so a failed render or add is retried on the next update. A failure is
+  /// logged and swallowed: one bad image must not stop the other buses.
+  Future<void> _ensureImage(String id, Future<Uint8List> Function() render) async {
+    if (_images.contains(id)) return;
+    try {
+      await surface.addImage(id, await render());
+      _images.add(id);
+    } catch (e) {
+      if (kDebugMode) debugPrint('MapLayers: could not register image $id: $e');
+    }
+  }
+
   Future<void> updateBuses(List<BusMarker> markers) async {
     final features = <Map<String, dynamic>>[];
     for (final m in markers) {
       final badge = MarkerImages.badgeId(m.label, stale: m.stale, brightness: brightness);
-      if (_images.add(badge)) {
-        await surface.addImage(
-          badge,
-          await MarkerImages.badge(label: m.label, hue: m.hue, stale: m.stale, brightness: brightness, pixelRatio: pixelRatio),
-        );
-      }
+      await _ensureImage(
+        badge,
+        () => MarkerImages.badge(label: m.label, hue: m.hue, stale: m.stale, brightness: brightness, pixelRatio: pixelRatio),
+      );
       final notch = MarkerImages.notchId(m.hue, stale: m.stale);
-      if (_images.add(notch)) {
-        await surface.addImage(notch, await MarkerImages.notch(hue: m.hue, stale: m.stale, pixelRatio: pixelRatio));
-      }
+      await _ensureImage(notch, () => MarkerImages.notch(hue: m.hue, stale: m.stale, pixelRatio: pixelRatio));
       features.add(_point(m.lat, m.lon, {
         'vehicleId': m.vehicleId,
         'badge': badge,
