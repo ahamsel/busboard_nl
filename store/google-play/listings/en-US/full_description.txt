@@ -4,6 +4,7 @@ See what is happening now
 
 • View current bus locations on an interactive map.
 • Track each physical bus separately, with smooth movement between Metrobus position updates.
+• Follow a bus to your stop: see its route, the stops left, and when it arrives.
 • Filter the map by route, then tap a bus for its vehicle and trip details.
 
 Plan from any stop
