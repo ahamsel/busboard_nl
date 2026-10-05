@@ -121,7 +121,7 @@ class BusBottomSheet extends ConsumerWidget {
               const SizedBox(width: 12),
               _InfoChip(
                 label: 'Heading',
-                value: '${liveBus.smoothedHeading.round()}°',
+                value: '${liveBus.heading.round()}°',
               ),
               const SizedBox(width: 12),
               _InfoChip(
@@ -148,8 +148,8 @@ class BusBottomSheet extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${liveBus.smoothedLat.toStringAsFixed(5)}, '
-                    '${liveBus.smoothedLon.toStringAsFixed(5)}',
+                    '${liveBus.lat.toStringAsFixed(5)}, '
+                    '${liveBus.lon.toStringAsFixed(5)}',
                     style: const TextStyle(
                       fontFeatures: [FontFeature.tabularFigures()],
                       fontSize: 12,
