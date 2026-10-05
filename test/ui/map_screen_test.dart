@@ -738,16 +738,26 @@ void main() {
     });
 
     testWidgets('the camera fits the bus and your stop with the sheet and chips cleared', (tester) async {
-      await pumpFollow(tester);
+      var skew = Duration.zero;
+      await pumpFollow(tester, overrides: [mapClockProvider.overrideWithValue(() => DateTime.now().add(skew))]);
       await startFollowing(tester);
-      final (bus, stop, padding, animate) = surface.fits.single;
+      expect(surface.fits, hasLength(1));
+      // The first fit runs before the follow card has measured its header;
+      // the next one, a second later, uses the settled layout.
+      skew = const Duration(milliseconds: 1100);
+      await _frames(tester, 3);
+      expect(surface.fits, hasLength(2));
+      final (bus, stop, padding, animate) = surface.fits.last;
       expect(bus.longitude, closeTo(lonAt(100), 1e-4));
       expect(stop, LatLng(47.560045, lonAt(500)));
       expect(animate, isTrue);
-      expect(padding.left, 48);
-      expect(padding.right, 48);
+      // Edge air plus half a followed (1.35×) marker, so the badges stay whole.
+      expect(padding.left, 64);
+      expect(padding.right, 64);
       expect(padding.top, greaterThan(16 + 44), reason: 'below the chips');
-      expect(padding.bottom, greaterThan(100), reason: 'above the peeking sheet');
+      final screenHeight = tester.getBottomLeft(find.byType(MapScreen)).dy;
+      final creditTop = tester.getTopLeft(find.textContaining('OpenStreetMap')).dy;
+      expect(padding.bottom, greaterThanOrEqualTo(screenHeight - creditTop + 16), reason: 'above the credit and the peeking sheet');
     });
 
     testWidgets('while following, the route is drawn as a driven and an ahead part', (tester) async {
