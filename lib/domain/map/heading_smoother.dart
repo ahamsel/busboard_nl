@@ -4,16 +4,18 @@
 /// after a render gap over [snapGap]. One instance per map; call [prune] with
 /// the vehicles still drawn.
 class HeadingSmoother {
-  static const double maxDegreesPerSecond = 180;
+  static const double defaultMaxDegreesPerSecond = 180;
   static const Duration snapGap = Duration(seconds: 2);
 
+  final double maxDegreesPerSecond;
   final _state = <String, ({double heading, DateTime at})>{};
+
+  HeadingSmoother({this.maxDegreesPerSecond = defaultMaxDegreesPerSecond});
 
   double smooth(String vehicleId, double target, DateTime now) {
     // Ignore non-finite targets: return previous heading without storing state
     if (!target.isFinite) {
       final prev = _state[vehicleId];
-      _state.remove(vehicleId); // Clear state for next valid call
       return prev?.heading ?? 0;
     }
 
