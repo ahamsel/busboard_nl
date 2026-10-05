@@ -298,4 +298,15 @@ void main() {
     await _host(tester, _snap(), textScale: 2, width: 320);
     expect(tester.takeException(), isNull);
   });
+
+  group('followEndMessage', () {
+    test('words each ending, and says nothing about an arrival', () {
+      expect(followEndMessage(FollowEnd.passedYourStop, '2573', 'MUN Centre'), 'Bus 2573 has passed MUN Centre');
+      expect(followEndMessage(FollowEnd.passedYourStop, '2573', null), 'Bus 2573 has passed your stop');
+      expect(followEndMessage(FollowEnd.tripEnded, '2573', 'MUN Centre'), 'Bus 2573 has finished its trip');
+      expect(followEndMessage(FollowEnd.lostContact, '2573', 'MUN Centre'), 'Lost contact with bus 2573');
+      expect(followEndMessage(FollowEnd.notFound, '2573', 'MUN Centre'), "Bus 2573 isn't reporting its position");
+      expect(followEndMessage(FollowEnd.arrived, '2573', 'MUN Centre'), isNull);
+    });
+  });
 }
