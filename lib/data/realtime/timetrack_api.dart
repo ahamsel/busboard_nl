@@ -386,7 +386,13 @@ class TimeTrackApi {
       'EARLY' || 'AHEAD' => rawMins.abs(),
       _ => 0,
     };
-    final delayMins = -scheduleDifferenceMins;
+    // 'NO DATA', empty or unrecognised statuses carry no delay; reporting 0
+    // would read as "on time". Same as the GTFS-Realtime path with no delay.
+    final delayKnown = switch (opStatus) {
+      'BEHIND' || 'LATE' || 'EARLY' || 'AHEAD' || 'ON TIME' => true,
+      _ => false,
+    };
+    final int? delayMins = delayKnown ? -scheduleDifferenceMins : null;
     final positionTime = _readString(row, 'positionTime');
 
     return TimeTrackVehicle(
