@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/widgets.dart' show EdgeInsets;
+import 'package:flutter/widgets.dart' show EdgeInsets, Size;
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
 import '../../domain/location/nearest_stop_service.dart';
@@ -53,6 +53,49 @@ class FollowCamera {
       return CenterMove(_inWindow(mid, nearZoom, padding), nearZoom);
     }
     return FitMove(bus, stop);
+  }
+
+  /// The camera (centre and zoom, north-up) that shows [a] and [b] inside the
+  /// part of a [view] left clear by [padding], filling it along the tighter
+  /// side, never closer than [maxZoom]. Web Mercator on MapLibre's 512-point
+  /// world. Computed here rather than with the platform's bounds fit, because
+  /// MapLibre iOS centres the bounds as if the padding were symmetric: with a
+  /// tall card below and chips above, the far point was drawn under the card.
+  static ({LatLng target, double zoom}) fitCamera(
+    LatLng a,
+    LatLng b, {
+    required EdgeInsets padding,
+    required Size view,
+    double maxZoom = 18,
+  }) {
+    final w = math.max(1.0, view.width - padding.horizontal);
+    final h = math.max(1.0, view.height - padding.vertical);
+    final ax = _mercX(a.longitude), ay = _mercY(a.latitude);
+    final bx = _mercX(b.longitude), by = _mercY(b.latitude);
+    final dx = (ax - bx).abs(), dy = (ay - by).abs();
+    final worldFit = math.min(dx == 0 ? double.infinity : w / dx, dy == 0 ? double.infinity : h / dy);
+    final zoom = worldFit.isInfinite ? maxZoom : math.min(maxZoom, math.log(worldFit / _worldPoints) / math.ln2);
+    final world = _worldPoints * math.pow(2, zoom);
+    // The middle of the two points goes to the middle of the window, which
+    // sits off the view's centre by half the padding difference.
+    final cx = (ax + bx) / 2 - (padding.left - padding.right) / 2 / world;
+    final cy = (ay + by) / 2 - (padding.top - padding.bottom) / 2 / world;
+    return (target: LatLng(_latOf(cy), cx * 360 - 180), zoom: zoom);
+  }
+
+  /// MapLibre Native's world width at zoom 0, in points.
+  static const double _worldPoints = 512;
+
+  static double _mercX(double lon) => (lon + 180) / 360;
+
+  static double _mercY(double lat) {
+    final r = lat * math.pi / 180;
+    return (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2;
+  }
+
+  static double _latOf(double y) {
+    final n = math.pi * (1 - 2 * y);
+    return math.atan((math.exp(n) - math.exp(-n)) / 2) * 180 / math.pi;
   }
 
   /// The camera centre that shows [point] in the middle of the padded window

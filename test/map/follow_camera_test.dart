@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:busboard_nl/ui/map/follow_camera.dart';
-import 'package:flutter/widgets.dart' show EdgeInsets;
+import 'package:flutter/widgets.dart' show EdgeInsets, Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
@@ -54,5 +54,55 @@ void main() {
   test('without padding the close move centres on the midpoint', () {
     final move = FollowCamera().next(bus: bus, stop: nearStop, now: _t0) as CenterMove;
     expect(move.target.latitude, closeTo((bus.latitude + nearStop.latitude) / 2, 1e-12));
+  });
+
+  group('fitCamera', () {
+    // Web Mercator, MapLibre's 512-point world: where [p] is drawn for [cam].
+    (double, double) screen(LatLng p, ({LatLng target, double zoom}) cam, Size view) {
+      double mx(double lon) => (lon + 180) / 360;
+      double my(double lat) {
+        final r = lat * math.pi / 180;
+        return (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2;
+      }
+      final s = 512 * math.pow(2, cam.zoom);
+      return (
+        (mx(p.longitude) - mx(cam.target.longitude)) * s + view.width / 2,
+        (my(p.latitude) - my(cam.target.latitude)) * s + view.height / 2,
+      );
+    }
+
+    // The case seen live on a 13-inch iPad: a tall card leaves far more
+    // padding below than above, and MapLibre iOS centred the bounds as if
+    // the padding were symmetric, drawing the bus under the card.
+    const view = Size(1032, 1376);
+    const padding = EdgeInsets.fromLTRB(64, 172, 64, 397);
+    const bus = LatLng(47.561607, -52.749134);
+    const stop = LatLng(47.573370, -52.735682);
+
+    test('keeps both points inside the padded window, however lopsided', () {
+      final cam = FollowCamera.fitCamera(bus, stop, padding: padding, view: view);
+      for (final p in [bus, stop]) {
+        final (x, y) = screen(p, cam, view);
+        expect(x, inInclusiveRange(padding.left - 0.5, view.width - padding.right + 0.5));
+        expect(y, inInclusiveRange(padding.top - 0.5, view.height - padding.bottom + 0.5));
+      }
+    });
+
+    test('fills the window along the tighter side', () {
+      final cam = FollowCamera.fitCamera(bus, stop, padding: padding, view: view);
+      final (bx, by) = screen(bus, cam, view);
+      final (sx, sy) = screen(stop, cam, view);
+      final w = view.width - padding.horizontal, h = view.height - padding.vertical;
+      final fill = math.max((bx - sx).abs() / w, (by - sy).abs() / h);
+      expect(fill, closeTo(1, 0.01));
+    });
+
+    test('never zooms closer than maxZoom for two points on top of each other', () {
+      final cam = FollowCamera.fitCamera(bus, bus, padding: padding, view: view, maxZoom: 16.5);
+      expect(cam.zoom, 16.5);
+      final (x, y) = screen(bus, cam, view);
+      expect(x, closeTo(padding.left + (view.width - padding.horizontal) / 2, 0.5));
+      expect(y, closeTo(padding.top + (view.height - padding.vertical) / 2, 0.5));
+    });
   });
 }
