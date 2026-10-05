@@ -83,7 +83,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **Dark colours:** land `#141C25`, water `#0E2A40`, parks `#16261F`, roads `#24303C` / `#2E3B48`, labels `#7D8B99`.
 - **Clutter removed:** POI icons, building outlines below zoom 16, minor road labels below zoom 15, and transit layers from the base map (we draw our own).
 - **Theme:** the map follows the app theme, or the Settings → Map theme override.
-- **Gestures:** rotation and tilt are off, so the map stays north-up and there's no compass. MapLibre's own "i" attribution button can't be removed through maplibre_gl 0.27 (Android forces it on), so it sits bottom-left, tinted `muted`, directly after a small kit text link, "© OpenStreetMap · OpenFreeMap", that is always visible above the sheet and opens the credits. *(Amended in 3b-2.)*
+- **Gestures:** rotation and tilt are off, so the map stays north-up and there's no compass. MapLibre's own "i" attribution button can't be removed through maplibre_gl 0.27 (Android forces it on), so it sits bottom-left, tinted `muted`, directly after a small kit text link, "© OpenStreetMap · OpenFreeMap", that is always visible above the sheet and opens the credits (the credit's text size is capped at 1.3×; the button follows the measured link width). *(Amended in 3b-2.)*
 
 ### 3.2 Layers (bottom to top)
 1. **Route line** (follow mode only):

@@ -41,7 +41,10 @@ BusTrackingState _bus() => BusTrackingState(
 
 /// The last config the stub map was built with, so tests can tap the "map".
 MapViewConfig? _config;
-final _surface = FakeMapSurface();
+var _surface = FakeMapSurface();
+
+/// Stands in for the map tab going offstage in the shell.
+final _tickerMode = ValueNotifier<bool>(true);
 
 Widget _stubMap(MapViewConfig config) {
   _config = config;
@@ -49,11 +52,81 @@ Widget _stubMap(MapViewConfig config) {
   return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4));
 }
 
-Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, Map<String, BusTrackingState> buses = const {}, double textScale = 1}) async {
+
+/// Records bus updates and can hold them open.
+class _RecordingSurface extends FakeMapSurface {
+  final busSets = <List<Map<String, dynamic>>>[];
+  final _held = <Completer<void>>[];
+  bool hold = false;
+  bool failImages = false;
+
+  void releaseHeld() {
+    hold = false;
+    for (final c in _held) {
+      c.complete();
+    }
+    _held.clear();
+  }
+
+  @override
+  Future<void> addImage(String name, Uint8List bytes) async {
+    if (failImages) throw StateError('addImage failed');
+    return super.addImage(name, bytes);
+  }
+
+  @override
+  Future<void> setGeoJsonSource(String id, Map<String, dynamic> data) async {
+    await super.setGeoJsonSource(id, data);
+    if (id != 'bb-buses') return;
+    busSets.add((data['features'] as List).cast<Map<String, dynamic>>());
+    if (hold) {
+      final c = Completer<void>();
+      _held.add(c);
+      await c.future;
+    }
+  }
+}
+
+/// `myLocation()` answers from a script, one entry per call.
+class _SequencedLocationSurface extends FakeMapSurface {
+  _SequencedLocationSurface(this._script);
+  final List<LatLng?> _script;
+  int locationReads = 0;
+
+  @override
+  Future<LatLng?> myLocation() async => locationReads < _script.length ? _script[locationReads++] : null;
+}
+
+/// Fires the style-loaded callback and gives the real event loop time to
+/// rasterise marker images (they use dart:ui, outside fake-async time).
+Future<void> _styleLoaded(FakeMapSurface surface) async {
+  _config!.onStyleLoaded();
+  await Future<void>.delayed(const Duration(milliseconds: 300));
+}
+
+/// [n] 130 ms ticks; between them the real loop runs so marker images finish.
+Future<void> _frames(WidgetTester tester, int n) async {
+  for (var i = 0; i < n; i++) {
+    await tester.pump(const Duration(milliseconds: 130));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+  }
+}
+
+Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, Map<String, BusTrackingState> buses = const {}, double textScale = 1, Size? size}) async {
+  if (size != null) {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
   SharedPreferences.setMockInitialValues(prefs);
   final router = GoRouter(initialLocation: '/map', routes: [
     GoRoute(path: '/', builder: (_, _) => const Text('PICKER')),
-    GoRoute(path: '/map', builder: (_, _) => const MapScreen()),
+    GoRoute(path: '/map', builder: (_, _) => ValueListenableBuilder<bool>(
+        valueListenable: _tickerMode,
+        builder: (_, enabled, _) => TickerMode(enabled: enabled, child: const MapScreen()),
+      ),
+    ),
     GoRoute(path: '/board/:id', builder: (_, s) => Text('BOARD ${s.pathParameters['id']}')),
     GoRoute(path: '/alerts', builder: (_, _) => const Text('ALERTS')),
   ]);
@@ -87,7 +160,8 @@ void main() {
       (call) async => call.method == 'checkPermission' ? 0 : null,
     );
     _config = null;
-    _surface.calls.clear();
+    _tickerMode.value = true;
+    _surface = FakeMapSurface();
   });
 
   testWidgets('with no stop chosen, the chip and sheet invite you to choose one', (tester) async {
@@ -156,6 +230,154 @@ void main() {
     await _pump(tester);
     expect(find.bySemanticsLabel('My location'), findsOneWidget);
     semantics.dispose();
+  });
+
+
+  group('credit link', () {
+    const credit = '© OpenStreetMap · OpenFreeMap';
+
+    for (final (size, scale) in [
+      (const Size(640, 320), 2.0),
+      (const Size(320, 568), 2.0),
+      (const Size(390, 844), 1.0),
+    ]) {
+      testWidgets('is fully on screen at ${size.width.toInt()}x${size.height.toInt()} text x$scale', (tester) async {
+        await _pump(tester, size: size, textScale: scale);
+        final rect = tester.getRect(find.text(credit));
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.top, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(size.width));
+        expect(rect.bottom, lessThanOrEqualTo(size.height));
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('sits within 12 px above the peeking sheet at 390x844 x1.0', (tester) async {
+      await _pump(tester, size: const Size(390, 844));
+      final text = tester.getRect(find.text(credit));
+      final card = tester.getRect(find.byKey(BBSheet.cardKey));
+      expect(card.top - text.bottom, inInclusiveRange(0, 12));
+    });
+
+    testWidgets('has a hit area at least 44 pt tall', (tester) async {
+      await _pump(tester, size: const Size(390, 844));
+      final hit = tester.getRect(find.ancestor(of: find.text(credit), matching: find.byType(BBPressable)));
+      expect(hit.height, greaterThanOrEqualTo(44));
+    });
+
+    testWidgets("the map's own attribution button starts right after the link", (tester) async {
+      for (final (size, scale) in [(const Size(390, 844), 1.0), (const Size(320, 568), 2.0)]) {
+        await _pump(tester, size: size, textScale: scale);
+        final text = tester.getRect(find.text(credit));
+        // Tests run as Android: margins are in pixels, and dpr is 1 here.
+        expect(_config!.attributionMargin.x, closeTo(text.right + BBSpace.s, 1.5));
+      }
+    });
+  });
+
+  group('first My location tap', () {
+    // Denied until the rider is asked, then granted: the first-ever tap.
+    void mockGeolocator({Map<String, Object>? position}) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('flutter.baseflow.com/geolocator'),
+        (call) async => switch (call.method) {
+          'checkPermission' => 0,
+          'requestPermission' => 2,
+          'getCurrentPosition' => position,
+          _ => null,
+        },
+      );
+    }
+
+    testWidgets('moves the camera even when the location is not ready on the first read', (tester) async {
+      mockGeolocator();
+      final surface = _SequencedLocationSurface([null, const LatLng(47.55, -52.70)]);
+      _surface = surface;
+      await _pump(tester);
+      await tester.tap(find.byType(BBControlPill));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(surface.locationReads, 2);
+      expect(surface.moves.single.$1, const LatLng(47.55, -52.70));
+      expect(surface.moves.single.$2, 15);
+    });
+
+    testWidgets('falls back to the device position when the map never reports one', (tester) async {
+      mockGeolocator(position: {'latitude': 47.51, 'longitude': -52.80, 'timestamp': 0});
+      final surface = _SequencedLocationSurface([null, null, null, null]);
+      _surface = surface;
+      await _pump(tester);
+      await tester.tap(find.byType(BBControlPill));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(surface.locationReads, 3);
+      expect(surface.moves.single.$1, const LatLng(47.51, -52.80));
+    });
+  });
+
+  group('map layers over time', () {
+    testWidgets('a failed style reload leaves the stale layers undrawn', (tester) async {
+      final printed = debugPrint;
+      debugPrint = (message, {wrapWidth}) {}; // the expected install failure is logged
+      final old = _RecordingSurface();
+      _surface = old;
+      await _pump(tester, buses: {'2573': _bus()});
+      await tester.runAsync(() => _styleLoaded(old));
+      await _frames(tester, 3);
+      expect(old.busSets, isNotEmpty, reason: 'the first install draws buses');
+
+      final broken = _RecordingSurface()..failImages = true;
+      _config!.onReady(broken, broken);
+      await tester.runAsync(() => _styleLoaded(broken));
+      old.busSets.clear();
+      await _frames(tester, 4);
+      expect(old.busSets, isEmpty, reason: 'nothing may draw on the surface the old style left behind');
+      expect(broken.busSets, isEmpty);
+      debugPrint = printed;
+    });
+
+    testWidgets('draws one bus update at a time, with the bus, and honours the route filter', (tester) async {
+      final surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(tester, buses: {'2573': _bus()});
+      await tester.runAsync(() => _styleLoaded(surface));
+
+      surface.hold = true;
+      await _frames(tester, 6);
+      expect(surface.busSets, hasLength(1), reason: 'a second frame must wait for the first');
+      expect(surface.busSets.single.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
+
+      surface.releaseHeld();
+      await _frames(tester, 3);
+      expect(surface.busSets.length, greaterThan(1));
+      expect(surface.busSets.last.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
+
+      ProviderScope.containerOf(tester.element(find.byType(MapScreen))).read(mapRouteFilterProvider.notifier).toggle(99);
+      await _frames(tester, 3);
+      expect(surface.busSets.last, isEmpty);
+    });
+
+    testWidgets('an offstage map (tickers off) draws nothing', (tester) async {
+      final surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(tester, buses: {'2573': _bus()});
+      await tester.runAsync(() => _styleLoaded(surface));
+      await _frames(tester, 3);
+      expect(surface.busSets, isNotEmpty);
+
+      _tickerMode.value = false;
+      await tester.pump();
+      surface.busSets.clear();
+      await _frames(tester, 4);
+      expect(surface.busSets, isEmpty);
+
+      _tickerMode.value = true;
+      await tester.pump();
+      await _frames(tester, 3);
+      expect(surface.busSets, isNotEmpty, reason: 'back on screen, it draws again');
+    });
   });
 
   testWidgets('the credit link opens the map credits', (tester) async {
