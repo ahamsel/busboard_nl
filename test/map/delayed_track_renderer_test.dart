@@ -30,12 +30,20 @@ TrackFix _fix(int s, double progress, {String trip = outAndBackTripId, bool offR
   );
 }
 
+/// Metres the renderer dead-reckons a bus last seen at [speed] m/s,
+/// [seconds] of render time past its newest fix (see the 3b-4 group below).
+double _dr(double speed, double seconds) {
+  const tau = DelayedTrackRenderer.deadReckonTauSeconds;
+  final t = math.min(seconds, DelayedTrackRenderer.deadReckonHorizon.inMicroseconds / 1e6);
+  return math.min(speed * tau * (1 - math.exp(-t / tau)), DelayedTrackRenderer.maxDeadReckonMeters);
+}
+
 BusTrack _track(List<TrackFix> fixes) => BusTrack(
       vehicleId: '2573', routeNumber: 10, routeRun: 'Rt 10', headsign: 'Loop',
       fixes: fixes, lastFixAt: fixes.last.fetchTime);
 
 void main() {
-  test('delay covers feed latency plus the fix interval, clamped to 8..30 s', () {
+  test('delay covers feed latency plus the fix interval, clamped to 8..40 s', () {
     final r = DelayedTrackRenderer(_geometry);
     // One fix: its age on arrival (5 s) plus 15 s.
     expect(r.delayFor(_track([_fix(0, 100, fetchLag: 5)])), const Duration(seconds: 20));
@@ -59,9 +67,9 @@ void main() {
     );
     // Fast, low-latency fixes hit the 8 s floor (lags 3 s).
     expect(r.delayFor(_track([_fix(0, 100, fetchLag: 1), _fix(2, 110, fetchLag: 1), _fix(4, 120, fetchLag: 1)])), DelayedTrackRenderer.minDelay);
-    // Slow fixes hit the 30 s ceiling (lags 62 s).
+    // Slow fixes hit the 40 s ceiling (lags 62 s).
     expect(r.delayFor(_track([_fix(0, 100), _fix(60, 400), _fix(120, 700)])), DelayedTrackRenderer.maxDelay);
-    expect(DelayedTrackRenderer.maxDelay, const Duration(seconds: 30));
+    expect(DelayedTrackRenderer.maxDelay, const Duration(seconds: 40));
   });
 
   test('draws the bus between two fixes, along the shape, at now − D', () {
@@ -101,14 +109,15 @@ void main() {
     expect(highWater, closeTo(450, 0.5));
   });
 
-  test('extrapolation past the newest fix is capped at 5 s, then the bus holds', () {
+  test('past the newest fix the bus dead-reckons for at most 20 s, then holds', () {
     final r = DelayedTrackRenderer(_geometry);
     final track = _track([_fix(0, 100), _fix(10, 180)]);
     // D = 12 s. Render time passes the last fix (10 s) at now = 22 s.
     final at27 = r.render(track, _t0.add(const Duration(seconds: 27))).progress!; // 5 s past
-    final at60 = r.render(track, _t0.add(const Duration(seconds: 60))).progress!;
-    expect(at27, closeTo(180 + 8 * 5, 1)); // last segment speed 8 m/s
-    expect(at60, at27);
+    final at60 = r.render(track, _t0.add(const Duration(seconds: 60))).progress!; // 38 s past
+    expect(at27, closeTo(180 + _dr(8, 5), 1e-6)); // last segment speed 8 m/s
+    expect(at60, closeTo(180 + _dr(8, 20), 1e-6));
+    expect(at60, greaterThan(at27));
   });
 
   test('a trip change crosses the terminal in plain geography', () {
@@ -259,11 +268,11 @@ void main() {
 
     test('a pass relabel within 40 m is accepted at once: progress jumps, the dot barely moves', () {
       final r = DelayedTrackRenderer(_geometry);
-      // Render time 15 s: 5 s past the newest fix, the bus is extrapolated
-      // along the return pass to 1550 m.
+      // Render time 15 s: 5 s past the newest fix, the bus is dead-reckoned
+      // along the return pass to about 1536 m.
       final early = _track([_fix(0, 1400), _fix(10, 1500)]);
       final before = r.render(early, _t0.add(const Duration(seconds: 27)));
-      expect(before.progress, closeTo(1550, 1));
+      expect(before.progress, closeTo(1500 + _dr(10, 5), 1e-6));
       // A late fix puts the bus on the outbound pass (7.8 m of curb apart).
       final late = _track([_fix(0, 1400), _fix(10, 1500), _fix(12, 490), _fix(22, 510)]);
       final after = r.render(late, _t0.add(const Duration(seconds: 29))); // render time 17 s
@@ -274,11 +283,12 @@ void main() {
     test('a relabel ends the hold: the next backstep starts a fresh 15 s', () {
       final r = DelayedTrackRenderer(_geometry);
       DateTime nowAt(int atS) => _t0.add(Duration(seconds: atS + 12));
-      // Mark 1550 by extrapolation (render time 15 s).
-      r.render(_track([_fix(0, 1400), _fix(10, 1500)]), nowAt(15));
-      // A backstep of 80 m below the mark begins a hold at 16 s.
+      // Mark about 1536 by dead-reckoning (render time 15 s).
+      final mark = r.render(_track([_fix(0, 1400), _fix(10, 1500)]), nowAt(15)).progress!;
+      expect(mark, closeTo(1500 + _dr(10, 5), 1e-6));
+      // A backstep of 66 m below the mark begins a hold at 16 s.
       final held = r.render(_track([_fix(0, 1400), _fix(10, 1500), _fix(20, 1450)]), nowAt(16));
-      expect(held.progress, closeTo(1550, 1e-6));
+      expect(held.progress, closeTo(mark, 1e-6));
       // The bus is then seen on the other pass: relabel to 500.
       final relabel = r.render(_track([_fix(0, 1400), _fix(10, 1500), _fix(12, 490), _fix(22, 510)]), nowAt(17));
       expect(relabel.progress, closeTo(500, 1e-6));
@@ -408,24 +418,25 @@ void main() {
         firstStep = false;
         last = p;
       }
-      // Eventually on target: the unlimited place at the last frame (held
-      // 5 s past the newest fix, at 1160 + 10 m/s * 5 s).
-      expect(last, closeTo(1210, 1e-6));
+      // Eventually on target: the unlimited place at the last frame, about
+      // 14 s past the newest fix, dead-reckoned to its cap at 10 m/s.
+      expect(last, closeTo(1160 + _dr(10, 14), 1e-6));
     });
 
     test('a skipped fix followed by a jump catches up at no more than 30 m/s', () {
       final r = DelayedTrackRenderer(_geometry);
       final late = _track([_fix(0, 100), _fix(10, 180)]);
-      // Past the newest fix by more than 5 s: extrapolated, then held.
+      // 5 s past the newest fix: dead-reckoned, still easing on.
       var now = _t0.add(const Duration(seconds: 27));
       var last = r.render(late, now).progress!;
-      expect(last, closeTo(220, 1e-6));
+      expect(last, closeTo(180 + _dr(8, 5), 1e-6));
       for (var i = 0; i < 10; i++) {
         now = now.add(frame);
-        last = r.render(late, now).progress!;
-        expect(last, closeTo(220, 1e-6));
+        final p = r.render(late, now).progress!;
+        expect(p - last, inInclusiveRange(0.0, 8 * 0.12), reason: 'frame $i');
+        last = p;
       }
-      // The next fix is 30 s after the last: render time lands 57 m ahead.
+      // The next fix is 30 s after the last: render time lands ~45 m ahead.
       final next = _track([_fix(0, 100), _fix(10, 180), _fix(40, 600)]);
       var steps = 0;
       var movedBack = false;
@@ -445,7 +456,7 @@ void main() {
     test('a render gap of more than 2 s snaps to the target', () {
       final r = DelayedTrackRenderer(_geometry);
       final late = _track([_fix(0, 100), _fix(10, 180)]);
-      expect(r.render(late, _t0.add(const Duration(seconds: 27))).progress, closeTo(220, 1e-6));
+      expect(r.render(late, _t0.add(const Duration(seconds: 27))).progress, closeTo(180 + _dr(8, 5), 1e-6));
       final far = _track([_fix(0, 100), _fix(10, 180), _fix(30, 900)]);
       // 2.5 s later the slewed delay is 12.25 s, render time 17.25 s:
       // 180 + 720 * 7.25 / 20 = 441 m, a 221 m jump, snapped.
@@ -456,10 +467,11 @@ void main() {
     test('a gap of 2 s or less is limited', () {
       final r = DelayedTrackRenderer(_geometry);
       final late = _track([_fix(0, 100), _fix(10, 180)]);
-      expect(r.render(late, _t0.add(const Duration(seconds: 27))).progress, closeTo(220, 1e-6));
+      final start = r.render(late, _t0.add(const Duration(seconds: 27))).progress!;
+      expect(start, closeTo(180 + _dr(8, 5), 1e-6));
       final far = _track([_fix(0, 100), _fix(10, 180), _fix(30, 900)]);
       final bus = r.render(far, _t0.add(const Duration(seconds: 29)));
-      expect(bus.progress, closeTo(220 + 60, 1e-6)); // 30 m/s * 2 s
+      expect(bus.progress, closeTo(start + 60, 1e-6)); // 30 m/s * 2 s
     });
 
     test('a geographic jump (trip change) also catches up at no more than 30 m/s', () {
@@ -479,7 +491,7 @@ void main() {
     test('forget clears the limiter state', () {
       final r = DelayedTrackRenderer(_geometry);
       final late = _track([_fix(0, 100), _fix(10, 180)]);
-      expect(r.render(late, _t0.add(const Duration(seconds: 45))).progress, closeTo(220, 1e-6));
+      expect(r.render(late, _t0.add(const Duration(seconds: 45))).progress, closeTo(180 + _dr(8, 23), 1e-6));
       r.forget('2573');
       final far = _track([_fix(0, 100), _fix(10, 180), _fix(30, 900)]);
       // No state: delay 22 s at once, render time 23.12 s, straight to the
@@ -512,7 +524,8 @@ void main() {
       final before = _track([_fix(0, 1000), _fix(10, 1080)]);
       var now = _t0.add(const Duration(seconds: 27)); // render time 15 s: 5 s past the last fix
       final extrapolated = r.render(before, now);
-      expect(extrapolated.progress, closeTo(1120, 1e-6));
+      final drawn = extrapolated.progress!;
+      expect(drawn, closeTo(1080 + _dr(8, 5), 1e-6));
       // The next fix is 20 s after the last, on a new trip further along: the
       // pair a -> b is a trip change, drawn geographically from where the bus
       // already is, never from the older fix behind it.
@@ -520,8 +533,8 @@ void main() {
       for (var i = 0; i < 20; i++) {
         now = now.add(frame);
         final bus = r.render(after, now);
-        final along = _geometry.snap(bus.lat, bus.lon, outAndBackShapeId, expectedAlong: 1120, minAlong: 1000, maxAlong: 1400)!.distanceAlongRoute;
-        expect(along, greaterThanOrEqualTo(1120 - 0.5), reason: 'frame $i');
+        final along = _geometry.snap(bus.lat, bus.lon, outAndBackShapeId, expectedAlong: drawn, minAlong: 1000, maxAlong: 1400)!.distanceAlongRoute;
+        expect(along, greaterThanOrEqualTo(drawn - 0.5), reason: 'frame $i');
       }
     });
   });
@@ -597,35 +610,48 @@ void main() {
       expect(bus.progress, closeTo(180 + 820 * (200.12 - 10) / 240, 5));
     });
 
-    test('a data-gap snap still holds a target within 60 m behind the mark of the same trip', () {
+    test('a short data gap holds a target within 60 m behind the mark of the same trip', () {
       final r = DelayedTrackRenderer(_geometry);
       final before = _track([_fix(0, 100), _fix(10, 180)]);
       var now = _t0.add(const Duration(seconds: 112));
-      expect(r.render(before, now).progress, closeTo(220, 1e-6)); // extrapolated 40 m past the last fix
-      // The fix 2 min later says the bus is only at about 190: the 30 m
-      // extrapolation overshoot is held, not drawn backward.
+      final mark = r.render(before, now).progress!;
+      expect(mark, closeTo(180 + _dr(8, 90), 1e-6)); // dead-reckoned to its 50 m cap
+      // The fix 2 min later says the bus is only at about 190: the
+      // dead-reckoning overshoot is held, not drawn backward.
       final after = _track([_fix(0, 100), _fix(10, 180), _fix(130, 190)]);
       now = now.add(frame);
-      expect(r.render(after, now).progress, closeTo(220, 1e-6));
+      expect(r.render(after, now).progress, closeTo(mark, 1e-6));
+    });
+
+    test('a long data-gap snap still holds a target within 60 m behind the mark of the same trip', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 100), _fix(10, 180)]);
+      var now = _t0.add(const Duration(seconds: 112));
+      final mark = r.render(before, now).progress!;
+      // 4 min later: a snap, but the target (about 184 m) is held.
+      final after = _track([_fix(0, 100), _fix(10, 180), _fix(250, 190)]);
+      now = now.add(frame);
+      expect(r.render(after, now).progress, closeTo(mark, 1e-6));
     });
 
     test('a 20 s gap in the fixes still glides at no more than 30 m/s', () {
       final r = DelayedTrackRenderer(_geometry);
       final before = _track([_fix(0, 100), _fix(10, 180)]);
       var now = _t0.add(const Duration(seconds: 112));
-      expect(r.render(before, now).progress, closeTo(220, 1e-6));
+      final start = r.render(before, now).progress!;
+      expect(start, closeTo(180 + _dr(8, 90), 1e-6));
       final after = _track([_fix(0, 100), _fix(10, 180), _fix(30, 1000)]);
       now = now.add(frame);
-      expect(r.render(after, now).progress, closeTo(220 + 3.6, 1e-6));
+      expect(r.render(after, now).progress, closeTo(start + 3.6, 1e-6));
     });
 
     test('a re-created track (same vehicle) snaps and does not reuse the old mark', () {
       final r = DelayedTrackRenderer(_geometry);
       final old = _track([_fix(0, 100), _fix(10, 180)]);
-      var now = _t0.add(const Duration(seconds: 27)); // render time 15 s: mark 220
-      expect(r.render(old, now).progress, closeTo(220, 1e-6));
+      var now = _t0.add(const Duration(seconds: 27)); // render time 15 s: mark ~209
+      expect(r.render(old, now).progress, closeTo(180 + _dr(8, 5), 1e-6));
       // The vehicle's route changed: a new track with one fix on the same
-      // trip ID, 100 m behind the old mark. Neither the mark (hold at 220)
+      // trip ID, ~90 m behind the old mark. Neither the mark (hold at ~209)
       // nor the limiter (3.6 m a frame) may apply.
       final fresh = _track([_fix(30, 120)]);
       now = now.add(frame);
@@ -636,12 +662,13 @@ void main() {
       final r = DelayedTrackRenderer(_geometry);
       final full = _track([_fix(0, 100), _fix(10, 180), _fix(20, 260)]);
       var now = _t0.add(const Duration(seconds: 37)); // render time 25 s: 5 s past the last fix
-      expect(r.render(full, now).progress, closeTo(300, 1e-6));
+      final start = r.render(full, now).progress!;
+      expect(start, closeTo(260 + _dr(8, 5), 1e-6));
       // A fix arrives and the store trims the oldest one: the first fix
       // differs, yet this is the same track, limited as usual.
       final trimmed = _track([_fix(10, 180), _fix(20, 260), _fix(30, 1000)]);
       now = now.add(frame);
-      expect(r.render(trimmed, now).progress, closeTo(300 + 3.6, 1e-6));
+      expect(r.render(trimmed, now).progress, closeTo(start + 3.6, 1e-6));
     });
 
     group('marks are scoped to their shape', () {
@@ -668,7 +695,7 @@ void main() {
       test('a bus that changes shape is not held at the old shape\'s progress', () {
         final r = DelayedTrackRenderer(geometry2);
         final onFirst = _track([onShape(outAndBackShapeId, 0, 1400), onShape(outAndBackShapeId, 10, 1500)]);
-        expect(r.render(onFirst, _t0.add(const Duration(seconds: 27))).progress, closeTo(1550, 1e-6));
+        expect(r.render(onFirst, _t0.add(const Duration(seconds: 27))).progress, closeTo(1500 + _dr(10, 5), 1e-6));
         // The same track now carries fixes on another shape (null trip IDs
         // match, so only the shape tells the two apart). Render time 18.x s
         // is inside the new shape's pair, at about 150 m.
@@ -686,9 +713,9 @@ void main() {
       test('a glide does not start from an anchor on another shape', () {
         final r = DelayedTrackRenderer(geometry2);
         final onFirst = _track([onShape(outAndBackShapeId, 0, 1400), onShape(outAndBackShapeId, 10, 1500)]);
-        expect(r.render(onFirst, _t0.add(const Duration(seconds: 27))).progress, closeTo(1550, 1e-6));
+        expect(r.render(onFirst, _t0.add(const Duration(seconds: 27))).progress, closeTo(1500 + _dr(10, 5), 1e-6));
         // A pair across a trip change on the other shape: a straight line
-        // from its first fix (1000 m), not from the old shape's 1550 m.
+        // from its first fix (1000 m), not from the old shape's ~1536 m.
         final changed = _track([
           onShape(outAndBackShapeId, 0, 1400),
           onShape(outAndBackShapeId, 10, 1500),
@@ -740,6 +767,58 @@ void main() {
       final bus = r.render(after, _t0.add(const Duration(seconds: 24)));
       final target = _geometry.poseAt(outAndBackShapeId, 1290)!;
       expect(NearestStopService.haversineDistance(bus.lat, bus.lon, target.lat, target.lon), lessThan(1));
+    });
+  });
+
+  group('3b-4: dead-reckoning past the newest fix', () {
+    const frame = Duration(milliseconds: 120);
+
+    test('decays along the shape and stops growing after 20 s, within 50 m', () {
+      final r = DelayedTrackRenderer(_geometry);
+      // 8 m/s on the last pair; D = 12 s, so render time = now - 12 s.
+      final track = _track([_fix(0, 100), _fix(10, 180)]);
+      double at(double renderS) => r.render(track, _t0.add(Duration(milliseconds: ((renderS + 12) * 1000).round()))).progress! - 180;
+      final ahead = [for (final t in [1.0, 5.0, 10.0, 20.0, 40.0]) at(10 + t)];
+      // Moves on at first nearly at the bus's speed...
+      expect(ahead[0], inInclusiveRange(6.5, 8.0));
+      // ...ever slower...
+      expect(ahead[1] - ahead[0], lessThan(4 * 8.0));
+      expect(ahead[2] - ahead[1], lessThan(ahead[1] - ahead[0]));
+      expect(ahead[3] - ahead[2], lessThan(ahead[2] - ahead[1]));
+      // ...and not at all past 20 s.
+      expect(ahead[4], closeTo(ahead[3], 1e-6));
+      expect(ahead[3], lessThanOrEqualTo(DelayedTrackRenderer.maxDeadReckonMeters + 1e-6));
+      expect(ahead[3], greaterThan(30));
+    });
+
+    test('the overshoot past a fast bus that stopped stays inside the 60 m jitter hold', () {
+      final r = DelayedTrackRenderer(_geometry);
+      // 25 m/s, then the bus stopped at 350 m (the next fix, 20 s later, has
+      // not moved). Render time runs from the 10 s fix to well past it.
+      final moving = _track([_fix(0, 100), _fix(10, 350)]);
+      final stopped = _track([_fix(0, 100), _fix(10, 350), _fix(30, 350)]);
+      var now = _t0.add(const Duration(seconds: 22));
+      var last = 0.0;
+      var high = 0.0;
+      for (var i = 0; i < 500; i++) {
+        // The fix at 30 s arrives 31 s into the wall clock (fetch lag 1 s).
+        final track = now.isBefore(_t0.add(const Duration(seconds: 31))) ? moving : stopped;
+        final p = r.render(track, now).progress!;
+        expect(p, greaterThanOrEqualTo(last - 1e-6), reason: 'frame $i');
+        last = p;
+        if (p > high) high = p;
+        now = now.add(frame);
+      }
+      expect(high - 350, inInclusiveRange(1, 60));
+      expect(last, closeTo(high, 1e-6)); // held, never drawn back
+    });
+
+    test('a last pair that skipped a spur is not dead-reckoned', () {
+      final r = DelayedTrackRenderer(_geometry);
+      // 700 -> 1300 along the out-and-back is 600 m along but under 40 m on
+      // the map: no speed to carry on with.
+      final bus = r.render(_track([_fix(0, 700), _fix(10, 1300)]), _t0.add(const Duration(seconds: 27)));
+      expect(bus.progress, closeTo(1300, 1e-6));
     });
   });
 }

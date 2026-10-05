@@ -30,8 +30,10 @@ class RenderedBus {
 /// between two real fixes (spec §3.4): render time = now − D, interpolated by
 /// distance along the shape, never backward on the same trip; geographic
 /// interpolation across a trip change, off route or a backward step of more
-/// than 150 m (a pass correction, not motion); at most
-/// [maxExtrapolation] past the newest fix, then hold.
+/// than 150 m (a pass correction, not motion). Past the newest fix the bus
+/// dead-reckons along the shape at the last pair's speed, decaying (see
+/// [_beyondLast]), for at most [deadReckonHorizon] and
+/// [maxDeadReckonMeters], then holds.
 ///
 /// The last stage is a continuity limiter: the drawn bus never moves faster
 /// than [_maxCatchUpMps] (30 m/s) between two consecutive frames of one
@@ -61,10 +63,29 @@ class DelayedTrackRenderer {
 
   final Map<String, _VehicleState> _state = {};
 
+  /// The shortest delay: below it a fix arriving a little late already
+  /// leaves the bus nothing to glide toward.
   static const Duration minDelay = Duration(seconds: 8);
-  static const Duration maxDelay = Duration(seconds: 30);
-  static const Duration maxExtrapolation = Duration(seconds: 5);
+
+  /// The longest delay: covers the feed's p90 lag (39 s on the 2026-10-05
+  /// rush hour, when 30 s left 13% of frames past the newest fix), at the cost
+  /// of drawing the bus that much behind real time.
+  static const Duration maxDelay = Duration(seconds: 40);
   static const Duration _delayMargin = Duration(seconds: 1);
+
+  /// Dead-reckoning past the newest fix stops growing after this much render
+  /// time: by then the next fix is late, and guessing further is noise.
+  static const Duration deadReckonHorizon = Duration(seconds: 20);
+
+  /// Time constant of the dead-reckoning's decay, seconds: the bus is drawn
+  /// at the last pair's speed at first, slowing as the guess gets older, so
+  /// it eases into a stop rather than halting.
+  static const double deadReckonTauSeconds = 7;
+
+  /// Dead-reckoning never runs further than this past the newest fix: under
+  /// the [_jitterMeters] hold, so if the bus in fact stopped there, the next
+  /// fix is held, never drawn as a step back.
+  static const double maxDeadReckonMeters = 55;
 
   /// With a single fix there is no interval to measure: assume this one.
   static const double _singleFixIntervalSeconds = 15;
@@ -236,7 +257,7 @@ class DelayedTrackRenderer {
   /// A snap draws the target as is and starts the never-backward mark at it.
   /// The one exception is a target at most [_jitterMeters] behind the mark of
   /// the same trip and shape (after a long gap on a continuing track): that
-  /// is the extrapolation overshoot the jitter band exists for, so it is
+  /// is the dead-reckoning overshoot the jitter band exists for, so it is
   /// held.
   RenderedBus _startMark(RenderedBus bus, DateTime at, _VehicleState state) {
     final p = bus.progress;
@@ -348,7 +369,7 @@ class DelayedTrackRenderer {
   /// off-route stretch, a pass correction, a step along the shape that does
   /// not fit the map, see [_alongStretch]) is drawn in a straight line from
   /// [a] to [b]. If the bus was already drawn further along [a]'s trip than
-  /// [a] itself (extrapolated past it), the line starts at that drawn point
+  /// [a] itself (dead-reckoned past it), the line starts at that drawn point
   /// ([mark], the vehicle's last on-shape high-water mark, which survives the
   /// off-shape frames of the glide), so the bus is not pulled back to [a].
   RenderedBus _between(String id, TrackFix a, TrackFix b, double f, DateTime at, _Mark? mark) {
@@ -386,21 +407,37 @@ class DelayedTrackRenderer {
     return _raw(id, aLat + (bLat - aLat) * f, aLon + (bLon - aLon) * f, heading, f < 0.5 ? a.tripId : b.tripId);
   }
 
+  /// Render time [at] is past the newest fix: dead-reckoning along the shape
+  /// at the last pair's speed v, decaying with time constant τ
+  /// ([deadReckonTauSeconds]): v·τ·(1 − e^(−t/τ)) metres ahead after t
+  /// seconds, t capped at [deadReckonHorizon], the distance at
+  /// [maxDeadReckonMeters]. Only a last pair on one trip and shape whose step
+  /// fits the map (see [_alongStretch]) gives a speed; otherwise, and off
+  /// the shape, the bus holds at the newest fix.
   RenderedBus _beyondLast(BusTrack track, DateTime at) {
     final fixes = track.fixes;
     final last = fixes.last;
     if (fixes.length >= 2 && last.progress != null && last.shapeId != null) {
       final prev = fixes[fixes.length - 2];
       if (prev.tripId == last.tripId && prev.shapeId == last.shapeId && prev.progress != null) {
+        final along = last.progress! - prev.progress!;
         final segSeconds = last.gpsTime.difference(prev.gpsTime).inMilliseconds / 1000.0;
-        final speed = segSeconds <= 0 ? 0.0 : ((last.progress! - prev.progress!) / segSeconds).clamp(0.0, 30.0);
-        final past = at.difference(last.gpsTime);
-        final ahead = (past > maxExtrapolation ? maxExtrapolation : past).inMilliseconds / 1000.0;
-        final onShape = _onShape(track.vehicleId, last.shapeId!, last.progress! + speed * ahead, last.tripId);
+        final plausible = _plausibleAlong(along, prev.snappedLat ?? prev.lat, prev.snappedLon ?? prev.lon, last.snappedLat ?? last.lat, last.snappedLon ?? last.lon);
+        final speed = segSeconds <= 0 || !plausible ? 0.0 : (along / segSeconds).clamp(0.0, _maxCatchUpMps);
+        final onShape = _onShape(track.vehicleId, last.shapeId!, last.progress! + _deadReckoned(speed, at.difference(last.gpsTime)), last.tripId);
         if (onShape != null) return onShape;
       }
     }
     return _atFix(track.vehicleId, last);
+  }
+
+  /// Metres a bus last seen at [speed] m/s is dead-reckoned [past] the fix
+  /// (see [_beyondLast]).
+  static double _deadReckoned(double speed, Duration past) {
+    final horizon = deadReckonHorizon.inMicroseconds / 1e6;
+    final t = math.min(past.inMicroseconds / 1e6, horizon);
+    final ahead = speed * deadReckonTauSeconds * (1 - math.exp(-t / deadReckonTauSeconds));
+    return math.min(ahead, maxDeadReckonMeters);
   }
 
   RenderedBus? _onShape(String id, String shapeId, double progress, String? tripId) {
