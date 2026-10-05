@@ -105,7 +105,11 @@ class FollowCardHeader extends StatelessWidget {
     final subtitle = snapshot.stale
         ? 'Bus $id · Last seen ${agoText(snapshot.lastSeenAgo ?? Duration.zero)}'
         : (delay.isEmpty ? 'Bus $id' : 'Bus $id · $delay');
-    final line = arrived ? 'Arrived at ${yourStopName ?? 'your stop'}' : stopsToGoText(snapshot.stopsToYourStop, yourStopName);
+    // The stop arrived at, from the trip: your stop may have been changed
+    // during the linger.
+    final arrivedAt = _safeIndices(snapshot).yours;
+    final arrivedName = arrivedAt == null ? yourStopName : snapshot.stops[arrivedAt].name;
+    final line = arrived ? 'Arrived at ${arrivedName ?? 'your stop'}' : stopsToGoText(snapshot.stopsToYourStop, yourStopName);
     final minutes = minutesToYourStop;
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),

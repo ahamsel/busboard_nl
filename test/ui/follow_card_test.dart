@@ -65,6 +65,7 @@ Future<void> _host(
   VoidCallback? onStop,
   VoidCallback? onSeeAll,
   String? routeLabel,
+  String? yourStopName = 'MUN Centre',
   double textScale = 1,
   double width = 390,
 }) async {
@@ -82,7 +83,7 @@ Future<void> _host(
         SliverToBoxAdapter(
           child: FollowCardHeader(
             snapshot: snapshot,
-            yourStopName: 'MUN Centre',
+            yourStopName: yourStopName,
             minutesToYourStop: minutes,
             tripHeadsign: tripHeadsign,
             routeLabel: routeLabel,
@@ -147,6 +148,12 @@ void main() {
   testWidgets('header: arrival says so', (tester) async {
     await _host(tester, _snap(busIndex: 2, toGo: 0, arrived: true));
     expect(find.text('Arrived at MUN Centre'), findsOneWidget);
+  });
+
+  testWidgets('header: arrival names the stop arrived at, even if your stop has changed since', (tester) async {
+    await _host(tester, _snap(busIndex: 2, toGo: 0, arrived: true), yourStopName: 'Village Mall');
+    expect(find.text('Arrived at MUN Centre'), findsOneWidget);
+    expect(find.textContaining('Village Mall'), findsNothing);
   });
 
   testWidgets('header: during the arrival linger the followed trip, not the bus next trip, is described', (tester) async {
