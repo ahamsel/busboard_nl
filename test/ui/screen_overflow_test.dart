@@ -2,15 +2,22 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
+import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
+import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:busboard_nl/ui/map/bus_card.dart';
+import 'package:busboard_nl/ui/map/my_stop_card.dart';
+import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
 import 'package:busboard_nl/ui/stop_picker/stop_picker_screen.dart';
 import 'package:flutter/material.dart';
@@ -79,10 +86,58 @@ final _failing = MockClient((_) async => http.Response('down', 500));
 final _emptyKiosk = MockClient((_) async => http.Response('{"arrivals":[]}', 200));
 
 class _Screen {
-  const _Screen(this.name, this.build);
+  const _Screen(this.name, this.build, {this.afterPump});
   final String name;
   final Widget Function(WidgetTester tester) build;
+
+  /// Runs once after the first settle, e.g. to expand a collapsed section.
+  final Future<void> Function(WidgetTester tester)? afterPump;
 }
+
+// The way the map screen hosts a card: header and body as sliver boxes.
+Widget _card(Widget header, Widget body) => CustomScrollView(
+      slivers: [SliverToBoxAdapter(child: header), SliverToBoxAdapter(child: body)],
+    );
+
+ArrivalRow _arrival(int minutes, {bool live = true}) => ArrivalRow(
+      routeShortName: '10A',
+      headsign: 'Signal Hill Road via Elizabeth Avenue',
+      scheduledTime: GtfsTime.parse('09:52:00'),
+      predictedTime: live ? GtfsTime.parse('09:55:00') : null,
+      minutesAway: minutes,
+      liveStatus: live ? LiveStatus.behind : null,
+      isLive: live,
+      tripId: 't',
+      vehicleNumber: '2134',
+      isEnhanced: false,
+      routeRun: '10A-1',
+      currentLocation: _longStopName,
+    );
+
+final _arrivals = [_arrival(2), _arrival(9), _arrival(17, live: false)];
+
+BusTrackingState _bus({BusStatus status = BusStatus.stale}) => BusTrackingState(
+      routeRun: 'Rt 10',
+      vehicleId: '2573',
+      routeNumber: 10,
+      headsign: 'Signal Hill Road via Elizabeth Avenue',
+      lat: 47.56,
+      lon: -52.71,
+      heading: 270,
+      speedKmh: 29,
+      lastGpsTime: DateTime.now().subtract(const Duration(minutes: 3)),
+      status: status,
+      lastUpdateTime: DateTime.now(),
+      schedDiffMins: -12,
+    );
+
+List<Override> _mapOverrides({List<ArrivalRow> arrivals = const []}) => [
+      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
+      busTrackingStreamProvider.overrideWith((ref) => Stream.value({'2573': _bus()})),
+      serviceUpdatesProvider.overrideWith(
+          (ref) => Stream.value(_updates([_alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.')]))),
+    ];
 
 Widget _app(Widget screen, List<Override> overrides) {
   final container = ProviderContainer(retry: (_, _) => null, overrides: overrides);
@@ -153,6 +208,45 @@ final _screens = <_Screen>[
           'Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, or not known, errno = 8), address = busboard.example.com, port = 443'))),
     ]);
   }),
+  _Screen('map: stop card (3 arrivals, alert)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(
+      _card(const StopCardHeader(stop: _stop), const StopCardBody(stop: _stop)),
+      _mapOverrides(arrivals: _arrivals),
+    );
+  }),
+  _Screen('map: bus card (technical details open, alert)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(
+      _card(const BusCardHeader(vehicleId: '2573'), const BusCardBody(vehicleId: '2573')),
+      _mapOverrides(),
+    );
+  }, afterPump: (tester) async {
+    await tester.tap(find.text('Technical details'));
+    await tester.pumpAndSettle();
+    expect(find.text('29 km/h'), findsOneWidget, reason: 'technical details are open');
+  }),
+  _Screen('map: your-stop card (2 arrivals)', (t) {
+    SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
+    return _app(
+      _card(MyStopCard.header(), MyStopCard.body()),
+      _mapOverrides(arrivals: _arrivals.take(2).toList()),
+    );
+  }),
+  _Screen('map: your-stop card (3 arrivals)', (t) {
+    SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
+    return _app(
+      _card(MyStopCard.header(), MyStopCard.body()),
+      _mapOverrides(arrivals: _arrivals),
+    );
+  }),
+  _Screen('map: your-stop card (no stop chosen)', (t) {
+    SharedPreferences.setMockInitialValues({});
+    return _app(
+      _card(MyStopCard.header(), MyStopCard.body()),
+      _mapOverrides(),
+    );
+  }),
   _Screen('settings', (t) {
     SharedPreferences.setMockInitialValues({});
     return _app(const SettingsScreen(), [
@@ -185,6 +279,8 @@ void main() {
         await tester.pumpWidget(screen.build(tester));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: 'initial layout');
+        await screen.afterPump?.call(tester);
+        expect(tester.takeException(), isNull, reason: 'after setup');
         await _scrollThrough(tester);
 
         // Unmount and let the board's refresh timer / request timeouts drain.
