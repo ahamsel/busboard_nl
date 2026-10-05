@@ -28,15 +28,8 @@ final _forbidden = RegExp(
 /// Catches anything the name list above misses, including `show`/`as` forms.
 final _materialImport = RegExp(r'''^\s*(import|export)\s+['"]package:flutter/(material|cupertino)\.dart['"]''');
 
-/// Screens not yet rebuilt on the kit. Covers Material/Cupertino widgets and
-/// Material theme reads (Theme.of / ColorScheme / Colors), which Phase 2
-/// replaces with context.bb. Phase 2 removes entries as it migrates each
-/// file; the list must only ever shrink.
-const _legacyAllowList = {
-  'lib/ui/map/bus_bottom_sheet.dart',
-  'lib/ui/map/map_screen.dart',
-  'lib/ui/map/stop_bottom_sheet.dart',
-};
+/// Empty: every screen is on the kit (Phase 3b-2). It must stay empty.
+const _legacyAllowList = <String>{};
 
 void main() {
   final files = Directory('lib/ui')

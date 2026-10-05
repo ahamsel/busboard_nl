@@ -83,7 +83,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **Dark colours:** land `#141C25`, water `#0E2A40`, parks `#16261F`, roads `#24303C` / `#2E3B48`, labels `#7D8B99`.
 - **Clutter removed:** POI icons, building outlines below zoom 16, minor road labels below zoom 15, and transit layers from the base map (we draw our own).
 - **Theme:** the map follows the app theme, or the Settings → Map theme override.
-- **Gestures:** rotation and tilt are off, so the map stays north-up and there's no compass. The default MapLibre "i" attribution control is replaced by a small kit text link, "© OpenStreetMap · OpenFreeMap", at the bottom-left above the sheet. It's always visible and opens the credits.
+- **Gestures:** rotation and tilt are off, so the map stays north-up and there's no compass. MapLibre's own "i" attribution button can't be removed through maplibre_gl 0.27 (Android forces it on), so it sits bottom-left, tinted `muted`, directly after a small kit text link, "© OpenStreetMap · OpenFreeMap", that is always visible above the sheet and opens the credits. *(Amended in 3b-2.)*
 
 ### 3.2 Layers (bottom to top)
 1. **Route line** (follow mode only):
@@ -106,7 +106,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **Right-hand `BBControlPill`:** my location.
 - **Bottom `BBSheet`:** at peek it shows the selected stop's next 1–2 arrivals, and dragging it up shows the full list.
 - **Tapping a stop:** opens its stop card, with arrivals, *Set as my stop* and *Open board*.
-- **Tapping a bus:** opens its bus card, with route, destination, bus number, early/late, a **Follow** button, and a collapsed *Technical details* section (speed, heading, last GPS time).
+- **Tapping a bus:** opens its bus card, with route, destination, bus number, early/late, a **Follow** button, and a collapsed *Technical details* section (speed, heading, last GPS time). *(3b-2 ships the bus card without the Follow button; Plan 3b-3 adds it with follow mode.)*
 
 ### 3.4 Motion: drawn a few seconds behind, always smooth
 `BusMotionEngine`'s live extrapolation is replaced by **delayed interpolation** along the route between real GPS fixes. This is pure Dart in `lib/domain/map/`, with no Flutter imports and an injected clock.

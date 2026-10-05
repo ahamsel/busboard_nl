@@ -101,7 +101,7 @@ void main() {
   double reserved(WidgetTester tester) =>
       BBNavBar.reservedHeight(tester.element(find.byType(BBNavBar)));
 
-  testWidgets('map content sits above the bar; board and alerts run under it', (
+  testWidgets('every branch runs under the bar, the map included', (
     tester,
   ) async {
     await _pump(tester);
@@ -113,7 +113,7 @@ void main() {
 
     await tester.tap(find.text('Map'));
     await tester.pumpAndSettle();
-    expect(tester.getRect(find.byKey(_mapKey)).bottom, height - r);
+    expect(tester.getRect(find.byKey(_mapKey)).bottom, height);
 
     await tester.tap(find.text('Alerts'));
     await tester.pumpAndSettle();
@@ -121,7 +121,7 @@ void main() {
   });
 
   testWidgets(
-    'the map content clears the bottom safe area as well as the bar',
+    'the map runs under the bar (it lays out its own sheet)',
     (tester) async {
       await _pump(tester, padding: const EdgeInsets.only(bottom: 34));
       final height = screenHeight(tester);
@@ -131,10 +131,7 @@ void main() {
       expect(tester.getRect(find.byKey(_boardKey)).bottom, height);
       await tester.tap(find.text('Map'));
       await tester.pumpAndSettle();
-      expect(
-        tester.getRect(find.byKey(_mapKey)).bottom,
-        height - (BBNavBar.heightFor(ctx) + BBNavBar.gap + 34),
-      );
+      expect(tester.getRect(find.byKey(_mapKey)).bottom, height);
       // The bar's own box spans the pill, the gap and the home-indicator inset.
       final bar = tester.getRect(find.byType(BBNavBar));
       expect(bar.bottom, height);
@@ -142,7 +139,7 @@ void main() {
     },
   );
 
-  testWidgets('the keyboard does not push the bar up or grow the map padding', (
+  testWidgets('the keyboard does not push the bar up', (
     tester,
   ) async {
     await _pump(tester, viewInsets: const EdgeInsets.only(bottom: 300));
@@ -157,6 +154,6 @@ void main() {
 
     await tester.tap(find.text('Map'));
     await tester.pumpAndSettle();
-    expect(tester.getRect(find.byKey(_mapKey)).bottom, height - r);
+    expect(tester.getRect(find.byKey(_mapKey)).bottom, height);
   });
 }

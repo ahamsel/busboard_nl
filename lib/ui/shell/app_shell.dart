@@ -6,16 +6,13 @@ import '../../state/providers.dart';
 import '../kit/kit.dart';
 
 /// Tab shell: branch content with the floating Harbour nav bar on top.
-/// Board and Alerts scroll under the bar (they reserve
-/// [BBNavBar.reservedHeight] at the end of their lists). The legacy map
-/// (rebuilt in Phase 3) is laid out above the bar so its controls stay
-/// reachable.
+/// Every branch runs under the bar. Board and Alerts reserve
+/// [BBNavBar.reservedHeight] at the end of their lists; the map lays out its
+/// own sheet above the bar (spec §2.4).
 class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
-
-  static const _mapBranch = 1;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,12 +25,7 @@ class AppShell extends ConsumerWidget {
         color: context.bb.colors.bg,
         child: Stack(
           children: [
-            Positioned.fill(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: index == _mapBranch ? BBNavBar.reservedHeight(context) : 0),
-                child: navigationShell,
-              ),
-            ),
+            Positioned.fill(child: navigationShell),
             Positioned(
               left: 0,
               right: 0,
