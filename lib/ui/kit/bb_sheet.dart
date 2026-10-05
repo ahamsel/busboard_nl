@@ -268,10 +268,11 @@ class _BBSheetState extends State<BBSheet> {
           snap: true,
           snapSizes: _snapSizes,
           snapAnimationDuration: _snapDuration,
-          builder: (context, scrollController) => DecoratedBox(
-            key: BBSheet.cardKey,
-            decoration: bb.floating(radius: BBRadius.sheet),
-            child: ClipRRect(
+          builder: (context, scrollController) {
+            final card = bb.floating(radius: BBRadius.sheet);
+            // In dark mode the hairline is the card's edge; paint it in front
+            // of the clipped content so the pinned header can't cover it.
+            final content = ClipRRect(
               borderRadius: BorderRadius.circular(BBRadius.sheet),
               child: CustomScrollView(
                 controller: scrollController,
@@ -289,8 +290,20 @@ class _BBSheetState extends State<BBSheet> {
                   ...widget.slivers,
                 ],
               ),
-            ),
-          ),
+            );
+            return DecoratedBox(
+              key: BBSheet.cardKey,
+              // Explicit: BoxDecoration.copyWith(border: null) keeps the old border.
+              decoration: BoxDecoration(color: card.color, borderRadius: card.borderRadius, boxShadow: card.boxShadow),
+              child: card.border == null
+                  ? content
+                  : DecoratedBox(
+                      position: DecorationPosition.foreground,
+                      decoration: BoxDecoration(border: card.border, borderRadius: card.borderRadius),
+                      child: content,
+                    ),
+            );
+          },
         ),
       ),
     );

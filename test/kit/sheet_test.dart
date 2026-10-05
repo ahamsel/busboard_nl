@@ -16,6 +16,7 @@ Widget _host(
   double bottomInset = 0,
   bool dismissible = false,
   VoidCallback? onDismiss,
+  Brightness brightness = Brightness.light,
 }) {
   return kitHost(
     MediaQuery(
@@ -39,6 +40,7 @@ Widget _host(
         ),
       ),
     ),
+    brightness: brightness,
   );
 }
 
@@ -75,6 +77,32 @@ void main() {
     expect(card.bottom, closeTo(800 - 100 - 8, 0.5));
     final box = tester.widget<DecoratedBox>(find.byKey(BBSheet.cardKey)).decoration as BoxDecoration;
     expect(box.borderRadius, BorderRadius.circular(BBRadius.sheet));
+  });
+
+  testWidgets('in dark mode the hairline border is painted above the card content', (tester) async {
+    await tester.pumpWidget(_host(BBSheetController(), header: const SizedBox(height: 40), brightness: Brightness.dark));
+    Iterable<DecoratedBox> foregroundBoxes() => tester
+        .widgetList<DecoratedBox>(find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(DecoratedBox)))
+        .where((d) => d.position == DecorationPosition.foreground);
+    final front = foregroundBoxes().where((d) => (d.decoration as BoxDecoration).border != null);
+    expect(front, hasLength(1));
+    expect((front.single.decoration as BoxDecoration).borderRadius, BorderRadius.circular(BBRadius.sheet));
+    // The background decoration no longer carries the border (it would be
+    // hidden under the header).
+    final back = tester.widget<DecoratedBox>(find.byKey(BBSheet.cardKey)).decoration as BoxDecoration;
+    expect(back.border, isNull);
+    expect(back.color, isNotNull);
+  });
+
+  testWidgets('in light mode the card has a shadow and no border', (tester) async {
+    await tester.pumpWidget(_host(BBSheetController(), header: const SizedBox(height: 40)));
+    final back = tester.widget<DecoratedBox>(find.byKey(BBSheet.cardKey)).decoration as BoxDecoration;
+    expect(back.border, isNull);
+    expect(back.boxShadow, isNotEmpty);
+    final front = tester
+        .widgetList<DecoratedBox>(find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(DecoratedBox)))
+        .where((d) => d.position == DecorationPosition.foreground);
+    expect(front, isEmpty);
   });
 
   testWidgets('the header stays pinned while the body scrolls', (tester) async {

@@ -162,4 +162,45 @@ void main() {
       });
     }
   }
+
+  testWidgets('sheet dark x1.0', (tester) async {
+    tester.view.physicalSize = const Size(390 * 3, 700 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      kitHost(
+        MediaQuery(
+          data: const MediaQueryData(size: Size(390, 700)),
+          child: SizedBox(
+            height: 700,
+            child: Stack(
+              children: [
+                BBSheet(
+                  peekFraction: 0.3,
+                  initialFraction: 0.5,
+                  header: Padding(
+                    padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),
+                    child: Builder(builder: (context) => Text('MUN Centre', style: context.bb.text.display)),
+                  ),
+                  slivers: [
+                    SliverList.builder(
+                      itemCount: 12,
+                      itemBuilder: (context, i) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.s),
+                        child: Text('Arrival $i', style: context.bb.text.headline),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        brightness: Brightness.dark,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await expectLater(find.byType(Stack).first, matchesGoldenFile('goldens/sheet_dark.png'));
+  });
 }
