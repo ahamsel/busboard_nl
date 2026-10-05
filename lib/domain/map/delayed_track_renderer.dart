@@ -23,12 +23,22 @@ class RenderedBus {
   final String? tripId;
 }
 
-/// Draws each bus about one GPS update behind live, gliding along its route
+/// Draws each bus behind live by D (feed latency plus about one fix interval,
+/// see [delayFor]), gliding along its route
 /// between two real fixes (spec §3.4): render time = now − D, interpolated by
 /// distance along the shape, never backward on the same trip; geographic
 /// interpolation across a trip change, off route or a backward step of more
 /// than 150 m (a pass correction, not motion); at most
 /// [maxExtrapolation] past the newest fix, then hold.
+///
+/// The last stage is a continuity limiter: the drawn bus never moves faster
+/// than [_maxCatchUpMps] (30 m/s) between two consecutive frames of one
+/// vehicle. A target further away (a start-up jump, a catch-up after a skipped
+/// fix, a pass correction) is approached at that speed, along the shape when
+/// both places are on the same trip's shape and the target is ahead, else in a
+/// straight line (progress null). The first frame of a vehicle, and a frame
+/// more than [_continuityGap] after the previous one (an app resume, a clock
+/// jump), snap straight to the target.
 ///
 /// [render] updates per-vehicle state (the never-backward mark and the
 /// smoothed delay), so call it once per bus per frame with a monotonic
@@ -41,10 +51,12 @@ class DelayedTrackRenderer {
   final Map<String, _VehicleState> _state = {};
 
   static const Duration minDelay = Duration(seconds: 8);
-  static const Duration maxDelay = Duration(seconds: 20);
-  static const Duration defaultDelay = Duration(seconds: 12);
+  static const Duration maxDelay = Duration(seconds: 30);
   static const Duration maxExtrapolation = Duration(seconds: 5);
-  static const Duration _delayMargin = Duration(seconds: 2);
+  static const Duration _delayMargin = Duration(seconds: 1);
+
+  /// With a single fix there is no interval to measure: assume this one.
+  static const double _singleFixIntervalSeconds = 15;
   static const int _delaySamples = 8;
 
   /// How far the drawn delay may move toward its target, per second of wall time.
@@ -62,8 +74,16 @@ class DelayedTrackRenderer {
   /// road seen from the other pass: accepted at once.
   static const double _relabelMeters = 40;
 
-  /// A hold of a bigger backward move lasts at most this long (render time).
+  /// A hold of a backward move of more than [_glideBackwardMeters] lasts at
+  /// most this long (render time). Smaller backward moves hold until the bus
+  /// passes the mark (or the mark is dropped).
   static const Duration _maxHold = Duration(seconds: 15);
+
+  /// The fastest the drawn bus may move between two frames, m/s.
+  static const double _maxCatchUpMps = 30;
+
+  /// Frames further apart than this (wall time) are not continuous.
+  static const Duration _continuityGap = Duration(seconds: 2);
 
   /// A mark whose last use is older than this is from another session of the
   /// bus (a reused trip ID, a re-created track, a resumed app).
@@ -72,19 +92,32 @@ class DelayedTrackRenderer {
   /// A clock this far behind a mark's last use has moved back.
   static const Duration _clockBackTolerance = Duration(seconds: 1);
 
-  /// Median interval between the track's last fixes, plus 2 s, clamped to
-  /// [minDelay]..[maxDelay]; [defaultDelay] with fewer than two fixes.
+  /// The render delay D for [track].
+  ///
+  /// Smooth motion needs render time (now - D) to stay at or before the newest
+  /// GPS time until the next fix arrives, so D must cover the feed's latency
+  /// plus one fix interval. Each consecutive pair of the last [_delaySamples]
+  /// + 1 fixes gives `lag = next.fetchTime - previous.gpsTime`: how old the
+  /// older fix of the pair was when the newer one arrived. D is the
+  /// second-largest lag (the largest with fewer than three), plus 1 s, so a
+  /// single late fix does not set the delay. With one fix, D is that fix's age
+  /// plus 15 s (a typical interval). Clamped to [minDelay]..[maxDelay].
   Duration delayFor(BusTrack track) {
     final fixes = track.fixes;
-    if (fixes.length < 2) return defaultDelay;
-    final intervals = <int>[];
-    for (var i = fixes.length - 1; i > 0 && intervals.length < _delaySamples; i--) {
-      intervals.add(fixes[i].gpsTime.difference(fixes[i - 1].gpsTime).inMilliseconds);
+    final double targetSeconds;
+    if (fixes.length < 2) {
+      final f = fixes.last;
+      targetSeconds = f.fetchTime.difference(f.gpsTime).inMilliseconds / 1000.0 + _singleFixIntervalSeconds;
+    } else {
+      final lags = <int>[];
+      for (var i = fixes.length - 1; i > 0 && lags.length < _delaySamples; i--) {
+        lags.add(fixes[i].fetchTime.difference(fixes[i - 1].gpsTime).inMilliseconds);
+      }
+      lags.sort((a, b) => b.compareTo(a));
+      final pick = lags.length >= 3 ? lags[1] : lags[0];
+      targetSeconds = pick / 1000.0 + _delayMargin.inMilliseconds / 1000.0;
     }
-    intervals.sort();
-    final mid = intervals.length ~/ 2;
-    final median = intervals.length.isOdd ? intervals[mid] : (intervals[mid - 1] + intervals[mid]) ~/ 2;
-    final ms = (median + _delayMargin.inMilliseconds).clamp(minDelay.inMilliseconds, maxDelay.inMilliseconds);
+    final ms = (targetSeconds * 1000).round().clamp(minDelay.inMilliseconds, maxDelay.inMilliseconds);
     return Duration(milliseconds: ms);
   }
 
@@ -126,7 +159,7 @@ class DelayedTrackRenderer {
       final f = span <= 0 ? 1.0 : at.difference(a.gpsTime).inMicroseconds / span;
       bus = _between(track.vehicleId, a, b, f.clamp(0.0, 1.0));
     }
-    return _neverBackward(bus, at, state);
+    return _limitStep(_neverBackward(bus, at, state), now, state);
   }
 
   /// The delay for this frame: the target, approached at most
@@ -145,6 +178,46 @@ class DelayedTrackRenderer {
     state.delaySeconds = current;
     state.lastNow = now;
     return Duration(microseconds: (current * 1e6).round());
+  }
+
+  /// Final stage: the drawn bus moves at most [_maxCatchUpMps] per second from
+  /// where this vehicle was last drawn toward [target]. See the class doc.
+  RenderedBus _limitStep(RenderedBus target, DateTime now, _VehicleState state) {
+    final prev = state.drawn;
+    final prevNow = state.drawnAt;
+    var out = target;
+    if (prev != null && prevNow != null) {
+      final gap = now.difference(prevNow);
+      if (gap > Duration.zero && gap <= _continuityGap) {
+        out = _towards(prev, target, _maxCatchUpMps * gap.inMicroseconds / 1e6);
+      }
+    }
+    state.drawn = out;
+    state.drawnAt = now;
+    return out;
+  }
+
+  RenderedBus _towards(RenderedBus prev, RenderedBus target, double maxStep) {
+    final prevP = prev.progress;
+    final targetP = target.progress;
+    final shapeId = target.shapeId;
+    // Along the shape only when the target is ahead: a backward target (a
+    // relabel to the other pass, a hold expiry) can be far away along the
+    // shape yet close or at least straight-line reachable on the map.
+    if (prevP != null && targetP != null && shapeId != null && prev.shapeId == shapeId && prev.tripId == target.tripId && targetP >= prevP) {
+      if (targetP - prevP <= maxStep) return target;
+      return _onShape(target.vehicleId, shapeId, prevP + maxStep, target.tripId) ?? target;
+    }
+    final d = NearestStopService.haversineDistance(prev.lat, prev.lon, target.lat, target.lon);
+    if (d <= maxStep) return target;
+    final f = maxStep / d;
+    return RenderedBus(
+      vehicleId: target.vehicleId,
+      lat: prev.lat + (target.lat - prev.lat) * f,
+      lon: prev.lon + (target.lon - prev.lon) * f,
+      heading: bearingDegrees(prev.lat, prev.lon, target.lat, target.lon),
+      tripId: target.tripId,
+    );
   }
 
   RenderedBus _atFix(String id, TrackFix f) {
@@ -200,9 +273,10 @@ class DelayedTrackRenderer {
   /// Holds a bus that would move backward along its trip, within limits: a
   /// small step back (<= [_jitterMeters]) is jitter and held; a bigger one
   /// that lands within [_relabelMeters] of the mark on the map is the same
-  /// place on the other pass and accepted; any other is held for at most
-  /// [_maxHold] of render time, then accepted. Drawing without a progress
-  /// (off route, across a trip change) forgets the mark.
+  /// place on the other pass and accepted; any other is held until the bus
+  /// passes the mark, except that one of more than [_glideBackwardMeters] is
+  /// held for at most [_maxHold] of render time, then accepted. Drawing
+  /// without a progress (off route, across a trip change) forgets the mark.
   RenderedBus _neverBackward(RenderedBus bus, DateTime at, _VehicleState state) {
     final p = bus.progress;
     final shapeId = bus.shapeId;
@@ -236,7 +310,7 @@ class DelayedTrackRenderer {
       return bus;
     }
     final holdStart = mark.holdStart ?? at;
-    if (at.difference(holdStart) > _maxHold) {
+    if (mark.progress - p > _glideBackwardMeters && at.difference(holdStart) > _maxHold) {
       state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
       return bus;
     }
@@ -269,4 +343,8 @@ class _VehicleState {
 
   /// Wall time of the previous render.
   DateTime? lastNow;
+
+  /// The bus last drawn, and the `now` it was drawn at.
+  RenderedBus? drawn;
+  DateTime? drawnAt;
 }
