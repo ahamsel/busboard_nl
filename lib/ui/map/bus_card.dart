@@ -6,6 +6,7 @@ import '../../domain/map/bus_tracking_state.dart';
 import '../../state/providers.dart';
 import '../alerts/service_alert_card.dart';
 import '../kit/kit.dart';
+import 'map_layers.dart' show busLabel;
 
 String delayText(int? schedDiffMins) => switch (schedDiffMins) {
       null => '',
@@ -48,7 +49,7 @@ class BusCardHeader extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),
       child: Row(
         children: [
-          RouteBadge(routeNumber: bus.routeNumber),
+          RouteBadge.name(busLabel(bus)),
           const SizedBox(width: BBSpace.m),
           Expanded(
             child: Column(

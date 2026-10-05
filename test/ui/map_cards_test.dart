@@ -19,10 +19,11 @@ const _mun = StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 47.57, st
 
 GtfsRepository _repo() => GtfsRepository()..stopsById['1150'] = _mun;
 
-BusTrackingState _bus({int? schedDiffMins = -1, BusStatus status = BusStatus.active}) => BusTrackingState(
-      routeRun: 'Rt 10',
+BusTrackingState _bus({int? schedDiffMins = -1, BusStatus status = BusStatus.active, int routeNumber = 10, String routeRun = 'Rt 10'}) =>
+    BusTrackingState(
+      routeRun: routeRun,
       vehicleId: '2573',
-      routeNumber: 10,
+      routeNumber: routeNumber,
       headsign: 'Downtown',
       lat: 47.56,
       lon: -52.71,
@@ -109,6 +110,14 @@ void main() {
     expect(find.bySemanticsLabel('Route 10'), findsOneWidget);
     expect(find.text('to Downtown'), findsOneWidget);
     expect(find.text('Bus 2573 · 1 min late'), findsOneWidget);
+  });
+
+  testWidgets('a bus with no route number wears the same badge as on the map', (tester) async {
+    await _host(tester,
+        header: const BusCardHeader(vehicleId: '2573'),
+        body: const BusCardBody(vehicleId: '2573'),
+        buses: {'2573': _bus(routeNumber: 0, routeRun: 'Rt 10A')});
+    expect(find.bySemanticsLabel('Route 10A'), findsOneWidget);
   });
 
   testWidgets('technical details start collapsed and open on tap', (tester) async {

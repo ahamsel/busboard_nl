@@ -50,7 +50,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   Ticker? _ticker;
   Duration? _lastFrameElapsed;
   int _styleGeneration = 0;
+  Future<void>? _installing;
   bool _tickersEnabled = true;
+  bool _appResumed = true;
   final _controlsKey = GlobalKey();
   double _controlsHeight = 44 + BBSpace.m + 44;
   bool _measureScheduled = false;
@@ -81,7 +83,23 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _tickersEnabled = TickerMode.valuesOf(context).enabled;
+    final enabled = TickerMode.valuesOf(context).enabled;
+    if (enabled == _tickersEnabled) return;
+    _tickersEnabled = enabled;
+    // An offstage map tab asks for no frames at all.
+    if (!enabled) {
+      _ticker?.stop();
+    } else {
+      _resumeTicker();
+    }
+  }
+
+  /// Starts the draw ticker once there is something to draw on and the app is
+  /// on screen.
+  void _resumeTicker() {
+    final ticker = _ticker;
+    if (ticker == null || ticker.isActive || _layers == null || !_appResumed || !_tickersEnabled) return;
+    _startTicker();
   }
 
   @override
@@ -98,8 +116,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _ticker != null && !_ticker!.isActive) _startTicker();
-    if (state == AppLifecycleState.paused) _ticker?.stop();
+    if (state == AppLifecycleState.resumed) {
+      _appResumed = true;
+      _resumeTicker();
+    }
+    if (state == AppLifecycleState.paused) {
+      _appResumed = false;
+      _ticker?.stop();
+    }
   }
 
   // ─── Map lifecycle ────────────────────────────────────────
@@ -114,6 +138,23 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     // and drop the result of any install that a newer load has overtaken.
     _layers = null;
     final generation = ++_styleGeneration;
+    // Two installs must not interleave on one native style ("already exists"):
+    // wait for the previous one to finish, whatever its outcome.
+    final previous = _installing;
+    final done = Completer<void>();
+    _installing = done.future;
+    try {
+      if (previous != null) {
+        await previous.catchError((Object _) {});
+        if (!mounted || generation != _styleGeneration) return;
+      }
+      await _install(generation);
+    } finally {
+      done.complete();
+    }
+  }
+
+  Future<void> _install(int generation) async {
     final surface = _surface;
     final repo = ref.read(gtfsRepositoryProvider).value;
     if (surface == null || repo == null || !mounted) return;
@@ -134,12 +175,24 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     }
     _layers = layers;
     _ticker ??= Ticker(_onTick);
-    if (!_ticker!.isActive) _startTicker();
+    _resumeTicker();
   }
 
   void _startTicker() {
     _lastFrameElapsed = null; // the ticker's clock restarts at zero
     _ticker!.start();
+  }
+
+  /// A newly chosen stop brings the map to it.
+  Future<void> _recentreOn(String stopId) async {
+    final camera = _camera;
+    final stop = ref.read(stopInfoProvider(stopId));
+    if (camera == null || stop == null || !mounted) return;
+    try {
+      await camera.moveTo(LatLng(stop.stopLat, stop.stopLon), 15, animate: !MediaQuery.disableAnimationsOf(context));
+    } catch (e) {
+      _log('Could not recentre on the new stop: $e');
+    }
   }
 
   Future<void> _updateMyStop(MapLayers layers) async {
@@ -311,8 +364,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     ref.listen<String?>(settingsProvider.select((s) => s.selectedStopId), (prev, next) {
+      if (prev == next) return;
       final layers = _layers;
-      if (prev != next && layers != null) unawaited(_updateMyStop(layers));
+      if (layers != null) unawaited(_updateMyStop(layers));
+      if (next != null) unawaited(_recentreOn(next));
     });
     // Keep the live feed subscribed (it drives the track store and the taps)
     // without rebuilding the screen on every poll.
@@ -444,23 +499,28 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
               left: _creditLeft,
               right: BBSpace.s,
               bottom: creditBottom,
-              child: BBPressable(
-                onTap: _openCredits,
-                semanticLabel: 'Map credits',
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
-                  child: Align(
-                    alignment: Alignment.bottomLeft,
-                    widthFactor: 1,
-                    child: MediaQuery.withClampedTextScaling(
-                      maxScaleFactor: _creditMaxTextScale,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(_creditText, maxLines: 1, overflow: TextOverflow.ellipsis, style: bb.text.caption),
-                          ),
-                        ],
+              // The Align keeps the opaque tap target as wide as the text only: the
+              // rest of the band belongs to the map.
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: BBPressable(
+                  onTap: _openCredits,
+                  semanticLabel: 'Map credits',
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    child: Align(
+                      alignment: Alignment.bottomLeft,
+                      widthFactor: 1,
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: _creditMaxTextScale,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(_creditText, maxLines: 1, overflow: TextOverflow.ellipsis, style: bb.text.caption),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
