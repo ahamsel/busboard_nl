@@ -26,7 +26,9 @@ Map<String, dynamic> _upstream() => {
         {'id': 'railway_transit', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'paint': {'line-color': '#dddddd'}},
         {'id': 'poi_z16', 'type': 'symbol', 'source': 'openmaptiles', 'source-layer': 'poi', 'layout': {'icon-image': 'x'}},
         {'id': 'highway-name-minor', 'type': 'symbol', 'source': 'openmaptiles', 'source-layer': 'transportation_name', 'minzoom': 14, 'paint': {'text-color': '#666666', 'text-halo-color': '#ffffff'}},
-        {'id': 'label_city', 'type': 'symbol', 'source': 'openmaptiles', 'source-layer': 'place', 'paint': {'text-color': '#555555', 'text-halo-color': '#ffffff'}},
+        {'id': 'label_city', 'type': 'symbol', 'source': 'openmaptiles', 'source-layer': 'place', 'layout': {'text-field': '{name}', 'icon-image': 'dot_city'}, 'paint': {'text-color': '#555555', 'text-halo-color': '#ffffff'}},
+        {'id': 'highway-shield-non-us', 'type': 'symbol', 'source': 'openmaptiles', 'source-layer': 'transportation_name', 'layout': {'icon-image': 'road_{ref_length}'}},
+        {'id': 'airport', 'type': 'symbol', 'source': 'openmaptiles', 'source-layer': 'aerodrome_label', 'layout': {'icon-image': 'airport'}},
       ],
     };
 
@@ -76,6 +78,13 @@ void main() {
       expect(_layer(light, 'highway-name-minor')['minzoom'], 15);
     });
 
+    test('sprite clutter is removed: shields, airport icons and place dots', () {
+      expect(_has(light, 'highway-shield-non-us'), isFalse);
+      expect(_has(light, 'airport'), isFalse);
+      expect((_layer(light, 'label_city')['layout'] as Map).containsKey('icon-image'), isFalse);
+      expect(_layer(light, 'label_city')['layout']['text-field'], '{name}', reason: 'the label itself stays');
+    });
+
     test('keeps OpenFreeMap sources, glyphs and sprite, and needs no key', () {
       expect(light['sources'], _upstream()['sources']);
       expect(light['glyphs'], _upstream()['glyphs']);
@@ -103,6 +112,7 @@ void main() {
         final layers = (style['layers'] as List).cast<Map<String, dynamic>>();
         expect(layers.where((l) => '${l['id']}'.startsWith('railway_transit')), isEmpty);
         expect(layers.where((l) => l['source-layer'] == 'poi'), isEmpty);
+        expect(layers.where((l) => l['id'] == 'airport' || l['id'] == 'highway-shield-non-us'), isEmpty);
         expect(_layer(style, 'building')['minzoom'], greaterThanOrEqualTo(16));
         expect('${style['glyphs']}', startsWith('https://tiles.openfreemap.org/'));
         expect(jsonEncode(style).toLowerCase(), isNot(contains('key=')));

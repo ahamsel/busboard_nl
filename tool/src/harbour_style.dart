@@ -50,7 +50,7 @@ class HarbourPalette {
 }
 
 /// Layers we draw ourselves (transit) or that are clutter for St. John's
-/// (US shields).
+/// (road shields, airport icons).
 const _dropped = {
   'railway_transit',
   'railway_transit_dashline',
@@ -58,6 +58,8 @@ const _dropped = {
   'railway_service_dashline',
   'highway-shield-us-interstate',
   'road_shield_us',
+  'highway-shield-non-us',
+  'airport',
 };
 
 const _parkLayers = {'park', 'landuse_park', 'landcover_wood'};
@@ -106,6 +108,9 @@ Map<String, dynamic> buildHarbourStyle(Map<String, dynamic> upstream, HarbourPal
 
     if (type == 'symbol') {
       final layout = layer['layout'];
+      // Positron's place labels carry a black dot icon that vanishes on the
+      // dark map; the label text alone is enough.
+      if (sourceLayer == 'place' && layout is Map) layout.remove('icon-image');
       if (paint.containsKey('text-color') || (layout is Map && layout.containsKey('text-field'))) {
         paint['text-color'] = p.label;
         paint['text-halo-color'] = p.land;
