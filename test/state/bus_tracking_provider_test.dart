@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/realtime/timetrack_models.dart';
@@ -25,12 +27,24 @@ int feedSeconds() {
 }
 
 class _FakeApi extends TimeTrackApi {
-  _FakeApi(this.batches);
+  _FakeApi(this.batches, {this.throwOnCalls = const {}});
   final List<List<TimeTrackVehicle>> batches;
+
+  /// 1-based call numbers that throw instead of returning a result.
+  final Set<int> throwOnCalls;
   var calls = 0;
   @override
-  Future<TimeTrackFetchResult> fetchVehiclesResult() async =>
-      TimeTrackFetchResult.success(batches[(calls++).clamp(0, batches.length - 1)], source: LiveDataSource.gtfsRealtime);
+  Future<TimeTrackFetchResult> fetchVehiclesResult() async {
+    final call = ++calls;
+    if (throwOnCalls.contains(call)) throw StateError('network down (call $call)');
+    return TimeTrackFetchResult.success(batches[(call - 1).clamp(0, batches.length - 1)], source: LiveDataSource.gtfsRealtime);
+  }
+}
+
+/// Settings that poll every second instead of the 5 s minimum the UI offers.
+class _FastSettings extends SettingsNotifier {
+  @override
+  AppSettings build() => const AppSettings(refreshIntervalSeconds: 1);
 }
 
 void main() {
@@ -59,7 +73,7 @@ void main() {
     expect(container.read(busTrackStoreProvider)!.tracks.keys, ['2573']);
   });
 
-  test('without a schedule the stream is empty', () async {
+  test('with an empty schedule the stream is empty', () async {
     final container = ProviderContainer(overrides: [
       gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
       timetrackApiProvider.overrideWithValue(_FakeApi([[]])),
@@ -67,5 +81,63 @@ void main() {
     addTearDown(container.dispose);
     await container.read(gtfsRepositoryProvider.future);
     expect(await firstSnapshot(container), isEmpty);
+  });
+
+  test('while the schedule is still loading the stream is empty and there is no store', () async {
+    final never = Completer<GtfsRepository>();
+    final container = ProviderContainer(overrides: [
+      gtfsRepositoryProvider.overrideWith((ref) => never.future),
+      timetrackApiProvider.overrideWithValue(_FakeApi([[]])),
+    ]);
+    addTearDown(container.dispose);
+    expect(container.read(busTrackStoreProvider), isNull);
+    expect(container.read(busTrackRendererProvider), isNull);
+    expect(await firstSnapshot(container), isEmpty);
+  });
+
+  test('a poll that throws, even the first, does not break the stream; it recovers', () async {
+    final api = _FakeApi([
+      [fix(meters: 100, seconds: feedSeconds())],
+    ], throwOnCalls: {1});
+    final container = ProviderContainer(overrides: [
+      gtfsRepositoryProvider.overrideWith((ref) async => outAndBackRepo()),
+      timetrackApiProvider.overrideWithValue(api),
+      settingsProvider.overrideWith(_FastSettings.new),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(gtfsRepositoryProvider.future);
+
+    final seen = <AsyncValue<Map<String, BusTrackingState>>>[];
+    container.listen(busTrackingStreamProvider, (_, next) => seen.add(next), fireImmediately: true);
+    final recovered = Completer<void>();
+    container.listen(busTrackingStreamProvider, (_, next) {
+      if (next.value?.containsKey('2573') ?? false) recovered.complete();
+    });
+    await recovered.future.timeout(const Duration(seconds: 10));
+
+    expect(seen.any((v) => v.hasError), isFalse);
+    expect(api.calls, greaterThanOrEqualTo(2));
+    // The failed first poll still published a (empty) snapshot.
+    expect(seen.firstWhere((v) => v.hasValue).value, isEmpty);
+  });
+
+  test('changing the refresh interval keeps the same store and renderer', () async {
+    final container = ProviderContainer(overrides: [
+      gtfsRepositoryProvider.overrideWith((ref) async => outAndBackRepo()),
+      timetrackApiProvider.overrideWithValue(_FakeApi([[]])),
+    ]);
+    addTearDown(container.dispose);
+    await firstSnapshot(container);
+    final store = container.read(busTrackStoreProvider);
+    final renderer = container.read(busTrackRendererProvider);
+    expect(store, isNotNull);
+    expect(renderer, isNotNull);
+
+    await container.read(settingsProvider.notifier).setRefreshInterval(30);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(container.read(settingsProvider).refreshIntervalSeconds, 30);
+    expect(container.read(busTrackStoreProvider), same(store));
+    expect(container.read(busTrackRendererProvider), same(renderer));
   });
 }

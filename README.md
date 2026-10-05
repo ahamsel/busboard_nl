@@ -40,21 +40,15 @@ Each vehicle reports: lat/lon, speed (km/h), compass heading, route number, head
 - **Live data**: Polled every **5s** by default (configurable 5–60s). Applies to both the arrival board and map bus tracking.
 - **Settings**: Persisted via SharedPreferences (selected stop, refresh interval, last GTFS update).
 
-## Bus Motion Engine
+## Bus Motion
 
-The motion engine (`bus_motion_engine.dart`) provides smooth bus animation between GPS updates:
+Buses on the map are drawn a little behind live and glide along their route between real GPS fixes (`lib/domain/map/`, pure Dart):
 
-- **Route shape snapping** — raw GPS positions snapped to GTFS route geometry
-- **Shape fallback matching** — resolves routes by route number + headsign when GTFS trip ID is unavailable
-- **Measurement-time aware timing** — uses `position_time_seconds` (bus measurement time), not fetch time, for motion deltas
-- **Interpolation** — interpolation/extrapolation primarily in route-progress space (meters along GTFS shape)
-- **Kalman progress filter** — 1D position/velocity filter per bus for smoother prediction between updates
-- **Adaptive measurement trust** — measurement noise scales with snap quality (larger snap distance = less trust)
-- **Auto-adjust mode** — bounded on-device tuning of Kalman and blend parameters using live innovation/correction metrics
-- **Dead-reckoning** — extrapolates forward up to 35s beyond the last GPS point with decay and stop-aware slowdown
-- **Road-follow blend smoothing** — correction blend follows route geometry through turns (avoids straight-line glides)
-- **Anti-typewriter clamp** — active buses are visually monotonic (no tiny backward jitter); true backtracking still allowed
-- **Outlier rejection** — rejects GPS points implying speeds >140 km/h
+- **`BusTrackStore`** — one track per physical vehicle ID, built from each poll. Fixes are snapped to the GTFS route shape with a progress hint, so a bus on an out-and-back route stays on its own pass. Duplicate or out-of-order GPS timestamps are ignored; a bus with no new fix for 90 s is stale, and its track is dropped after 5 min.
+- **`DelayedTrackRenderer`** — draws each bus at `now − D`, interpolated by distance along the shape between two real fixes. D is latency-aware (feed lag plus about one fix interval, clamped to 8–30 s, typically about 25 s) and eased in at 0.1 s per second.
+- **Never backward** — a bus never moves backward along the same trip; when GPS runs backward it holds.
+- **Edge cases** — geographic interpolation across a trip change and for off-route buses (over 150 m from the shape); extrapolation for at most 5 s past the newest fix, then hold; drawn motion is capped at 30 m/s.
+- **Replay fixtures** — `test/map/motion_replay_test.dart` replays recorded captures from `test/fixtures/timetrack/` through the pipeline (see the README there).
 
 ## Architecture
 
@@ -69,9 +63,11 @@ lib/
     arrival/                        → Arrival computation & live merging
     location/                       → Nearest stop (haversine)
     map/
-      bus_motion_engine.dart        → Interpolation, dead-reckoning, blend smoothing
-      bus_tracking_state.dart       → Per-bus state (position, route, status)
-      bus_observation.dart          → Individual GPS observation
+      route_geometry.dart           → Snap to shapes, poses along them, stop/timetable hints
+      bus_track.dart                → GPS fixes and tracks per vehicle
+      bus_track_store.dart          → Ingests each poll into per-vehicle tracks
+      delayed_track_renderer.dart   → Where to draw each bus now (about 25 s behind, gliding)
+      bus_tracking_state.dart       → Per-bus snapshot for the map and sheet
       shape_matcher.dart            → Snap GPS to route geometry
   ui/
     stop_picker/                    → Stop ID entry + Near Me list
@@ -81,7 +77,7 @@ lib/
       bus_bottom_sheet.dart         → Bus info sheet (route, speed, status)
       stop_bottom_sheet.dart        → Stop info sheet with "set as stop" action
     settings/                       → Refresh interval & GTFS management
-  state/providers.dart              → Riverpod providers (polling stream, engine, settings)
+  state/providers.dart              → Riverpod providers (polling stream, track store, renderer, settings)
 ```
 
 ## Building
@@ -102,28 +98,19 @@ flutter run
 # Run tests
 flutter test
 
-# Run movement replay harness (turns, lag, noise, stability metrics)
-flutter test test/map/bus_motion_replay_harness_test.dart
+# Replay recorded captures through the motion pipeline
+flutter test test/map/motion_replay_test.dart
 
 # Capture the app's real production live-data chain (example: 15 minutes)
 dart run tool/capture_timetrack_snapshots.dart \
   --interval 5 \
   --duration 900 \
-  --out test/fixtures/timetrack/capture.json
+  --out /tmp/capture.json
 
 # Inspect raw physical IDs, duplicate assignments, teleports, and A→B→A
 # ping-pongs before replaying what the app renders.
 dart run tool/analyze_live_vehicle_trace.dart \
-  test/fixtures/timetrack/capture.json
-
-# Replay captured snapshots through BusMotionEngine
-BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
-flutter test test/map/bus_motion_snapshot_replay_test.dart
-
-# Optional: write replay metrics JSON (for commit-to-commit trend tracking)
-BUS_MOTION_CAPTURE_PATH=test/fixtures/timetrack/capture.json \
-BUS_MOTION_METRICS_OUT=build/bus_motion/replay_metrics.json \
-flutter test test/map/bus_motion_snapshot_replay_test.dart
+  /tmp/capture.json
 ```
 
 ## Key Technical Notes

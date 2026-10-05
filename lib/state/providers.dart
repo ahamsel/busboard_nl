@@ -323,25 +323,28 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
         for (final t in store.tracks.values) t.vehicleId: BusTrackingState.fromTrack(t, stale: store.isStale(t, now)),
       });
 
+  // The fetch time is taken when the response arrives: the renderer measures
+  // feed latency as fetch time minus GPS time.
   Future<void> poll() async {
-    final now = DateTime.now();
-    final result = await api.fetchVehiclesResult();
-    if (result.succeeded) {
-      store.ingest(result.vehicles, now);
-    } else if (kDebugMode) {
-      debugPrint('[Map] Live-data poll failed: ${result.error}');
-    }
-  }
-
-  await poll();
-  yield snapshot(DateTime.now());
-  await for (final _ in Stream.periodic(interval)) {
     try {
-      await poll();
-      yield snapshot(DateTime.now());
+      final result = await api.fetchVehiclesResult();
+      final fetchedAt = DateTime.now();
+      if (result.succeeded) {
+        store.ingest(result.vehicles, fetchedAt);
+      } else if (kDebugMode) {
+        debugPrint('[Map] Live-data poll failed: ${result.error}');
+      }
     } catch (e) {
       if (kDebugMode) debugPrint('[Map] Live-data poll error: $e');
     }
+  }
+
+  // A failed poll still publishes, so the stale flags keep refreshing.
+  await poll();
+  yield snapshot(DateTime.now());
+  await for (final _ in Stream.periodic(interval)) {
+    await poll();
+    yield snapshot(DateTime.now());
   }
 });
 
