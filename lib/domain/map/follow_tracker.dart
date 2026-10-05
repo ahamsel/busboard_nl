@@ -55,7 +55,7 @@ class FollowSnapshot {
       other.stopsToYourStop == stopsToYourStop &&
       other.arrived == arrived &&
       other.ended == ended &&
-      identical(other.stops, stops);
+      (identical(other.stops, stops) || (other.stops.isEmpty && stops.isEmpty));
 
   @override
   int get hashCode => Object.hash(vehicleId, tripId, bus == null, stale, busIndex, yourStopIndex, stopsToYourStop, arrived, ended);
@@ -80,7 +80,7 @@ class FollowTracker {
   DateTime? _startedAt;
   bool _seen = false;
   String? _tripId;
-  String? _shapeId;
+  String? _stopsKey;
   List<TripStop> _stops = const [];
 
   /// Last known progress along the trip; kept while the bus is off route.
@@ -112,21 +112,31 @@ class FollowTracker {
     _seen = true;
     if (now.difference(bus.lastGpsTime) > lostAfter) return _end(FollowEnd.lostContact, bus, now);
 
+    // A different trip normally ends the follow. After arrival it is ignored:
+    // the bus rolling on to its next trip must not replace "Arrived". Before
+    // arrival, a change while just short of a terminus your stop is the last
+    // stop of counts as the arrival.
     final trip = bus.currentTripId;
+    var foreignTrip = false;
     if (trip != null) {
       if (_tripId == null) {
         _tripId = trip;
       } else if (trip != _tripId) {
-        return _end(FollowEnd.tripEnded, bus, now);
+        if (_arrivedAt == null && _atTerminusYourStop) _arrivedAt = now;
+        if (_arrivedAt == null) return _end(FollowEnd.tripEnded, bus, now);
+        foreignTrip = true;
       }
     }
-    final shape = bus.shapeId;
-    if (_tripId != null && shape != null && (shape != _shapeId || _stops.isEmpty)) {
-      _shapeId = shape;
-      _stops = stopsFor(_tripId!, shape);
-    }
 
-    _p = drawnProgress ?? bus.progress ?? _p;
+    if (!foreignTrip) {
+      final shape = bus.shapeId;
+      final key = _tripId == null || shape == null ? null : '$_tripId|$shape';
+      if (key != null && key != _stopsKey) {
+        _stopsKey = key;
+        _stops = stopsFor(_tripId!, shape!);
+      }
+      _p = drawnProgress ?? bus.progress ?? _p;
+    }
     final p = _p;
     if (p != null) {
       final why = _place(p, yourStopId, now);
@@ -135,18 +145,31 @@ class FollowTracker {
     return _snapshot(bus, now);
   }
 
+  /// Whether your stop is the last placed stop of the trip and the last known
+  /// progress is within 60 m before it.
+  bool get _atTerminusYourStop {
+    final yourIndex = _yourIndex;
+    final p = _p;
+    if (yourIndex == null || p == null) return false;
+    final yp = _stops[yourIndex].progress;
+    if (yp == null) return false;
+    final lastPlaced = _stops.lastIndexWhere((s) => s.progress != null);
+    return yourIndex == lastPlaced && p >= yp - 60;
+  }
+
   /// Works out where progress [p] sits on the trip and returns the ending it
   /// triggers, if any.
   FollowEnd? _place(double p, String? yourStopId, DateTime now) {
-    _busIndex = -1;
-    for (var i = 0; i < _stops.length; i++) {
-      final sp = _stops[i].progress;
-      if (sp != null && sp <= p + arrivalRadius) _busIndex = i;
-    }
-
-    // Once arrived, your stop stays the one arrived at while the arrival
-    // lingers, even if the bus has since driven out of the passed margin.
+    // Once arrived, position and count stay frozen at your stop (it can't
+    // flicker back, or lose the stop when the bus drives out of the passed
+    // margin) until the linger is over.
     if (_arrivedAt == null) {
+      _busIndex = -1;
+      for (var i = 0; i < _stops.length; i++) {
+        final sp = _stops[i].progress;
+        if (sp != null && sp <= p + arrivalRadius) _busIndex = i;
+      }
+
       int? yourIndex;
       var onTrip = false;
       if (yourStopId != null) {
@@ -169,8 +192,14 @@ class FollowTracker {
         return FollowEnd.passedYourStop;
       }
     }
+
     final yourIndex = _yourIndex;
-    _stopsToYourStop = yourIndex == null ? null : math.max(0, yourIndex - _busIndex);
+    if (_arrivedAt != null && yourIndex != null) {
+      _busIndex = yourIndex;
+      _stopsToYourStop = 0;
+    } else {
+      _stopsToYourStop = yourIndex == null ? null : math.max(0, yourIndex - _busIndex);
+    }
 
     final arrivedAt = _arrivedAt;
     if (arrivedAt != null && now.difference(arrivedAt) >= arrivalLinger) return FollowEnd.arrived;

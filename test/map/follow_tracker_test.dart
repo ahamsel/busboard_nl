@@ -123,6 +123,67 @@ void main() {
     expect((s.arrived, s.yourStopIndex, s.ended), (true, 2, null));
   });
 
+  test('a trip change right after arrival still ends as arrived', () {
+    final t = _tracker();
+    t.update(bus: _bus(progress: 790), drawnProgress: 790, yourStopId: 'mun', now: _at(1));
+    var s = t.update(bus: _bus(trip: 't2', progress: 5), drawnProgress: 5, yourStopId: 'mun', now: _at(3));
+    expect((s.arrived, s.ended), (true, null));
+    s = t.update(bus: _bus(trip: 't2', progress: 10), drawnProgress: 10, yourStopId: 'mun', now: _at(11));
+    expect(s.ended, FollowEnd.arrived);
+  });
+
+  test('a trip change just short of a last-stop your stop counts as arrival', () {
+    const terminus = [
+      TripStop(stopId: 'a', name: 'A', sequence: 1, progress: 0, departureSeconds: 43200),
+      TripStop(stopId: 'mun', name: 'MUN Centre', sequence: 2, progress: 800, departureSeconds: 43320),
+    ];
+    final t = _tracker(terminus);
+    t.update(bus: _bus(progress: 750), drawnProgress: 750, yourStopId: 'mun', now: _t0);
+    var s = t.update(bus: _bus(trip: 't2', progress: 5), drawnProgress: 5, yourStopId: 'mun', now: _at(2));
+    expect((s.arrived, s.ended, s.stopsToYourStop), (true, null, 0));
+    s = t.update(bus: _bus(trip: 't2', progress: 8), drawnProgress: 8, yourStopId: 'mun', now: _at(12));
+    expect(s.ended, FollowEnd.arrived);
+  });
+
+  test('a trip change far from your stop is trip ended', () {
+    final t = _tracker();
+    t.update(bus: _bus(progress: 100), drawnProgress: 100, yourStopId: 'mun', now: _t0);
+    final s = t.update(bus: _bus(trip: 't2', progress: 5), drawnProgress: 5, yourStopId: 'mun', now: _at(2));
+    expect((s.arrived, s.ended), (false, FollowEnd.tripEnded));
+  });
+
+  test('jitter at your stop never un-arrives or flickers', () {
+    final t = _tracker();
+    var s = t.update(bus: _bus(progress: 765), drawnProgress: 765, yourStopId: 'mun', now: _t0);
+    expect(s.arrived, isFalse);
+    int? busIndex;
+    var now = 1;
+    for (final p in [775.0, 765.0, 775.0, 768.0, 772.0, 700.0, 775.0]) {
+      s = t.update(bus: _bus(progress: p), drawnProgress: p, yourStopId: 'mun', now: _at(now++));
+      expect((s.arrived, s.stopsToYourStop, s.yourStopIndex, s.ended), (true, 0, 2, null), reason: 'p=$p');
+      busIndex ??= s.busIndex;
+      expect(s.busIndex, busIndex, reason: 'p=$p');
+    }
+  });
+
+  test('stops load once per trip and shape, and equal frames compare equal', () {
+    var calls = 0;
+    final t = FollowTracker(
+      vehicleId: '2573',
+      stopsFor: (_, _) {
+        calls++;
+        return <TripStop>[];
+      },
+    );
+    FollowSnapshot? prev;
+    for (var i = 0; i < 5; i++) {
+      final s = t.update(bus: _bus(progress: 100), drawnProgress: 100, yourStopId: 'mun', now: _at(i));
+      if (prev != null) expect(s, prev);
+      prev = s;
+    }
+    expect(calls, 1);
+  });
+
   test('a bus already past your stop ends as passed', () {
     final s = _tracker().update(
       bus: _bus(progress: 1100),
