@@ -186,16 +186,24 @@ void main() {
     // To the nearest 10 m (the snap sits a metre or so from the GPS).
     int? tens(double? m) => m == null ? null : (m / 10).round() * 10;
 
-    test('from the third fix in a row each more than 30 m behind the last, progress is withheld', () {
-      reverse([900, 800, 700, 600, 500]);
+    test('three fixes in a row each more than 30 m behind the last: all but the first lose their progress', () {
+      reverse([900, 800]);
+      expect(tens(store.tracks['2573']!.fixes.last.progress), 800);
+      reverse([700, 600, 500], from: 2);
       final f = store.tracks['2573']!.fixes;
-      expect([for (final x in f) tens(x.progress)], [900, 800, null, null, null]);
+      // 800 is withheld once 700 confirms the run.
+      expect([for (final x in f) tens(x.progress)], [900, null, null, null, null]);
       // The snap is kept, so the next fix's window still follows the bus.
       expect([for (final x in f) tens(x.snapProgress)], [900, 800, 700, 600, 500]);
       // Withheld fixes are drawn on raw GPS: no snapped place either.
-      expect(f[2].snappedLat, isNull);
-      expect(f[2].offRoute, isFalse);
-      expect(f[2].shapeId, outAndBackShapeId);
+      for (final x in f.skip(1)) {
+        expect(x.snappedLat, isNull);
+        expect(x.offRoute, isFalse);
+        expect(x.shapeId, outAndBackShapeId);
+      }
+      // The withheld copy of 800 is still that fix.
+      expect(f[1].gpsTime, start.add(const Duration(seconds: 10)));
+      expect(f[1].lon, lonAt(800));
     });
 
     test('progress stays withheld while the bus waits, and returns when it advances again', () {
@@ -203,7 +211,7 @@ void main() {
       final f = store.tracks['2573']!.fixes;
       // 690 falls 10 m (jitter), 710 creeps 20 m: neither is a clear
       // advance. 800 advances 90 m: back on the shape.
-      expect([for (final x in f) tens(x.progress)], [900, 800, null, null, null, 800]);
+      expect([for (final x in f) tens(x.progress)], [900, null, null, null, null, 800]);
     });
 
     test('one step back is not enough', () {
@@ -223,7 +231,7 @@ void main() {
       reverse([900, 800, 700]);
       reverse([600], from: 3, tripId: 'next-trip');
       final f = store.tracks['2573']!.fixes;
-      expect(f[2].progress, isNull);
+      expect([for (final x in f.take(3)) tens(x.progress)], [900, null, null]);
       expect(f[3].tripId, 'next-trip');
       expect(f[3].progress, isNotNull);
     });

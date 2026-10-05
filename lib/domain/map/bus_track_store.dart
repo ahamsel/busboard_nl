@@ -18,11 +18,11 @@ import 'shape_matcher.dart';
 /// driving it backward (the feed still labels the finished trip after the bus
 /// turned round), so its progress means nothing. Once [reverseRunFixes]
 /// fixes in a row on one trip and shape each lie more than
-/// [_reverseFallMeters] behind the one before, the last of them and those
-/// after it are stored without progress (and without a snapped place), so
-/// the renderer draws the raw GPS, until a fix advances more than
-/// [_reverseFallMeters] again or the trip or shape changes. The snap itself
-/// is kept in [TrackFix.snapProgress] for the next fix's window.
+/// [_reverseFallMeters] behind the one before, all of them but the first,
+/// and the fixes after them, are stored without progress (and without a
+/// snapped place), so the renderer draws the raw GPS, until a fix advances
+/// more than [_reverseFallMeters] again or the trip or shape changes. The
+/// snap itself is kept in [TrackFix.snapProgress] for the next fix's window.
 class BusTrackStore {
   BusTrackStore(this._geometry, {this.maxFixes = 24});
 
@@ -118,10 +118,17 @@ class BusTrackStore {
     }
 
     final snapProgress = progress;
-    if (progress != null && track != null && continuing && _runsBackward(track.fixes, progress)) {
-      progress = null;
-      snappedLat = null;
-      snappedLon = null;
+    if (progress != null && track != null && continuing) {
+      final run = _backwardRun(track.fixes, progress);
+      if (run != null) {
+        progress = null;
+        snappedLat = null;
+        snappedLon = null;
+        // A run just confirmed reaches back to its first fallen fix.
+        for (var i = track.fixes.length - run; i < track.fixes.length; i++) {
+          track.fixes[i] = track.fixes[i].withheld();
+        }
+      }
     }
 
     final fix = TrackFix(
@@ -164,25 +171,26 @@ class BusTrackStore {
   }
 
   /// Whether a fix that snapped at [p] on the same trip and shape as the
-  /// newest of [fixes] is part of a backward run (see the class doc): the
-  /// run goes on while the newest fix was withheld and [p] does not advance
-  /// past it, or starts when [p] ends [reverseRunFixes] fixes on one trip
-  /// and shape that each fell from the one before.
-  bool _runsBackward(List<TrackFix> fixes, double p) {
+  /// newest of [fixes] belongs to a backward run (see the class doc), and if
+  /// so how many of [fixes] (the newest ones) still need their progress
+  /// withheld: none when the run goes on (the newest fix was withheld and
+  /// [p] does not advance past it), or the run's earlier fallen fixes when
+  /// [p] confirms it, ending [reverseRunFixes] fixes on one trip and shape
+  /// that each fell from the one before. Null when not in a run.
+  int? _backwardRun(List<TrackFix> fixes, double p) {
     final last = fixes.last;
-    final lastP = last.snapProgress!;
-    if (last.progress == null) return p <= lastP + _reverseFallMeters;
+    if (last.progressWithheld) return p <= last.snapProgress! + _reverseFallMeters ? 0 : null;
     var next = p;
     for (var k = 0; k < reverseRunFixes - 1; k++) {
       final i = fixes.length - 1 - k;
-      if (i < 0) return false;
+      if (i < 0) return null;
       final f = fixes[i];
       final fp = f.snapProgress;
-      if (fp == null || f.tripId != last.tripId || f.shapeId != last.shapeId) return false;
-      if (next >= fp - _reverseFallMeters) return false;
+      if (fp == null || f.tripId != last.tripId || f.shapeId != last.shapeId) return null;
+      if (next >= fp - _reverseFallMeters) return null;
       next = fp;
     }
-    return true;
+    return reverseRunFixes - 2;
   }
 
   SnapResult? _snapContinuing(TimeTrackVehicle v, String shapeId, TrackFix previous, DateTime gpsTime) {
