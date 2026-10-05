@@ -17,9 +17,12 @@ abstract final class MarkerImages {
   static const double radius = 6.5;
   static const double fontSize = 12.5;
 
-  /// Square box the notch is drawn in; its centre sits on the bus, so the
-  /// triangle on the top edge clears even a three-character badge when rotated.
-  static const double notchBox = 56;
+  /// Square box the notch is drawn in; its centre sits on the bus. The
+  /// triangle's base is 21.5 px from the centre ([notchBox] / 2 - 10.5), which
+  /// clears the half-width of a three-character badge (about 18.3 px, plus the
+  /// outline) at east or west headings, and the half-height (14 px) at north
+  /// and south.
+  static const double notchBox = 64;
   static const double myStopSize = 26;
   static const String myStopId = 'bb-my-stop';
 
@@ -42,11 +45,19 @@ abstract final class MarkerImages {
         maxLines: 1,
       )..layout();
 
+  static Size _sizeFor(TextPainter text) {
+    final inner = math.max(badgeMinWidth, text.width + 10);
+    return Size(inner + 2 * outline, badgeHeight + 2 * outline);
+  }
+
   /// Logical size of a badge including its outline.
   static Size badgeSize(String label) {
     final text = _label(label, RoutePalette.ink);
-    final inner = math.max(badgeMinWidth, text.width + 10);
-    return Size(inner + 2 * outline, badgeHeight + 2 * outline);
+    try {
+      return _sizeFor(text);
+    } finally {
+      text.dispose();
+    }
   }
 
   static Future<Uint8List> badge({
@@ -56,7 +67,8 @@ abstract final class MarkerImages {
     required Brightness brightness,
     required double pixelRatio,
   }) {
-    final size = badgeSize(label);
+    final text = _label(label, stale ? staleInk : RoutePalette.ink);
+    final size = _sizeFor(text);
     return _render(size, pixelRatio, (canvas) {
       final outer = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(radius + outline));
       canvas.drawRRect(outer, Paint()..color = _white);
@@ -65,9 +77,8 @@ abstract final class MarkerImages {
         const Radius.circular(radius),
       );
       canvas.drawRRect(inner, Paint()..color = stale ? staleFill : hue.fillFor(brightness));
-      final text = _label(label, stale ? staleInk : RoutePalette.ink);
       text.paint(canvas, Offset((size.width - text.width) / 2, (size.height - text.height) / 2));
-    });
+    }).whenComplete(text.dispose);
   }
 
   static Future<Uint8List> notch({required RouteHue hue, required bool stale, required double pixelRatio}) {
@@ -76,8 +87,8 @@ abstract final class MarkerImages {
       const mid = notchBox / 2;
       final path = Path()
         ..moveTo(mid, 1.5)
-        ..lineTo(mid + 6, 11)
-        ..lineTo(mid - 6, 11)
+        ..lineTo(mid + 6, 10.5)
+        ..lineTo(mid - 6, 10.5)
         ..close();
       canvas.drawPath(path, Paint()..color = stale ? staleNotch : hue.line);
       canvas.drawPath(
@@ -114,14 +125,24 @@ abstract final class MarkerImages {
   }
 
   static Future<Uint8List> _render(Size size, double pixelRatio, void Function(Canvas) draw) async {
+    // Integer pixel size first, then scale by the exact ratio so a fractional
+    // pixel ratio (such as 2.625) still paints every pixel of the PNG.
+    final w = (size.width * pixelRatio).ceil();
+    final h = (size.height * pixelRatio).ceil();
     final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder)..scale(pixelRatio);
+    final canvas = Canvas(recorder)..scale(w / size.width, h / size.height);
     draw(canvas);
     final picture = recorder.endRecording();
-    final image = await picture.toImage((size.width * pixelRatio).ceil(), (size.height * pixelRatio).ceil());
-    picture.dispose();
-    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-    return bytes!.buffer.asUint8List();
+    try {
+      final image = await picture.toImage(w, h);
+      try {
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        return Uint8List.sublistView(bytes!);
+      } finally {
+        image.dispose();
+      }
+    } finally {
+      picture.dispose();
+    }
   }
 }
