@@ -428,7 +428,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 600));
       });
       await _frames(tester, 3);
-      expect(surface.layers.keys, hasLength(4));
+      expect(surface.layers.keys, hasLength(6));
       expect(surface.features('bb-my-stop').single['properties']['stopId'], '1150', reason: 'your stop is drawn');
       expect(surface.busSets, isNotEmpty);
       expect(surface.busSets.last.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
