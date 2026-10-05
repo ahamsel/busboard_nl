@@ -16,12 +16,13 @@ import 'shape_matcher.dart';
 ///
 /// Reverse rule: a bus whose fixes keep falling along its trip's shape is
 /// driving it backward (the feed still labels the finished trip after the bus
-/// turned round), so its progress means nothing. Once [reverseRunFixes]
-/// fixes in a row on one trip and shape each lie more than
-/// [_reverseFallMeters] behind the one before, all of them but the first,
-/// and the fixes after them, are stored without progress (and without a
-/// snapped place), so the renderer draws the raw GPS, until a fix advances
-/// more than [_reverseFallMeters] again or the trip or shape changes. The
+/// turned round), so its progress means nothing. After two falls in a row of
+/// more than [_reverseFallMeters] on one trip and shape ([reverseRunFixes]
+/// fixes, each behind the one before), all of them but the first, and the
+/// fixes after them, are stored without progress (and without a snapped
+/// place), so the renderer draws the raw GPS. The run ends when a fix lies
+/// more than [_reverseFallMeters] past the run's lowest snap (so a bus
+/// creeping forward leaves it too), or when the trip or shape changes. The
 /// snap itself is kept in [TrackFix.snapProgress] for the next fix's window.
 class BusTrackStore {
   BusTrackStore(this._geometry, {this.maxFixes = 24});
@@ -174,12 +175,19 @@ class BusTrackStore {
   /// newest of [fixes] belongs to a backward run (see the class doc), and if
   /// so how many of [fixes] (the newest ones) still need their progress
   /// withheld: none when the run goes on (the newest fix was withheld and
-  /// [p] does not advance past it), or the run's earlier fallen fixes when
+  /// [p] is not more than [_reverseFallMeters] past the run's lowest snap),
+  /// or the run's earlier fallen fixes when
   /// [p] confirms it, ending [reverseRunFixes] fixes on one trip and shape
   /// that each fell from the one before. Null when not in a run.
   int? _backwardRun(List<TrackFix> fixes, double p) {
     final last = fixes.last;
-    if (last.progressWithheld) return p <= last.snapProgress! + _reverseFallMeters ? 0 : null;
+    if (last.progressWithheld) {
+      var lowest = last.snapProgress!;
+      for (var i = fixes.length - 2; i >= 0 && fixes[i].progressWithheld; i--) {
+        lowest = math.min(lowest, fixes[i].snapProgress!);
+      }
+      return p <= lowest + _reverseFallMeters ? 0 : null;
+    }
     var next = p;
     for (var k = 0; k < reverseRunFixes - 1; k++) {
       final i = fixes.length - 1 - k;

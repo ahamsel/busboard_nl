@@ -587,17 +587,20 @@ void main() {
       }
     });
 
-    test('a trip change after a 90 s gap glides too, in a straight line', () {
+    test('a trip change after a 90 s gap glides in a straight line at 30 m/s, not 60', () {
       final r = DelayedTrackRenderer(_geometry);
       final before = _track([_fix(0, 900), _fix(10, 950)]);
       var now = _t0.add(const Duration(seconds: 92)); // render time 80 s
       final start = r.render(before, now);
       // The next fix, 90 s on, is on the next trip 400 m back along the shape
-      // (the return leg, on the map ~400 m west): no snap, a glide.
+      // (the return leg, on the map ~400 m west): no snap, a glide. The fast
+      // catch-up is for running along the road; a chord across the map
+      // (through whatever lies between) keeps the usual 30 m/s.
       final after = _track([_fix(0, 900), _fix(10, 950), _fix(100, 1500, trip: 'next-trip')]);
       now = now.add(frame);
       final bus = r.render(after, now);
-      expect(NearestStopService.haversineDistance(start.lat, start.lon, bus.lat, bus.lon), closeTo(60 * 0.12, 0.05));
+      expect(bus.progress, isNull);
+      expect(NearestStopService.haversineDistance(start.lat, start.lon, bus.lat, bus.lon), closeTo(30 * 0.12, 0.05));
     });
 
     test('a gap of more than 3 min still snaps to the target', () {

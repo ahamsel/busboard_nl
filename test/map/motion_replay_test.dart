@@ -137,7 +137,7 @@ void main() {
             //    backward, so the renderer draws its raw GPS and the
             //    projection on the shape falls with it;
             //  - a spur glide (same trip, b ahead of a along the shape by far
-            //    more than their map distance, the renderer's 1.6× / +200 m
+            //    more than their map distance, the renderer's plausibleAlong
             //    rule): the bus skipped a loop or spur, so the renderer glides
             //    across its base, which projects behind the high water at
             //    first;
@@ -233,12 +233,11 @@ void main() {
 }
 
 /// Whether a → b steps further along the shape than the renderer believes
-/// for their map distance (DelayedTrackRenderer's 1.6× / +200 m rule).
+/// for their map distance (DelayedTrackRenderer.plausibleAlong).
 bool _spurStep(TrackFix a, TrackFix b) {
   final ap = a.progress, bp = b.progress;
-  if (ap == null || bp == null || a.shapeId != b.shapeId || bp - ap <= 200) return false;
-  final geo = NearestStopService.haversineDistance(a.snappedLat ?? a.lat, a.snappedLon ?? a.lon, b.snappedLat ?? b.lat, b.snappedLon ?? b.lon);
-  return bp - ap > math.max(1.6 * geo, geo + 200);
+  if (ap == null || bp == null || a.shapeId != b.shapeId || bp <= ap) return false;
+  return !DelayedTrackRenderer.plausibleAlong(bp - ap, a.snappedLat ?? a.lat, a.snappedLon ?? a.lon, b.snappedLat ?? b.lat, b.snappedLon ?? b.lon);
 }
 
 /// Metres along the bus's trip shape of the drawn point, searched near
