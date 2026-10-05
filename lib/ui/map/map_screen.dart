@@ -10,13 +10,20 @@ import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
 import '../../data/gtfs/gtfs_models.dart';
+import '../../data/gtfs/gtfs_repository.dart';
+import '../../domain/arrival/arrival_models.dart';
 import '../../domain/map/bus_tracking_state.dart';
+import '../../domain/map/delayed_track_renderer.dart';
+import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
+import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../copy/legal_copy.dart';
 import '../kit/kit.dart';
 import 'bus_card.dart';
+import 'follow_camera.dart';
+import 'follow_card.dart';
 import 'map_hit_test.dart';
 import 'map_layers.dart';
 import 'map_style.dart';
@@ -25,6 +32,35 @@ import 'map_view.dart';
 import 'my_stop_card.dart';
 import 'route_filter_card.dart';
 import 'stop_card.dart';
+
+/// What the screen holds while a bus is being followed (spec §3.5): the
+/// tracker and camera, whether a gesture has paused the camera, the card's
+/// latest snapshot and the route line as last drawn.
+class _Follow {
+  _Follow(this.vehicleId)
+      : snapshot = FollowSnapshot(
+          vehicleId: vehicleId,
+          bus: null,
+          tripId: null,
+          stale: false,
+          lastSeenAgo: null,
+          stops: const [],
+          busIndex: -1,
+          yourStopIndex: null,
+          stopsToYourStop: null,
+          arrived: false,
+          ended: null,
+        );
+
+  final String vehicleId;
+  final camera = FollowCamera();
+  FollowTracker? tracker;
+  bool paused = false;
+  FollowSnapshot snapshot;
+  DateTime? routeAt;
+  double? routeProgress;
+  ({List<List<double>> driven, List<List<double>> ahead, Color color})? route;
+}
 
 /// The Map tab (spec §3.3): full-screen Harbour map with your-stop and route
 /// chips, a my-location control and one floating sheet whose card follows the
@@ -43,6 +79,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   static const _creditText = '© OpenStreetMap · OpenFreeMap';
   static const _creditMaxTextScale = 1.3;
   static const _creditLeft = BBSpace.s + BBSpace.xs;
+  static const _panPauseDistance = 18.0;
+  static const _routeInterval = Duration(seconds: 1);
+  static const _routeMoveMeters = 20.0;
 
   MapSurface? _surface;
   MapCamera? _camera;
@@ -66,12 +105,18 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   List<BusMarker> _lastMarkers = const [];
   final _headings = HeadingSmoother();
 
+  _Follow? _follow;
+  final _pointerStarts = <int, Offset>{};
+  // Where the follow camera must keep the bus and your stop clear of the chips
+  // and the peeking sheet; refreshed by every layout.
+  EdgeInsets _fitPadding = const EdgeInsets.fromLTRB(48, 96, 48, 220);
+
   // One controller per selection: BBSheet is re-keyed on every selection, and a
   // DraggableScrollableController can be attached to a single sheet at a time.
   // The incoming sheet attaches before the outgoing one is disposed, so they
   // cannot share a controller. Retired ones are disposed after the frame.
   var _sheet = BBSheetController();
-  MapSelection? _sheetSelection;
+  Object? _sheetKey;
   final _retiredSheets = <BBSheetController>[];
 
   void _log(String msg) {
@@ -83,6 +128,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_enableMyLocation(request: false));
+    // A follow set before the map existed (the Board's live row): its card
+    // replaces any selection.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(followProvider) != null) {
+        ref.read(mapSelectionProvider.notifier).clear();
+      }
+    });
   }
 
   @override
@@ -174,6 +226,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       if (!mounted || generation != _styleGeneration) return;
       await layers.updateMyStop(_myStop());
       if (!mounted || generation != _styleGeneration) return;
+      // A new style starts without the route line: draw the last one again.
+      final route = _follow?.route;
+      if (route != null) await layers.updateRoute(driven: route.driven, ahead: route.ahead, color: route.color);
+      if (!mounted || generation != _styleGeneration) return;
     } catch (e) {
       _log('Could not install map layers: $e');
       return;
@@ -232,23 +288,165 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       // The renderer is stateful per vehicle: every track, once per frame; the
       // output is filtered (route filter) after.
       final drawn = renderer.renderAll(store.tracks.values, now);
+      final follow = _follow;
+      final tracking = ref.read(busTrackingStreamProvider).value ?? const <String, BusTrackingState>{};
       final markers = busMarkers(
-        tracking: ref.read(busTrackingStreamProvider).value ?? const {},
+        tracking: tracking,
         drawn: drawn,
         routeFilter: ref.read(mapRouteFilterProvider),
         headings: _headings,
         now: now,
+        followedVehicleId: follow?.vehicleId,
       );
       _lastMarkers = markers;
       await layers.updateBuses(markers);
+      // Follow work rides on the frame, after the buses: the card and camera
+      // never see a position the map has not drawn. The follow may have been
+      // stopped, or the style reloaded, while the buses were being published.
+      if (follow != null && mounted && identical(follow, _follow)) {
+        _followFrame(follow, layers, tracking, drawn, now);
+      }
     } catch (e) {
       _log('Could not draw buses: $e');
     }
   }
 
+  // ─── Following (spec §3.5) ────────────────────────────────
+
+  void _syncFollow(FollowTarget? target) {
+    if (target?.vehicleId == _follow?.vehicleId) return;
+    _follow = target == null ? null : _Follow(target.vehicleId);
+  }
+
+  /// A new follow, a different one or none: the old route line goes.
+  void _onFollowChanged(FollowTarget? next) {
+    _syncFollow(next);
+    final layers = _layers;
+    if (layers != null) {
+      unawaited(layers.clearRoute().catchError((Object e) => _log('Could not clear the route line: $e')));
+    }
+    if (next != null) ref.read(mapSelectionProvider.notifier).clear();
+  }
+
+  void _followFrame(
+    _Follow f,
+    MapLayers layers,
+    Map<String, BusTrackingState> tracking,
+    Map<String, RenderedBus> drawn,
+    DateTime now,
+  ) {
+    final repo = ref.read(gtfsRepositoryProvider).value;
+    final geometry = ref.read(routeGeometryProvider);
+    if (repo == null || geometry == null) return;
+    final id = f.vehicleId;
+    final bus = tracking[id];
+    final snap = (f.tracker ??= FollowTracker(vehicleId: id, stopsFor: geometry.tripStops)).update(
+      bus: bus,
+      drawnProgress: drawn[id]?.progress,
+      yourStopId: ref.read(settingsProvider).selectedStopId,
+      now: now,
+    );
+    final changed = snap != f.snapshot;
+    f.snapshot = snap;
+    if (changed) setState(() {});
+
+    final ended = snap.ended;
+    if (ended != null) return _endFollow(ended, id);
+    if (bus == null) return;
+
+    final tripId = snap.tripId;
+    // After an arrival the bus may roll on to its next trip: the line stays.
+    final onTrip = bus.currentTripId == null || bus.currentTripId == tripId;
+    if (tripId != null && onTrip && identical(layers, _layers)) {
+      final shapeId = bus.shapeId ?? repo.tripsById[tripId]?.shapeId;
+      final progress = drawn[id]?.progress ?? bus.progress;
+      final routeAt = f.routeAt;
+      final lastProgress = f.routeProgress;
+      final due = routeAt == null ||
+          now.difference(routeAt) >= _routeInterval ||
+          (lastProgress != null && progress != null && (progress - lastProgress).abs() >= _routeMoveMeters);
+      if (shapeId != null && progress != null && due) {
+        final split = geometry.splitShape(shapeId, progress);
+        if (split != null) {
+          f.routeAt = now;
+          f.routeProgress = progress;
+          final color = RoutePalette.ofName(_routeLabel(repo, snap) ?? busLabel(bus)).line;
+          f.route = (driven: split.driven, ahead: split.ahead, color: color);
+          unawaited(layers
+              .updateRoute(driven: split.driven, ahead: split.ahead, color: color)
+              .catchError((Object e) => _log('Could not draw the route line: $e')));
+        }
+      }
+    }
+
+    final camera = _camera;
+    if (f.paused || camera == null) return;
+    final at = drawn[id];
+    final yourIndex = snap.yourStopIndex;
+    final yourStop = yourIndex != null && !snap.arrived && yourIndex < snap.stops.length
+        ? repo.stopsById[snap.stops[yourIndex].stopId]
+        : null;
+    final move = f.camera.next(
+      bus: LatLng(at?.lat ?? bus.lat, at?.lon ?? bus.lon),
+      stop: yourStop == null ? null : LatLng(yourStop.stopLat, yourStop.stopLon),
+      now: now,
+    );
+    if (move != null) unawaited(_moveCamera(camera, move, animate: !MediaQuery.disableAnimationsOf(context)));
+  }
+
+  Future<void> _moveCamera(MapCamera camera, CameraMove move, {required bool animate}) async {
+    try {
+      switch (move) {
+        case FitMove(:final bus, :final stop):
+          await camera.fitBounds(bus, stop, padding: _fitPadding, animate: animate);
+        case CenterMove(:final target, :final zoom):
+          await camera.moveTo(target, zoom, animate: animate);
+      }
+    } catch (e) {
+      _log('Could not move the camera: $e');
+    }
+  }
+
+  /// The follow is over: stop it (the listener clears the route and drops the
+  /// camera) and say why, unless the bus simply arrived.
+  void _endFollow(FollowEnd why, String id) {
+    ref.read(followProvider.notifier).stop();
+    final message = switch (why) {
+      FollowEnd.arrived => null,
+      FollowEnd.passedYourStop => 'Bus $id has passed ${_myStop()?.stopName ?? 'your stop'}',
+      FollowEnd.tripEnded => 'Bus $id has finished its trip',
+      FollowEnd.lostContact => 'Lost contact with bus $id',
+      FollowEnd.notFound => "Bus $id isn't reporting its position",
+    };
+    if (message != null && mounted) BBToast.show(context, message);
+  }
+
+  /// The followed trip's route number or name (the bus may already be on the
+  /// next trip after an arrival).
+  String? _routeLabel(GtfsRepository repo, FollowSnapshot snap) {
+    final trip = snap.tripId == null ? null : repo.tripsById[snap.tripId!];
+    return trip == null ? null : repo.routesById[trip.routeId]?.routeShortName;
+  }
+
+  void _resumeFollow(_Follow f) {
+    f.camera.reset(); // the next frame moves the camera at once
+    if (f.paused) setState(() => f.paused = false);
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    final f = _follow;
+    final start = _pointerStarts[e.pointer];
+    if (f == null || f.paused || start == null) return;
+    if ((e.position - start).distance > _panPauseDistance) setState(() => f.paused = true);
+  }
+
+  void _onPointerEnd(PointerEvent e) => _pointerStarts.remove(e.pointer);
+
   // ─── Interaction ──────────────────────────────────────────
 
   void _onTap(LatLng tap) {
+    // The follow card owns the sheet: only an empty-map tap does anything.
+    if (_follow != null) return unawaited(_sheet.collapse());
     final radius = tapRadiusMeters(_camera?.zoom ?? _defaultZoom);
     final selection = ref.read(mapSelectionProvider.notifier);
     final markers = _lastMarkers.isNotEmpty ? _lastMarkers : _markersFromTracking();
@@ -334,11 +532,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     }
   }
 
-  /// The controller for the sheet showing [selection]; a new selection gets a
-  /// fresh one.
-  BBSheetController _sheetFor(MapSelection? selection) {
-    if (selection != _sheetSelection) {
-      _sheetSelection = selection;
+  /// The controller for the sheet showing [key] (the selection, or the follow);
+  /// a new key gets a fresh one.
+  BBSheetController _sheetFor(Object? key) {
+    if (key != _sheetKey) {
+      _sheetKey = key;
       _headerKey = GlobalKey();
       _headerHeight = null;
       _retiredSheets.add(_sheet);
@@ -379,6 +577,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     // Keep the live feed subscribed (it drives the track store and the taps)
     // without rebuilding the screen on every poll.
     ref.listen(busTrackingStreamProvider, (_, _) {});
+    ref.listen<FollowTarget?>(followProvider, (prev, next) {
+      if (prev != next) _onFollowChanged(next);
+    });
+    _syncFollow(ref.watch(followProvider));
+    final follow = _follow;
     final bb = context.bb;
     final gtfs = ref.watch(gtfsRepositoryProvider);
     if (gtfs.value == null) {
@@ -402,9 +605,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final filter = ref.watch(mapRouteFilterProvider);
     final selection = ref.watch(mapSelectionProvider);
     final selectedStop = selection is StopSelection ? ref.watch(stopInfoProvider(selection.stopId)) : null;
+    final repo = gtfs.value!;
+    // Minutes to your stop from the live predictions, for the followed bus.
+    final yourStopArrivals = follow == null || settings.selectedStopId == null
+        ? const <ArrivalRow>[]
+        : ref.watch(stopArrivalsProvider(settings.selectedStopId!)).value ?? const <ArrivalRow>[];
     final buildMap = ref.watch(mapViewBuilderProvider);
     final media = MediaQuery.of(context);
     final navInset = BBNavBar.reservedHeight(context);
+    final Object? sheetKey = follow == null ? selection : 'follow:${follow.vehicleId}';
     _scheduleControlsMeasure();
     if (_headerHeight == null) _scheduleHeaderMeasure();
 
@@ -431,6 +640,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
       final peek = (peekPx / sheetArea).clamp(0.12, 0.45);
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
+      _fitPadding = EdgeInsets.fromLTRB(48, media.padding.top + BBSpace.s + _controlsHeight + 16, 48, peekTop + 16);
       // Just above the card, but below the chips and the my-location pill. With
       // no room, stay on screen and overlap the card's top edge instead.
       final belowControls =
@@ -452,7 +662,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
         child: Stack(
           children: [
             Positioned.fill(
-              child: buildMap(MapViewConfig(
+              // Translucent: the map still gets every touch. Moving a pointer
+              // far enough (a pan or a pinch) pauses the follow camera.
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (e) => _pointerStarts[e.pointer] = e.position,
+                onPointerMove: _onPointerMove,
+                onPointerUp: _onPointerEnd,
+                onPointerCancel: _onPointerEnd,
+                child: buildMap(MapViewConfig(
                 styleString: MapStyle.assetFor(bb.brightness, settings.mapThemeMode),
                 initialTarget: myStop == null ? _defaultTarget : LatLng(myStop.stopLat, myStop.stopLon),
                 initialZoom: _defaultZoom,
@@ -462,7 +680,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 onReady: _onReady,
                 onStyleLoaded: () => unawaited(_onStyleLoaded()),
                 onTap: _onTap,
-              )),
+                )),
+              ),
             ),
             Positioned(
               top: media.padding.top + BBSpace.s,
@@ -478,14 +697,16 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                     children: [
                       Flexible(
                         flex: 3,
-                        child: BBChip(
-                          label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
-                          icon: myStop == null ? BBIcons.search : BBIcons.star,
-                          chevron: true,
-                          semanticLabel:
-                              myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
-                          onTap: () => context.go('/'),
-                        ),
+                        child: follow != null
+                            ? _followChip(follow)
+                            : BBChip(
+                                label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
+                                icon: myStop == null ? BBIcons.search : BBIcons.star,
+                                chevron: true,
+                                semanticLabel:
+                                    myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
+                                onTap: () => context.go('/'),
+                              ),
                       ),
                       const SizedBox(width: BBSpace.s),
                       Flexible(
@@ -544,31 +765,80 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
             ),
             Positioned.fill(
               child: BBSheet(
-                key: ValueKey(selection),
-                controller: _sheetFor(selection),
+                key: ValueKey(sheetKey),
+                controller: _sheetFor(sheetKey),
                 peekFraction: peek,
                 bottomInset: navInset,
                 semanticLabel: 'Map sheet',
-                header: _measuredHeader(switch (selection) {
-                  null => MyStopCard.header(),
-                  StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),
-                  BusSelection(:final vehicleId) => BusCardHeader(vehicleId: vehicleId),
-                }),
+                header: _measuredHeader(follow != null
+                    ? _followHeader(follow, repo, myStop, yourStopArrivals)
+                    : switch (selection) {
+                        null => MyStopCard.header(),
+                        StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),
+                        BusSelection(:final vehicleId) => BusCardHeader(vehicleId: vehicleId),
+                      }),
                 slivers: [
                   SliverToBoxAdapter(
-                    child: switch (selection) {
-                      null => MyStopCard.body(),
-                      StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardBody(stop: selectedStop),
-                      BusSelection(:final vehicleId) => BusCardBody(vehicleId: vehicleId),
-                    },
+                    child: follow != null
+                        ? FollowCardBody(snapshot: follow.snapshot)
+                        : switch (selection) {
+                            null => MyStopCard.body(),
+                            StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardBody(stop: selectedStop),
+                            BusSelection(:final vehicleId) => BusCardBody(vehicleId: vehicleId),
+                          },
                   ),
                 ],
               ),
             ),
+            if (follow != null && follow.paused)
+              Positioned(
+                left: 0,
+                right: 0,
+                // Last in the stack, so it comes and goes without disturbing the sheet.
+                // Above the credit link, which sits just over the peeking card.
+                bottom: creditBottom + 44 + BBSpace.xs,
+                child: Center(child: _backChip(follow)),
+              ),
           ],
         ),
       );
     });
+  }
+
+  Widget _followChip(_Follow f) => BBChip(
+        leading: BBGlyph(BBGlyphKind.liveDot, size: 12, color: context.bb.colors.live),
+        label: 'Following bus ${f.vehicleId}',
+        onTap: () {
+          _resumeFollow(f);
+          unawaited(_sheet.collapse());
+        },
+      );
+
+  Widget _backChip(_Follow f) => BBChip(
+        label: 'Back to bus ${f.vehicleId}',
+        icon: BBIcons.bus,
+        onTap: () => _resumeFollow(f),
+      );
+
+  /// The follow card at peek. Its destination, route and delay come from the
+  /// followed trip: after an arrival the bus may already be on its next one.
+  Widget _followHeader(_Follow f, GtfsRepository repo, StopInfo? myStop, List<ArrivalRow> yourStopArrivals) {
+    final snap = f.snapshot;
+    final bus = snap.bus;
+    final busOnTrip = bus != null && (bus.currentTripId == null || bus.currentTripId == snap.tripId);
+    final tripHeadsign = busOnTrip && bus.headsign.isNotEmpty
+        ? bus.headsign
+        : (snap.tripId == null ? null : repo.tripsById[snap.tripId!]?.tripHeadsign);
+    final live = yourStopArrivals.where((a) => a.vehicleNumber == f.vehicleId);
+    return FollowCardHeader(
+      snapshot: snap,
+      yourStopName: myStop?.stopName,
+      minutesToYourStop: live.isEmpty ? null : live.first.minutesAway,
+      tripHeadsign: tripHeadsign,
+      routeLabel: _routeLabel(repo, snap),
+      onStop: () => ref.read(followProvider.notifier).stop(),
+      onSeeAll: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)),
+    );
   }
 
   /// Reports the header's height whenever it changes (arrivals load, text

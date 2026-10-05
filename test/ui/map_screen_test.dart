@@ -6,6 +6,7 @@ import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/copy/legal_copy.dart';
@@ -18,12 +19,14 @@ import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTarget
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show CircleLayerProperties, LatLng, SymbolLayerProperties;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../map/support/fake_map_surface.dart';
+import '../map/support/out_and_back.dart';
 
 const _mun = StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 47.5700, stopLon: -52.7300);
 
@@ -142,7 +145,19 @@ Future<void> _frames(WidgetTester tester, int n) async {
   }
 }
 
-Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, Map<String, BusTrackingState> buses = const {}, double textScale = 1, Size? size, double dpr = 1, List<ArrivalRow> arrivals = const []}) async {
+Future<void> _pump(
+  WidgetTester tester, {
+  Map<String, Object> prefs = const {},
+  Map<String, BusTrackingState> buses = const {},
+  double textScale = 1,
+  Size? size,
+  double dpr = 1,
+  List<ArrivalRow> arrivals = const [],
+  GtfsRepository Function()? repo,
+  Stream<Map<String, BusTrackingState>>? busStream,
+  bool disableAnimations = false,
+  List<Override> overrides = const [],
+}) async {
   if (size != null) {
     tester.view.physicalSize = size * dpr;
     tester.view.devicePixelRatio = dpr;
@@ -162,15 +177,16 @@ Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, M
   await tester.pumpWidget(ProviderScope(
     overrides: [
       mapViewBuilderProvider.overrideWithValue(_stubMap),
-      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      gtfsRepositoryProvider.overrideWith((ref) async => (repo ?? _repo)()),
       stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
-      busTrackingStreamProvider.overrideWith((ref) => Stream.value(buses)),
+      busTrackingStreamProvider.overrideWith((ref) => busStream ?? Stream.value(buses)),
+      ...overrides,
     ],
     child: MaterialApp.router(
       theme: BBTheme.light(),
       routerConfig: router,
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale), disableAnimations: disableAnimations),
         child: child!,
       ),
     ),
@@ -573,4 +589,279 @@ void main() {
     await _pump(tester, prefs: {'selectedStopId': '1150'}, textScale: 2);
     expect(tester.takeException(), isNull);
   });
+
+  group('follow mode', () {
+    BusTrackingState followed({
+      double progress = 100,
+      String trip = outAndBackTripId,
+      BusStatus status = BusStatus.active,
+      DateTime? gps,
+    }) =>
+        BusTrackingState(
+          routeRun: 'Rt 10',
+          vehicleId: '2573',
+          routeNumber: 10,
+          headsign: 'Loop',
+          currentTripId: trip,
+          shapeId: outAndBackShapeId,
+          lat: 47.5600,
+          lon: lonAt(progress),
+          heading: 90,
+          progress: progress,
+          speedKmh: 29,
+          lastGpsTime: gps ?? DateTime.now(),
+          status: status,
+          lastUpdateTime: gps ?? DateTime.now(),
+        );
+
+    late StreamController<Map<String, BusTrackingState>> feed;
+    late _RecordingSurface surface;
+
+    ProviderContainer containerOf(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
+
+    Future<void> pumpFollow(
+      WidgetTester tester, {
+      BusTrackingState? bus,
+      bool disableAnimations = false,
+      List<Override> overrides = const [],
+      Size size = const Size(390, 844),
+      double textScale = 1,
+    }) async {
+      feed = StreamController<Map<String, BusTrackingState>>();
+      addTearDown(feed.close);
+      surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(
+        tester,
+        size: size,
+        textScale: textScale,
+        prefs: {'selectedStopId': 's2'},
+        repo: outAndBackRepo,
+        busStream: feed.stream,
+        disableAnimations: disableAnimations,
+        overrides: overrides,
+      );
+      feed.add({'2573': bus ?? followed()});
+      await tester.pump();
+      await tester.runAsync(() => _styleLoaded(surface));
+    }
+
+    Future<void> startFollowing(WidgetTester tester) async {
+      containerOf(tester).read(followProvider.notifier).follow('2573');
+      await _frames(tester, 3);
+    }
+
+    Future<void> realSecond(WidgetTester tester) =>
+        tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1150))).then((_) => null);
+
+    Future<void> pan(WidgetTester tester) async {
+      await tester.dragFrom(tester.getCenter(find.byKey(const ValueKey('stub-map'))), const Offset(0, -60));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    testWidgets('following shows the top chip and the follow card, and no stop or bus card', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(find.text('Following bus 2573'), findsOneWidget);
+      expect(find.textContaining('stops to'), findsOneWidget);
+      expect(find.text('Stop following'), findsOneWidget);
+      expect(find.text('Open board'), findsNothing);
+      expect(find.text('Follow'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a follow already set when the map first builds is followed', (tester) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await pumpFollow(tester, overrides: [followProvider.overrideWith(() => _PresetFollow('2573'))]);
+      await _frames(tester, 3);
+      expect(find.text('Following bus 2573'), findsOneWidget);
+      expect(find.textContaining('stops to'), findsOneWidget);
+      expect(surface.features('bb-route'), hasLength(2));
+    });
+
+    testWidgets('a follow set from a selected bus clears the selection', (tester) async {
+      await pumpFollow(tester);
+      containerOf(tester).read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
+      await tester.pump(const Duration(milliseconds: 100));
+      containerOf(tester).read(followProvider.notifier).follow('2573');
+      await _frames(tester, 2);
+      expect(containerOf(tester).read(mapSelectionProvider), isNull);
+      expect(find.text('Following bus 2573'), findsOneWidget);
+    });
+
+    testWidgets('panning pauses the camera and shows Back to bus; the chip resumes it', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(surface.fits, hasLength(1), reason: 'the first frame frames the bus and your stop');
+      expect(find.text('Back to bus 2573'), findsNothing);
+
+      await pan(tester);
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      await realSecond(tester); // longer than the camera's one-second interval
+      await _frames(tester, 3);
+      expect(surface.fits, hasLength(1));
+      expect(surface.moves, isEmpty);
+
+      await tester.tap(find.text('Back to bus 2573'));
+      await _frames(tester, 3);
+      expect(find.text('Back to bus 2573'), findsNothing);
+      expect(surface.fits, hasLength(2), reason: 'the camera moves at once on resume');
+    });
+
+    testWidgets('a plain tap on the map does not pause', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await tester.tapAt(tester.getCenter(find.byKey(const ValueKey('stub-map'))));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Back to bus 2573'), findsNothing);
+    });
+
+    testWidgets('the top chip also resumes a paused follow', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await pan(tester);
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      await tester.tap(find.text('Following bus 2573'));
+      await _frames(tester, 3);
+      expect(find.text('Back to bus 2573'), findsNothing);
+      expect(surface.fits, hasLength(2));
+    });
+
+    testWidgets('the camera fits the bus and your stop with the sheet and chips cleared', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final (bus, stop, padding, animate) = surface.fits.single;
+      expect(bus.longitude, closeTo(lonAt(100), 1e-4));
+      expect(stop, LatLng(47.560045, lonAt(500)));
+      expect(animate, isTrue);
+      expect(padding.left, 48);
+      expect(padding.right, 48);
+      expect(padding.top, greaterThan(16 + 44), reason: 'below the chips');
+      expect(padding.bottom, greaterThan(100), reason: 'above the peeking sheet');
+    });
+
+    testWidgets('while following, the route is drawn as a driven and an ahead part', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final parts = surface.features('bb-route');
+      expect(parts.map((f) => (f['properties'] as Map)['part']), ['driven', 'ahead']);
+    });
+
+    testWidgets('Reduce Motion makes the camera jump instead of animating', (tester) async {
+      await pumpFollow(tester, disableAnimations: true);
+      await startFollowing(tester);
+      expect(surface.fits, hasLength(1));
+      await pan(tester);
+      await tester.tap(find.text('Back to bus 2573'));
+      await _frames(tester, 3);
+      expect(surface.fits, hasLength(2));
+      expect(surface.fits.map((f) => f.$4), [false, false]);
+      expect(surface.moves, isEmpty);
+    });
+
+    testWidgets('a stale followed bus shows Last seen', (tester) async {
+      await pumpFollow(tester, bus: followed(status: BusStatus.stale, gps: DateTime.now().subtract(const Duration(seconds: 75))));
+      await startFollowing(tester);
+      expect(find.textContaining('Last seen 1 min ago'), findsOneWidget);
+      expect(containerOf(tester).read(followProvider), isNotNull);
+    });
+
+    testWidgets('a bus that is not in the feed yet shows Finding bus', (tester) async {
+      await pumpFollow(tester);
+      feed.add(const {});
+      await tester.pump();
+      await startFollowing(tester);
+      expect(find.text('Finding bus 2573…'), findsOneWidget);
+    });
+
+    testWidgets('a trip change ends the follow with a toast and clears the route', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(surface.features('bb-route'), hasLength(2));
+      feed.add({'2573': followed(trip: 'some-other-trip')});
+      await _frames(tester, 3);
+      expect(find.text('Bus 2573 has finished its trip'), findsOneWidget);
+      expect(containerOf(tester).read(followProvider), isNull);
+      expect(surface.features('bb-route'), isEmpty);
+      expect(find.text('Following bus 2573'), findsNothing);
+      await tester.pump(const Duration(seconds: 5)); // the toast's timer
+    });
+
+    testWidgets('after following ends, the camera stops and the Back chip goes', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await pan(tester);
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      feed.add({'2573': followed(trip: 'some-other-trip')});
+      await _frames(tester, 3);
+      expect(containerOf(tester).read(followProvider), isNull);
+      expect(find.text('Back to bus 2573'), findsNothing);
+      final calls = surface.fits.length + surface.moves.length;
+      await realSecond(tester);
+      await _frames(tester, 4);
+      expect(surface.fits.length + surface.moves.length, calls);
+      await tester.pump(const Duration(seconds: 5));
+    });
+
+    testWidgets('Stop following ends the follow and clears the route, without a toast', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await tester.tap(find.text('Stop following'));
+      await _frames(tester, 2);
+      expect(containerOf(tester).read(followProvider), isNull);
+      expect(surface.features('bb-route'), isEmpty);
+      expect(find.byKey(BBToast.cardKey), findsNothing);
+      expect(find.text('Following bus 2573'), findsNothing);
+    });
+
+    testWidgets('See all stops opens the sheet to its full height', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final before = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+      await tester.tap(find.text('See all stops'));
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      // Full is 90% of the area under the status bar and above the nav bar.
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, lessThan(before - 400));
+    });
+
+    testWidgets('a style reload while following draws the route again', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await tester.runAsync(() => _styleLoaded(surface));
+      expect(surface.features('bb-route'), hasLength(2), reason: 'the new style starts empty; the route is pushed back at once');
+    });
+
+    testWidgets('while following, taps near a bus or a stop are ignored', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      _config!.onTap(LatLng(47.560045, lonAt(500)));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Open board'), findsNothing);
+      _config!.onTap(LatLng(47.5601, lonAt(100)));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(containerOf(tester).read(mapSelectionProvider), isNull);
+      expect(find.text('Following bus 2573'), findsOneWidget);
+    });
+
+    testWidgets('no overflow at 320 pt and text x2.0 while following', (tester) async {
+      await pumpFollow(tester, size: const Size(320, 640), textScale: 2);
+      await startFollowing(tester);
+      // The tall peek covers the map's middle: pan low on the left edge, clear of the chips.
+      await tester.dragFrom(const Offset(20, 200), const Offset(0, 40));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+}
+
+class _PresetFollow extends FollowNotifier {
+  _PresetFollow(this.id);
+  final String id;
+
+  @override
+  FollowTarget? build() => FollowTarget(id);
 }
