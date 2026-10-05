@@ -10,6 +10,9 @@ import '../kit/kit.dart';
 import 'map_surface.dart';
 import 'marker_images.dart';
 
+/// How a bus is drawn while a bus is being followed (spec §3.2).
+enum MarkerEmphasis { normal, followed, dimmed }
+
 /// One bus as the map draws it this frame.
 class BusMarker {
   const BusMarker({
@@ -20,6 +23,7 @@ class BusMarker {
     required this.label,
     required this.hue,
     required this.stale,
+    this.emphasis = MarkerEmphasis.normal,
   });
 
   final String vehicleId;
@@ -29,6 +33,7 @@ class BusMarker {
   final String label;
   final RouteHue hue;
   final bool stale;
+  final MarkerEmphasis emphasis;
 }
 
 /// The number on a bus badge: the route number, else the route from
@@ -41,13 +46,16 @@ String busLabel(BusTrackingState s) {
 
 /// Markers for this frame. The renderer's drawn position wins; a bus it has
 /// not drawn yet uses its latest fix. Stale buses stay, flagged for a grey
-/// badge (spec §3.2). An empty [routeFilter] shows every route.
+/// badge (spec §3.2). An empty [routeFilter] shows every route. While
+/// [followedVehicleId] is set, that bus is [MarkerEmphasis.followed] and every
+/// other bus [MarkerEmphasis.dimmed].
 List<BusMarker> busMarkers({
   required Map<String, BusTrackingState> tracking,
   required Map<String, RenderedBus> drawn,
   required Set<int> routeFilter,
   required HeadingSmoother headings,
   required DateTime now,
+  String? followedVehicleId,
 }) {
   final out = <BusMarker>[];
   for (final MapEntry(key: id, value: s) in tracking.entries) {
@@ -62,6 +70,9 @@ List<BusMarker> busMarkers({
       label: label,
       hue: RoutePalette.ofName(label),
       stale: s.status == BusStatus.stale,
+      emphasis: followedVehicleId == null
+          ? MarkerEmphasis.normal
+          : (id == followedVehicleId ? MarkerEmphasis.followed : MarkerEmphasis.dimmed),
     ));
   }
   headings.prune({for (final m in out) m.vehicleId});
@@ -83,9 +94,9 @@ Map<String, dynamic> _point(double lat, double lon, Map<String, dynamic> propert
 String _hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
 /// Sources, layers and marker images of the Harbour map (spec §3.2), bottom to
-/// top: stops, your stop, bus notches, bus badges. [install] runs after every
-/// style load (a style switch clears everything natively); updates are cheap
-/// GeoJSON swaps that register any new marker image first.
+/// top: followed route (casing, line), stops, your stop, bus notches, bus
+/// badges. [install] runs after every style load (a style switch clears
+/// everything natively); updates are cheap GeoJSON swaps that register any new marker image first.
 class MapLayers {
   MapLayers(this.surface, {required this.brightness, required this.pixelRatio});
 
@@ -93,6 +104,9 @@ class MapLayers {
   final Brightness brightness;
   final double pixelRatio;
 
+  static const routeSource = 'bb-route';
+  static const routeCasingLayer = 'bb-route-casing';
+  static const routeLineLayer = 'bb-route-line';
   static const stopsSource = 'bb-stops';
   static const stopsLayer = 'bb-stops-layer';
   static const myStopSource = 'bb-my-stop';
@@ -109,12 +123,12 @@ class MapLayers {
     // plugin re-applies the style on creation), so a second install finds our
     // layers and sources already there. Clear them first, layers before the
     // sources they draw from; on a fresh style there is nothing to remove.
-    for (final layer in [badgeLayer, notchLayer, myStopLayer, stopsLayer]) {
+    for (final layer in [badgeLayer, notchLayer, myStopLayer, stopsLayer, routeLineLayer, routeCasingLayer]) {
       try {
         await surface.removeLayer(layer);
       } catch (_) {}
     }
-    for (final source in [busesSource, myStopSource, stopsSource]) {
+    for (final source in [busesSource, myStopSource, stopsSource, routeSource]) {
       try {
         await surface.removeSource(source);
       } catch (_) {}
@@ -122,6 +136,34 @@ class MapLayers {
     _images.clear();
     await surface.addImage(MarkerImages.myStopId, await MarkerImages.myStop(brightness: brightness, pixelRatio: pixelRatio));
     _images.add(MarkerImages.myStopId);
+
+    await surface.addGeoJsonSource(routeSource, _collection(const []));
+    await surface.addLineLayer(
+      routeSource,
+      routeCasingLayer,
+      LineLayerProperties(
+        lineColor: _hex(RoutePalette.ink),
+        lineWidth: 9.0,
+        lineOpacity: [
+          Expressions.multiply,
+          0.3,
+          [Expressions.get, 'opacity'],
+        ],
+        lineCap: 'round',
+        lineJoin: 'round',
+      ),
+    );
+    await surface.addLineLayer(
+      routeSource,
+      routeLineLayer,
+      const LineLayerProperties(
+        lineColor: [Expressions.get, 'color'],
+        lineWidth: 6.0,
+        lineOpacity: [Expressions.get, 'opacity'],
+        lineCap: 'round',
+        lineJoin: 'round',
+      ),
+    );
 
     await surface.addGeoJsonSource(stopsSource, _collection([
       for (final s in stops) _point(s.stopLat, s.stopLon, {'stopId': s.stopId}),
@@ -151,6 +193,8 @@ class MapLayers {
       notchLayer,
       const SymbolLayerProperties(
         iconImage: [Expressions.get, 'notch'],
+        iconSize: [Expressions.get, 'scale'],
+        iconOpacity: [Expressions.get, 'opacity'],
         iconRotate: [Expressions.get, 'heading'],
         iconRotationAlignment: 'map',
         iconAllowOverlap: true,
@@ -163,6 +207,8 @@ class MapLayers {
       badgeLayer,
       const SymbolLayerProperties(
         iconImage: [Expressions.get, 'badge'],
+        iconSize: [Expressions.get, 'scale'],
+        iconOpacity: [Expressions.get, 'opacity'],
         iconAllowOverlap: true,
         iconIgnorePlacement: true,
         symbolSortKey: [Expressions.get, 'sort'],
@@ -199,7 +245,9 @@ class MapLayers {
       'badge': badge,
       'notch': notch,
       'heading': m.heading,
-      'sort': m.stale ? 0 : 1,
+      'scale': m.emphasis == MarkerEmphasis.followed ? 1.35 : 1.0,
+      'opacity': m.emphasis == MarkerEmphasis.dimmed ? 0.35 : 1.0,
+      'sort': m.emphasis == MarkerEmphasis.followed ? 2 : (m.stale ? 0 : 1),
     }, id: m.vehicleId);
   }
 
@@ -234,4 +282,16 @@ class MapLayers {
         myStopSource,
         _collection([if (stop != null) _point(stop.stopLat, stop.stopLon, {'stopId': stop.stopId})]),
       );
+
+  /// The followed trip's line (spec §3.2): the part already driven at 40%.
+  Future<void> updateRoute({required List<List<double>> driven, required List<List<double>> ahead, required Color color}) {
+    Map<String, dynamic> line(List<List<double>> coords, String part, double opacity) => {
+          'type': 'Feature',
+          'geometry': {'type': 'LineString', 'coordinates': coords},
+          'properties': {'part': part, 'opacity': opacity, 'color': _hex(color)},
+        };
+    return surface.setGeoJsonSource(routeSource, _collection([line(driven, 'driven', 0.4), line(ahead, 'ahead', 1.0)]));
+  }
+
+  Future<void> clearRoute() => surface.setGeoJsonSource(routeSource, _collection(const []));
 }

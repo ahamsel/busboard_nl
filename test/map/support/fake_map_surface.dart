@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:busboard_nl/ui/map/map_surface.dart';
+import 'package:flutter/widgets.dart' show EdgeInsets;
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 /// Records every call the map layers make, in order.
@@ -11,6 +12,7 @@ class FakeMapSurface implements MapSurface, MapCamera {
   final layers = <String, Object>{};
   final layerMinZoom = <String, double?>{};
   final moves = <(LatLng, double, bool)>[];
+  final fits = <(LatLng, LatLng, EdgeInsets, bool)>[];
   LatLng? location;
   @override
   double zoom = 13;
@@ -51,6 +53,14 @@ class FakeMapSurface implements MapSurface, MapCamera {
   }
 
   @override
+  Future<void> addLineLayer(String sourceId, String layerId, LineLayerProperties p) async {
+    if (layers.containsKey(layerId)) throw StateError('Layer with id $layerId already exists.');
+    calls.add('layer $layerId');
+    layers[layerId] = p;
+    layerMinZoom[layerId] = null;
+  }
+
+  @override
   Future<void> removeLayer(String layerId) async {
     calls.add('remove layer $layerId');
     if (layers.remove(layerId) == null) throw StateError('Layer $layerId does not exist.');
@@ -65,6 +75,10 @@ class FakeMapSurface implements MapSurface, MapCamera {
 
   @override
   Future<void> moveTo(LatLng target, double zoom, {required bool animate}) async => moves.add((target, zoom, animate));
+
+  @override
+  Future<void> fitBounds(LatLng a, LatLng b, {required EdgeInsets padding, required bool animate}) async =>
+      fits.add((a, b, padding, animate));
 
   @override
   Future<LatLng?> myLocation() async => location;

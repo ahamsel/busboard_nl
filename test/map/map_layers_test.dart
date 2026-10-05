@@ -125,7 +125,14 @@ void main() {
         final surface = FakeMapSurface();
         await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const [_mun]);
         final layerOrder = [for (final c in surface.calls) if (c.startsWith('layer ')) c.substring(6)];
-        expect(layerOrder, [MapLayers.stopsLayer, MapLayers.myStopLayer, MapLayers.notchLayer, MapLayers.badgeLayer]);
+        expect(layerOrder, [
+          MapLayers.routeCasingLayer,
+          MapLayers.routeLineLayer,
+          MapLayers.stopsLayer,
+          MapLayers.myStopLayer,
+          MapLayers.notchLayer,
+          MapLayers.badgeLayer,
+        ]);
         expect((surface.layers[MapLayers.notchLayer]! as SymbolLayerProperties).symbolSortKey, isNotNull,
             reason: 'stale notches sit under fresh ones');
         expect(surface.images.keys, contains(MarkerImages.myStopId));
@@ -207,15 +214,31 @@ void main() {
         final layers = MapLayers(surface, brightness: Brightness.light, pixelRatio: 1);
         await layers.install(stops: const [_mun]);
         await layers.install(stops: const [_mun]);
-        expect(surface.sources.keys, unorderedEquals([MapLayers.stopsSource, MapLayers.myStopSource, MapLayers.busesSource]));
+        expect(surface.sources.keys,
+            unorderedEquals([MapLayers.routeSource, MapLayers.stopsSource, MapLayers.myStopSource, MapLayers.busesSource]));
         expect(surface.layers.keys,
-            unorderedEquals([MapLayers.stopsLayer, MapLayers.myStopLayer, MapLayers.notchLayer, MapLayers.badgeLayer]));
+            unorderedEquals([
+              MapLayers.routeCasingLayer,
+              MapLayers.routeLineLayer,
+              MapLayers.stopsLayer,
+              MapLayers.myStopLayer,
+              MapLayers.notchLayer,
+              MapLayers.badgeLayer,
+            ]));
         // Each install clears first, layers before the sources they draw from
         // (the first install finds nothing there, and shrugs).
         final removals = surface.calls.where((c) => c.startsWith('remove ')).toList();
         final oneClear = [
-          for (final l in [MapLayers.badgeLayer, MapLayers.notchLayer, MapLayers.myStopLayer, MapLayers.stopsLayer]) 'remove layer $l',
-          for (final src in [MapLayers.busesSource, MapLayers.myStopSource, MapLayers.stopsSource]) 'remove source $src',
+          for (final l in [
+            MapLayers.badgeLayer,
+            MapLayers.notchLayer,
+            MapLayers.myStopLayer,
+            MapLayers.stopsLayer,
+            MapLayers.routeLineLayer,
+            MapLayers.routeCasingLayer,
+          ])
+            'remove layer $l',
+          for (final src in [MapLayers.busesSource, MapLayers.myStopSource, MapLayers.stopsSource, MapLayers.routeSource]) 'remove source $src',
         ];
         expect(removals, [...oneClear, ...oneClear]);
         expect(surface.features(MapLayers.stopsSource), hasLength(1));
@@ -226,7 +249,7 @@ void main() {
       await tester.runAsync(() async {
         final surface = FakeMapSurface();
         await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const []);
-        expect(surface.layers, hasLength(4));
+        expect(surface.layers, hasLength(6));
       });
     });
 
@@ -264,6 +287,84 @@ void main() {
         expect(surface.features(MapLayers.myStopSource).single['geometry']['coordinates'], [-52.73, 47.57]);
         await layers.updateMyStop(null);
         expect(surface.features(MapLayers.myStopSource), isEmpty);
+      });
+    });
+  });
+
+  group('follow mode', () {
+    test('the followed bus is emphasised and every other bus dimmed', () {
+      final markers = busMarkers(
+        tracking: {'a': _bus('a'), 'b': _bus('b')},
+        drawn: const {},
+        routeFilter: const {},
+        headings: HeadingSmoother(),
+        now: _now,
+        followedVehicleId: 'a',
+      );
+      expect({for (final m in markers) m.vehicleId: m.emphasis}, {'a': MarkerEmphasis.followed, 'b': MarkerEmphasis.dimmed});
+      final none = busMarkers(tracking: {'a': _bus('a')}, drawn: const {}, routeFilter: const {}, headings: HeadingSmoother(), now: _now);
+      expect(none.single.emphasis, MarkerEmphasis.normal);
+    });
+
+    testWidgets('bus features carry scale, opacity and sort for the emphasis', (tester) async {
+      await tester.runAsync(() async {
+        final surface = FakeMapSurface();
+        final layers = MapLayers(surface, brightness: Brightness.light, pixelRatio: 1);
+        await layers.install(stops: const []);
+        await layers.updateBuses(busMarkers(
+          tracking: {'a': _bus('a'), 'b': _bus('b')},
+          drawn: const {},
+          routeFilter: const {},
+          headings: HeadingSmoother(),
+          now: _now,
+          followedVehicleId: 'a',
+        ));
+        final props = {for (final f in surface.features(MapLayers.busesSource)) f['properties']['vehicleId']: f['properties']};
+        expect((props['a']['scale'], props['a']['opacity'], props['a']['sort']), (1.35, 1.0, 2));
+        expect((props['b']['scale'], props['b']['opacity']), (1.0, 0.35));
+      });
+    });
+
+    testWidgets('both bus layers size and fade each bus from its own feature', (tester) async {
+      await tester.runAsync(() async {
+        final surface = FakeMapSurface();
+        await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const []);
+        for (final id in [MapLayers.notchLayer, MapLayers.badgeLayer]) {
+          final p = surface.layers[id]! as SymbolLayerProperties;
+          expect(p.iconSize, [Expressions.get, 'scale'], reason: id);
+          expect(p.iconOpacity, [Expressions.get, 'opacity'], reason: id);
+        }
+      });
+    });
+
+    testWidgets('the route line sits under every other layer and splits into driven and ahead', (tester) async {
+      await tester.runAsync(() async {
+        final surface = FakeMapSurface();
+        final layers = MapLayers(surface, brightness: Brightness.light, pixelRatio: 1);
+        await layers.install(stops: const []);
+        final order = [for (final c in surface.calls) if (c.startsWith('layer ')) c.substring(6)];
+        expect(order.take(2), [MapLayers.routeCasingLayer, MapLayers.routeLineLayer]);
+        await layers.updateRoute(
+          driven: const [[-52.70, 47.56], [-52.71, 47.56]],
+          ahead: const [[-52.71, 47.56], [-52.72, 47.56]],
+          color: RouteHue.green.line,
+        );
+        final f = surface.features(MapLayers.routeSource);
+        expect([for (final x in f) x['properties']['part']], ['driven', 'ahead']);
+        expect([for (final x in f) x['properties']['opacity']], [0.4, 1.0]);
+        expect(f.first['geometry']['type'], 'LineString');
+        await layers.clearRoute();
+        expect(surface.features(MapLayers.routeSource), isEmpty);
+      });
+    });
+
+    testWidgets('a second install also clears the route layers first', (tester) async {
+      await tester.runAsync(() async {
+        final surface = FakeMapSurface();
+        final layers = MapLayers(surface, brightness: Brightness.light, pixelRatio: 1);
+        await layers.install(stops: const []);
+        await layers.install(stops: const []);
+        expect(surface.layers.keys.where((k) => k.startsWith('bb-route')), hasLength(2));
       });
     });
   });
