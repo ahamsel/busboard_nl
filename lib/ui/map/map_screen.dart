@@ -9,6 +9,7 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/location/nearest_stop_service.dart';
 import '../../domain/map/bus_tracking_state.dart';
+import '../../domain/map/delayed_track_renderer.dart';
 import '../../state/providers.dart';
 import 'stop_bottom_sheet.dart';
 import 'bus_bottom_sheet.dart';
@@ -31,6 +32,7 @@ class _MapScreenState extends ConsumerState<MapScreen>
   static const _annotationFrameInterval = Duration(milliseconds: 120);
   bool _myLocationEnabled = false;
   int _lastLoggedBusCount = -1;
+  Map<String, RenderedBus> _lastDrawn = const {};
 
   // Route filter: empty = show all
   Set<int> _activeRouteFilter = {};
@@ -527,10 +529,16 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final controller = _controller;
     if (controller == null) return;
 
-    final engine = ref.read(busMotionEngineProvider);
-    if (engine == null) return;
+    final renderer = ref.read(busTrackRendererProvider);
+    final store = ref.read(busTrackStoreProvider);
+    if (renderer == null || store == null) return;
 
-    final interpolated = engine.interpolate(DateTime.now());
+    // The renderer is stateful per vehicle (never-backward mark, slewed
+    // delay, continuity limiter), so it gets every track, once per frame, and
+    // the output is filtered here. The drawn positions are kept for tap
+    // hit-testing, which must not advance the renderer.
+    final drawn = renderer.renderAll(store.tracks.values, DateTime.now());
+    _lastDrawn = drawn;
 
     // Unseen vehicles remain in the engine briefly so a transient feed gap
     // does not destroy their motion history, but they are not live map dots.
@@ -548,9 +556,9 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final features = <Map<String, dynamic>>[];
     for (final entry in filtered.entries) {
       final state = entry.value;
-      final pos = interpolated[entry.key];
-      final lat = pos?.$1 ?? state.smoothedLat;
-      final lon = pos?.$2 ?? state.smoothedLon;
+      final pos = drawn[entry.key];
+      final lat = pos?.lat ?? state.smoothedLat;
+      final lon = pos?.lon ?? state.smoothedLon;
 
       features.add({
         'type': 'Feature',
@@ -681,18 +689,19 @@ class _MapScreenState extends ConsumerState<MapScreen>
 
   BusTrackingState? _findNearestBus(LatLng tap, double radiusMeters) {
     final tracking = ref.read(busTrackingStreamProvider).value ?? {};
-    final engine = ref.read(busMotionEngineProvider);
-    if (engine == null || tracking.isEmpty) return null;
+    if (tracking.isEmpty) return null;
 
-    final interpolated = engine.interpolate(DateTime.now());
+    // Hit-test against what was last drawn; calling the renderer here would
+    // advance its per-vehicle state at a different time than the frame loop.
+    final drawn = _lastDrawn;
     BusTrackingState? closest;
     var closestDist = double.infinity;
 
     for (final entry in tracking.entries) {
       if (entry.value.status == BusStatus.stale) continue;
-      final pos = interpolated[entry.key];
-      final lat = pos?.$1 ?? entry.value.smoothedLat;
-      final lon = pos?.$2 ?? entry.value.smoothedLon;
+      final pos = drawn[entry.key];
+      final lat = pos?.lat ?? entry.value.smoothedLat;
+      final lon = pos?.lon ?? entry.value.smoothedLon;
       final dist = NearestStopService.haversineDistance(
         tap.latitude,
         tap.longitude,

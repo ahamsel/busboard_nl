@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
-import 'package:busboard_nl/domain/map/bus_observation.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -72,20 +71,11 @@ BusTrackingState _busState({
     routeNumber: 10,
     headsign: 'Kelsey Drive',
     currentTripId: 'trip-10',
-    observations: [
-      BusObservation(
-        timestamp: now,
-        measurementTime: now,
-        lat: latitude,
-        lon: longitude,
-        heading: 90,
-        speed: 30,
-        gtfsTripId: 'trip-10',
-      ),
-    ],
     smoothedLat: latitude,
     smoothedLon: longitude,
     smoothedHeading: 90,
+    speedKmh: 30,
+    lastGpsTime: now,
     status: BusStatus.active,
     lastUpdateTime: now,
   );

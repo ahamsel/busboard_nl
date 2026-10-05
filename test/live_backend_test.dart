@@ -2,7 +2,8 @@ import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/service_alerts_api.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
-import 'package:busboard_nl/domain/map/bus_motion_engine.dart';
+import 'package:busboard_nl/domain/map/bus_track_store.dart';
+import 'package:busboard_nl/domain/map/route_geometry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -19,8 +20,8 @@ void main() {
           .map((vehicle) => vehicle.vehicle)
           .where((vehicle) => vehicle.isNotEmpty)
           .toSet();
-      final engine = BusMotionEngine(GtfsRepository());
-      engine.processBatch(result.vehicles, DateTime.now());
+      final store = BusTrackStore(RouteGeometry(GtfsRepository()));
+      store.ingest(result.vehicles, DateTime.now());
 
       // ignore: avoid_print
       print(
@@ -32,7 +33,7 @@ void main() {
       expect(result.source, LiveDataSource.gtfsRealtime);
       expect(result.vehicles, isNotEmpty);
       expect(uniqueVehicles, isNotEmpty);
-      expect(engine.states.length, uniqueVehicles.length);
+      expect(store.tracks.length, uniqueVehicles.length);
       expect(
         result.vehicles.where(
           (vehicle) =>
