@@ -10,12 +10,15 @@ import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/domain/map/follow_tracker.dart';
+import 'package:busboard_nl/domain/map/route_geometry.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
+import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/map/my_stop_card.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
@@ -130,6 +133,44 @@ BusTrackingState _bus({BusStatus status = BusStatus.stale}) => BusTrackingState(
       lastUpdateTime: DateTime.now(),
       schedDiffMins: -12,
     );
+
+FollowSnapshot _followSnapshot({bool arrived = false}) => FollowSnapshot(
+      vehicleId: '2573',
+      bus: _bus(status: BusStatus.active),
+      tripId: 't1',
+      stale: false,
+      lastSeenAgo: const Duration(seconds: 10),
+      stops: [
+        for (var i = 0; i < 8; i++)
+          TripStop(
+            stopId: 's$i',
+            name: 'Elizabeth Avenue at Allandale Road Westbound, stop $i',
+            sequence: i + 1,
+            progress: i / 8,
+            departureSeconds: 43200 + i * 240,
+          ),
+      ],
+      busIndex: 1,
+      yourStopIndex: 5,
+      stopsToYourStop: 4,
+      arrived: arrived,
+      ended: null,
+    );
+
+Widget _followCard({bool arrived = false}) {
+  final snapshot = _followSnapshot(arrived: arrived);
+  return _card(
+    FollowCardHeader(
+      snapshot: snapshot,
+      yourStopName: _longStopName,
+      minutesToYourStop: 14,
+      tripHeadsign: 'Signal Hill Road via Elizabeth Avenue',
+      onStop: () {},
+      onSeeAll: () {},
+    ),
+    FollowCardBody(snapshot: snapshot),
+  );
+}
 
 List<Override> _mapOverrides({List<ArrivalRow> arrivals = const []}) => [
       gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
@@ -247,6 +288,8 @@ final _screens = <_Screen>[
       _mapOverrides(),
     );
   }),
+  _Screen('map: follow card (8 long stops, your stop 4 away)', (t) => _app(_followCard(), const [])),
+  _Screen('map: follow card (arrived)', (t) => _app(_followCard(arrived: true), const [])),
   _Screen('settings', (t) {
     SharedPreferences.setMockInitialValues({});
     return _app(const SettingsScreen(), [
