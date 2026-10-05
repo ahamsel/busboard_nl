@@ -189,7 +189,9 @@ class TimeTrackApi {
             gtfsTripHeadsign: _readString(routeStatus, 'headsign'),
             gtfsServiceId: '',
             gtfsStopSequenceStatus: status,
-            gtfsStopSequenceMinsFromStop: delayMins?.abs() ?? 0,
+            // GTFS-Realtime has no "minutes to the closest stop"; the delay
+            // is reported separately (gtfsStopSequenceSchedDifferenceMins).
+            gtfsStopSequenceMinsFromStop: 0,
             gtfsStopSequenceDeviation: _delayDescription(delayMins),
             gtfsStopSequenceClosestStop: vehiclePosition.stopId.isNotEmpty
                 ? vehiclePosition.stopId

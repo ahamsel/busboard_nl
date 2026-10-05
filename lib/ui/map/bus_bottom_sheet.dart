@@ -24,10 +24,6 @@ class BusBottomSheet extends ConsumerWidget {
         }
       }
     }
-    final lastObservation = liveBus.observations.lastWhere(
-      (observation) => !observation.rejected,
-      orElse: () => liveBus.observations.last,
-    );
     final routeAlerts =
         ref
             .watch(serviceUpdatesProvider)
@@ -120,7 +116,7 @@ class BusBottomSheet extends ConsumerWidget {
             children: [
               _InfoChip(
                 label: 'Speed',
-                value: '${lastObservation.speed.round()} km/h',
+                value: '${liveBus.speedKmh.round()} km/h',
               ),
               const SizedBox(width: 12),
               _InfoChip(
@@ -130,7 +126,7 @@ class BusBottomSheet extends ConsumerWidget {
               const SizedBox(width: 12),
               _InfoChip(
                 label: 'GPS fix',
-                value: _timeAgo(lastObservation.measurementTime),
+                value: _timeAgo(liveBus.lastGpsTime),
               ),
             ],
           ),
@@ -152,8 +148,8 @@ class BusBottomSheet extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${lastObservation.lat.toStringAsFixed(5)}, '
-                    '${lastObservation.lon.toStringAsFixed(5)}',
+                    '${liveBus.smoothedLat.toStringAsFixed(5)}, '
+                    '${liveBus.smoothedLon.toStringAsFixed(5)}',
                     style: const TextStyle(
                       fontFeatures: [FontFeature.tabularFigures()],
                       fontSize: 12,
@@ -215,10 +211,8 @@ class _StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (status) {
       BusStatus.active => ('ACTIVE', const Color(0xFF4FC3F7)),
-      BusStatus.stopped => ('STOPPED', const Color(0xFFFFB74D)),
-      BusStatus.stale => ('STALE', const Color(0xFF9E9E9E)),
       BusStatus.offRoute => ('OFF ROUTE', const Color(0xFFEF5350)),
-      BusStatus.backtracking => ('BACKTRACK', const Color(0xFFFFB74D)),
+      BusStatus.stale => ('STALE', const Color(0xFF9E9E9E)),
     };
 
     return Container(
