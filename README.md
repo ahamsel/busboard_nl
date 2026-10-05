@@ -24,6 +24,9 @@ Personalized arrival board and live bus tracking map for **Metrobus** — St. Jo
   - the camera keeps the bus and your stop in view and closes in as the bus nears; a pan or zoom pauses it and shows a "Back to bus" chip that resumes it
   - the follow card shows the stops to your stop, a stop strip (driven, the bus, upcoming, your stop) and *Stop following* and *See all stops* (a timeline of the rest of the trip with ETAs)
   - it ends on its own: "Arrived at …" and 10 s later, a toast when the bus passes your stop or its trip ends, and "Last seen …" when the bus drops out of the feed (a toast after 5 min); it never switches to another bus
+  - a bus that never shows up on the map ("Finding bus …") ends the follow with a toast after 60 s
+  - the feed relabels trips on the timetable clock, so a new trip ID alone does not end it: it keeps the old trip while the bus is still driving it, and moves to the new trip when that one serves your stop
+  - after the phone has been locked, nothing ends until the first fresh poll
 
 ### Settings
 - **Configurable refresh interval** (5–60s, default 5s) — controls both map and board polling

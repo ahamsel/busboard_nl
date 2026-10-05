@@ -140,7 +140,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **State:** `followProvider` holds a vehicle ID, never a route or trip. It is app-wide (the Board starts a follow from another tab); only the map acts on it. *(Amended in 3b-3: was a map-scoped `followedVehicleIdProvider`.)*
 - **Taps while following:** while following, taps on other buses and stops are ignored; a tap on empty map collapses the card. *(Amended in 3b-3.)*
 - **Route filter:** the followed bus is always drawn, even when the route filter excludes its route. *(Amended in 3b-3.)*
-- **Camera:** it keeps the bus and your stop in view, with padding for the sheet and chips, and zooms in as the bus approaches.
+- **Camera:** it keeps the bus and your stop in view, with padding for the sheet and chips, and zooms in as the bus approaches. The close-in move keeps the same padding: it centres the bus and your stop in the window left between the chips and the sheet. *(Amended in 3b-3 final review.)*
   - If you pan or zoom by gesture, following pauses and a "Back to bus 2573" `BBChip` appears.
   - Camera moves respect Reduce Motion: they jump instead of animating.
   - The Back to bus chip sits just above the map credit link (which occupies the band above the peeking sheet). *(Amended in 3b-3.)*
@@ -154,9 +154,15 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **Ending:**
   - **Arrival:** when the bus reaches your stop, the card shows "Arrived at MUN Centre", follows for 10 s more, then ends.
   - **Past your stop or trip ended:** following ends with a `BBToast`.
+  - **Trip change before arrival:** the feed rolls trip IDs over on the timetable clock, early (340–750 m before the terminal) or late (up to 14 min). A new trip ID before arrival is checked in this order: *(Amended in 3b-3 final review.)*
+    1. while the live fix is still on the old trip's shape (within the off-route distance, and no more than 50 m behind the bus), following stays on the old trip: progress comes from that fix, the old stops are kept, and the usual arrival / passed / trip-ended rules decide the ending (a stop crossed between two such fixes counts as reached). The route line and the camera stay on the old trip. This lasts at most 3 min;
+    2. otherwise, if your stop is ahead of the bus on the new trip (no more than 150 m behind it), following moves to the new trip;
+    3. otherwise the trip has ended.
+    It is still the same vehicle: following never switches vehicle, but it may switch trip.
   - **Not found:** a bus that never appears in the map feed within 60 s ends the follow with a toast. *(Amended in 3b-3.)*
   - **Ending toasts:** stop following and an arrival end the follow without a toast. *(Amended in 3b-3.)*
   - **Feed gap:** the marker turns grey and shows "Last seen 1 min ago". After 5 min, following ends with a toast.
+  - **App paused:** after the app comes back from the background, lost contact and not found are not judged until the first poll newer than the snapshot held at resume; the 60 s not-found window restarts at that poll. *(Amended in 3b-3 final review.)*
   - Following never switches to a different vehicle.
 - **Screen readers:** the card has a live region that announces only changes in stops remaining (at most once per stop). Every control has a label and an action.
 
