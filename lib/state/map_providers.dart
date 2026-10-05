@@ -44,6 +44,9 @@ class MapSelectionNotifier extends Notifier<MapSelection?> {
 
 final mapSelectionProvider = NotifierProvider<MapSelectionNotifier, MapSelection?>(MapSelectionNotifier.new);
 
+/// The map's frame clock. Tests move it (an app pause of several minutes).
+final mapClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
 /// Routes shown on the map. Empty = every route (spec §3.3).
 class RouteFilterNotifier extends Notifier<Set<int>> {
   @override

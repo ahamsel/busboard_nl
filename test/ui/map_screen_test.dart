@@ -106,9 +106,13 @@ class _RecordingSurface extends FakeMapSurface {
     return super.addImage(name, bytes);
   }
 
+  /// Route line pushes that drew a line (not the clears).
+  int routePushes = 0;
+
   @override
   Future<void> setGeoJsonSource(String id, Map<String, dynamic> data) async {
     await super.setGeoJsonSource(id, data);
+    if (id == 'bb-route' && (data['features'] as List).isNotEmpty) routePushes++;
     if (id != 'bb-buses') return;
     busSets.add((data['features'] as List).cast<Map<String, dynamic>>());
     if (hold) {
@@ -591,9 +595,14 @@ void main() {
   });
 
   group('follow mode', () {
+    /// [along] places the fix that far along the out-and-back shape when it
+    /// differs from [progress] (a bus labelled with another trip); [lat]
+    /// moves it off the shape.
     BusTrackingState followed({
       String id = '2573',
       double progress = 100,
+      double? along,
+      double lat = 47.5600,
       String trip = outAndBackTripId,
       BusStatus status = BusStatus.active,
       DateTime? gps,
@@ -605,8 +614,8 @@ void main() {
           headsign: 'Loop',
           currentTripId: trip,
           shapeId: outAndBackShapeId,
-          lat: 47.5600,
-          lon: lonAt(progress),
+          lat: lat,
+          lon: lonAt(along ?? progress),
           heading: 90,
           progress: progress,
           speedKmh: 29,
@@ -775,11 +784,27 @@ void main() {
       expect(find.text('Finding bus 2573…'), findsOneWidget);
     });
 
-    testWidgets('a trip change ends the follow with a toast and clears the route', (tester) async {
+    testWidgets('a trip change while the bus is still on the old shape keeps following', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      // The feed rolls the trip over early; the fix is still on the old trip,
+      // 300 m along it (its progress on the new trip means nothing here).
+      feed.add({'2573': followed(trip: 'some-other-trip', progress: 20, along: 300)});
+      await realSecond(tester);
+      await _frames(tester, 3);
+      expect(containerOf(tester).read(followProvider), isNotNull);
+      expect(find.byKey(BBToast.cardKey), findsNothing);
+      expect(find.text('Following bus 2573'), findsOneWidget);
+      expect(find.text('1 stop to s2'), findsOneWidget, reason: "placed on the old trip's stops from the live fix");
+      final driven = (surface.features('bb-route').first['geometry'] as Map)['coordinates'] as List;
+      expect((driven.last as List).first, closeTo(lonAt(300), 1e-4), reason: "the old trip's line, split at the live fix");
+    });
+
+    testWidgets('a trip change once the bus has left the old shape ends the follow with a toast and clears the route', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
       expect(surface.features('bb-route'), hasLength(2));
-      feed.add({'2573': followed(trip: 'some-other-trip')});
+      feed.add({'2573': followed(trip: 'some-other-trip', lat: 47.58)});
       await _frames(tester, 3);
       expect(find.text('Bus 2573 has finished its trip'), findsOneWidget);
       expect(containerOf(tester).read(followProvider), isNull);
@@ -793,7 +818,7 @@ void main() {
       await startFollowing(tester);
       await pan(tester);
       expect(find.text('Back to bus 2573'), findsOneWidget);
-      feed.add({'2573': followed(trip: 'some-other-trip')});
+      feed.add({'2573': followed(trip: 'some-other-trip', lat: 47.58)});
       await _frames(tester, 3);
       expect(containerOf(tester).read(followProvider), isNull);
       expect(find.text('Back to bus 2573'), findsNothing);
@@ -940,6 +965,101 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 300));
       });
       expect(gated.features('bb-route'), isEmpty);
+    });
+
+    group('across an app pause (C1)', () {
+      Future<void> lockFor(WidgetTester tester, Duration locked, void Function(Duration) setSkew) async {
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        await tester.pump();
+        setSkew(locked);
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await _frames(tester, 3);
+      }
+
+      testWidgets('6 min locked: the follow waits for a fresh poll, then endings work again', (tester) async {
+        var skew = Duration.zero;
+        DateTime now() => DateTime.now().add(skew);
+        await pumpFollow(tester, overrides: [mapClockProvider.overrideWithValue(now)]);
+        await startFollowing(tester);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        await lockFor(tester, const Duration(minutes: 6), (d) => skew = d);
+        expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the pre-lock fix is not judged');
+        expect(find.byKey(BBToast.cardKey), findsNothing);
+        expect(find.text('Following bus 2573'), findsOneWidget);
+
+        feed.add({'2573': followed(gps: now())});
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        feed.add(const {});
+        await _frames(tester, 3);
+        expect(find.text('Lost contact with bus 2573'), findsOneWidget);
+        expect(containerOf(tester).read(followProvider), isNull);
+        await tester.pump(const Duration(seconds: 5));
+      });
+
+      testWidgets('Follow, then lock before the first poll: still finding the bus after', (tester) async {
+        var skew = Duration.zero;
+        DateTime now() => DateTime.now().add(skew);
+        await pumpFollow(tester, overrides: [mapClockProvider.overrideWithValue(now)]);
+        feed.add(const {});
+        await tester.pump();
+        await startFollowing(tester);
+        expect(find.text('Finding bus 2573…'), findsOneWidget);
+
+        await lockFor(tester, const Duration(minutes: 6), (d) => skew = d);
+        expect(containerOf(tester).read(followProvider), isNotNull);
+        expect(find.byKey(BBToast.cardKey), findsNothing);
+
+        // A fresh poll without the bus: the 60 s search starts again from it.
+        feed.add(const {});
+        await _frames(tester, 3);
+        expect(find.text('Finding bus 2573…'), findsOneWidget);
+        expect(find.byKey(BBToast.cardKey), findsNothing);
+
+        feed.add({'2573': followed(gps: now())});
+        await _frames(tester, 3);
+        expect(find.textContaining('stops to'), findsOneWidget);
+      });
+    });
+
+    testWidgets('near your stop the camera centres the bus and stop in the band above the sheet', (tester) async {
+      await pumpFollow(tester, bus: followed(progress: 420));
+      await startFollowing(tester);
+      final (target, zoom, _) = surface.moves.single;
+      expect(zoom, 16.5);
+      const midLat = (47.5600 + 47.560045) / 2;
+      expect(target.latitude, lessThan(midLat - 1e-4), reason: 'the camera centre is south, so the pair is drawn above the sheet');
+    });
+
+    testWidgets('the route line is not pushed again while the bus has not moved', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final pushes = surface.routePushes;
+      expect(pushes, greaterThan(0));
+      await realSecond(tester);
+      await _frames(tester, 3);
+      expect(surface.routePushes, pushes);
+    });
+
+    testWidgets('the Following chip tells screen readers it brings the camera back to the bus', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(find.bySemanticsLabel('Following bus 2573. Back to the bus'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('choosing a new stop while following leaves the camera to the follow', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await containerOf(tester).read(settingsProvider.notifier).setSelectedStop('s3');
+      await tester.pump(const Duration(milliseconds: 100));
+      await realSecond(tester);
+      await _frames(tester, 3);
+      expect(surface.moves.where((m) => m.$2 == 15.0), isEmpty, reason: 'no recentre on the stop at zoom 15');
     });
 
     testWidgets('no overflow at 320 pt and text x2.0 while following', (tester) async {

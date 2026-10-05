@@ -59,6 +59,7 @@ class _Follow {
   FollowSnapshot snapshot;
   DateTime? routeAt;
   double? routeProgress;
+  String? routeShapeId;
   ({List<List<double>> driven, List<List<double>> ahead, Color color})? route;
 }
 
@@ -92,6 +93,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   Future<void>? _installing;
   bool _tickersEnabled = true;
   bool _appResumed = true;
+  // After a pause the feed is as old as the pause (iOS stops polling): the
+  // follow is not judged until a poll newer than this snapshot arrives.
+  bool _awaitingFreshFeed = false;
+  Map<String, BusTrackingState>? _feedAtResume;
   final _controlsKey = GlobalKey();
   // The sheet header's own key and height: one per sheet (a re-keyed sheet's
   // outgoing header is still mounted while the incoming one is built).
@@ -174,6 +179,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      if (!_appResumed) {
+        _awaitingFreshFeed = true;
+        _feedAtResume = ref.read(busTrackingStreamProvider).value;
+      }
       _appResumed = true;
       _resumeTicker();
     }
@@ -282,7 +291,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     _lastFrameElapsed = elapsed;
     if (_frameInFlight) return;
     _frameInFlight = true;
-    unawaited(_drawFrame(DateTime.now()).whenComplete(() => _frameInFlight = false));
+    unawaited(_drawFrame(ref.read(mapClockProvider)()).whenComplete(() => _frameInFlight = false));
   }
 
   Future<void> _drawFrame(DateTime now) async {
@@ -309,7 +318,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       // Follow work rides on the frame, after the buses: the card and camera
       // never see a position the map has not drawn. The follow may have been
       // stopped, or the style reloaded, while the buses were being published.
-      if (follow != null && mounted && identical(follow, _follow)) {
+      if (follow != null && mounted && identical(follow, _follow) && _feedIsFresh(follow, now)) {
         _followFrame(follow, layers, tracking, drawn, now);
       }
     } catch (e) {
@@ -318,6 +327,19 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   }
 
   // ─── Following (spec §3.5) ────────────────────────────────
+
+  /// False until the first poll after an app pause (spec §3.5, amended in
+  /// the 3b-3 final review): lost contact and not found are never judged on
+  /// the snapshot from before the pause. The not-found clock restarts at that
+  /// poll, as the pause said nothing about the bus.
+  bool _feedIsFresh(_Follow f, DateTime now) {
+    if (!_awaitingFreshFeed) return true;
+    if (identical(ref.read(busTrackingStreamProvider).value, _feedAtResume)) return false;
+    _awaitingFreshFeed = false;
+    _feedAtResume = null;
+    f.tracker?.restartClock(now);
+    return true;
+  }
 
   void _syncFollow(FollowTarget? target) {
     if (target?.vehicleId == _follow?.vehicleId) return;
@@ -346,9 +368,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     if (repo == null || geometry == null) return;
     final id = f.vehicleId;
     final bus = tracking[id];
-    final snap = (f.tracker ??= FollowTracker(vehicleId: id, stopsFor: geometry.tripStops)).update(
+    final snap = (f.tracker ??= FollowTracker(vehicleId: id, stopsFor: geometry.tripStops, snap: geometry.snap)).update(
       bus: bus,
       drawnProgress: drawn[id]?.progress,
+      drawnTripId: drawn[id]?.tripId,
       yourStopId: ref.read(settingsProvider).selectedStopId,
       now: now,
     );
@@ -361,21 +384,25 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     if (bus == null) return;
 
     final tripId = snap.tripId;
-    // After an arrival the bus may roll on to its next trip: the line stays.
-    final onTrip = bus.currentTripId == null || bus.currentTripId == tripId;
-    if (tripId != null && onTrip && identical(layers, _layers)) {
-      final shapeId = bus.shapeId ?? repo.tripsById[tripId]?.shapeId;
-      final progress = drawn[id]?.progress ?? bus.progress;
+    // The line is the tracker's trip and shape: it stays on the old trip
+    // while the bus, relabelled early, is still driving it, and is left as it
+    // was once the bus rolls on to its next trip after an arrival.
+    if (tripId != null && snap.onTrip && identical(layers, _layers)) {
+      final shapeId = snap.shapeId ?? repo.tripsById[tripId]?.shapeId;
+      final progress = snap.progress;
       final routeAt = f.routeAt;
       final lastProgress = f.routeProgress;
+      // First push, a new shape, or moved 20 m and at least a second since.
       final due = routeAt == null ||
-          now.difference(routeAt) >= _routeInterval ||
-          (lastProgress != null && progress != null && (progress - lastProgress).abs() >= _routeMoveMeters);
+          shapeId != f.routeShapeId ||
+          (now.difference(routeAt) >= _routeInterval &&
+              (lastProgress == null || (progress != null && (progress - lastProgress).abs() >= _routeMoveMeters)));
       if (shapeId != null && progress != null && due) {
         final split = geometry.splitShape(shapeId, progress);
         if (split != null) {
           f.routeAt = now;
           f.routeProgress = progress;
+          f.routeShapeId = shapeId;
           final color = RoutePalette.ofName(_routeLabel(repo, snap) ?? busLabel(bus)).line;
           f.route = (driven: split.driven, ahead: split.ahead, color: color);
           unawaited(layers
@@ -396,6 +423,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       bus: LatLng(at?.lat ?? bus.lat, at?.lon ?? bus.lon),
       stop: yourStop == null ? null : LatLng(yourStop.stopLat, yourStop.stopLon),
       now: now,
+      padding: _fitPadding,
     );
     if (move != null) unawaited(_moveCamera(camera, move, animate: !MediaQuery.disableAnimationsOf(context)));
   }
@@ -579,7 +607,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       if (prev == next) return;
       final layers = _layers;
       if (layers != null) unawaited(_updateMyStop(layers));
-      if (next != null) unawaited(_recentreOn(next));
+      // While following, the follow camera frames the new stop itself.
+      if (next != null && _follow == null) unawaited(_recentreOn(next));
     });
     // Keep the live feed subscribed (it drives the track store and the taps)
     // without rebuilding the screen on every poll.
@@ -815,6 +844,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   Widget _followChip(_Follow f) => BBChip(
         leading: BBGlyph(BBGlyphKind.liveDot, size: 12, color: context.bb.colors.live),
         label: 'Following bus ${f.vehicleId}',
+        semanticLabel: 'Following bus ${f.vehicleId}. Back to the bus',
         onTap: () {
           _resumeFollow(f);
           unawaited(_sheet.collapse());

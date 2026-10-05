@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:busboard_nl/ui/map/follow_camera.dart';
+import 'package:flutter/widgets.dart' show EdgeInsets;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
@@ -31,5 +34,25 @@ void main() {
     expect(cam.next(bus: bus, stop: farStop, now: _t0.add(const Duration(seconds: 1))), isNotNull);
     cam.reset();
     expect(cam.next(bus: bus, stop: farStop, now: _t0.add(const Duration(milliseconds: 1100))), isNotNull);
+  });
+
+  test('the close move keeps the bus and your stop in the padded window, above the sheet', () {
+    // A tall peeking sheet: the visible band is 125 pt above the screen centre.
+    const padding = EdgeInsets.fromLTRB(48, 100, 48, 350);
+    final move = FollowCamera().next(bus: bus, stop: nearStop, now: _t0, padding: padding) as CenterMove;
+    final midLat = (bus.latitude + nearStop.latitude) / 2;
+    final midLon = (bus.longitude + nearStop.longitude) / 2;
+    expect(move.zoom, FollowCamera.nearZoom);
+    // North-up: the camera centre sits south of the pair, so the pair is
+    // drawn above the screen centre, in the middle of the band.
+    expect(move.target.latitude, lessThan(midLat));
+    final metresPerPoint = 78271.517 * math.cos(midLat * math.pi / 180) / math.pow(2, FollowCamera.nearZoom);
+    expect((midLat - move.target.latitude) * 111320, closeTo(125 * metresPerPoint, 0.05));
+    expect(move.target.longitude, closeTo(midLon, 1e-9), reason: 'equal side padding');
+  });
+
+  test('without padding the close move centres on the midpoint', () {
+    final move = FollowCamera().next(bus: bus, stop: nearStop, now: _t0) as CenterMove;
+    expect(move.target.latitude, closeTo((bus.latitude + nearStop.latitude) / 2, 1e-12));
   });
 }
