@@ -12,6 +12,7 @@ import 'package:busboard_nl/ui/map/map_screen.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -301,6 +302,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(_mapTaps, 1);
       expect(find.text('Map credits'), findsNothing);
+    });
+
+    testWidgets('on iOS the attribution margin leaves out the bottom safe area', (tester) async {
+      // MLNMapView measures the margin from the safe area, so ours must not add it twice.
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        tester.view.padding = const FakeViewPadding(bottom: 34);
+        tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+        await _pump(tester, size: const Size(390, 844));
+        final hit = tester.getRect(find.ancestor(of: find.text(credit), matching: find.byType(BBPressable)));
+        final creditBottom = 844 - hit.bottom;
+        expect(creditBottom, greaterThan(34));
+        expect(_config!.attributionMargin.y, closeTo(creditBottom - 34, 0.5));
+      } finally {
+        debugDefaultTargetPlatformOverride = null; // must be reset before the test ends
+      }
     });
 
     testWidgets("the map's own attribution button starts right after the link", (tester) async {
