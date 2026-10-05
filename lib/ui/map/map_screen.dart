@@ -80,6 +80,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   static const _creditText = '© OpenStreetMap · OpenFreeMap';
   static const _creditMaxTextScale = 1.3;
   static const _creditLeft = BBSpace.s + BBSpace.xs;
+
+  /// Follow-camera air at the screen edges: 16 plus half a followed (1.35×)
+  /// marker, so a fitted bus or stop badge is never cut by an edge.
+  static const double _fitMargin = 64;
   static const _panPauseDistance = 18.0;
   static const _routeInterval = Duration(seconds: 1);
   static const _routeMoveMeters = 20.0;
@@ -676,7 +680,6 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
       final peek = (peekPx / sheetArea).clamp(0.12, 0.45);
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
-      _fitPadding = EdgeInsets.fromLTRB(48, media.padding.top + BBSpace.s + _controlsHeight + 16, 48, peekTop + 16);
       // Just above the card, but below the chips and the my-location pill. With
       // no room, stay on screen and overlap the card's top edge instead.
       final belowControls =
@@ -684,6 +687,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       final creditBottom = math.min(
         math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
         constraints.maxHeight - creditTextHeight,
+      );
+      // The follow camera keeps the bus and your stop clear of the chips, the
+      // credit and the card, with room for half a followed marker on each side.
+      _fitPadding = EdgeInsets.fromLTRB(
+        _fitMargin,
+        media.padding.top + BBSpace.s + _controlsHeight + _fitMargin / 2,
+        _fitMargin,
+        math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
       );
       final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - BBSpace.s));
       final creditEnd = _creditLeft + creditWidth + BBSpace.s;
