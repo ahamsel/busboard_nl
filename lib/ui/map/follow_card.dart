@@ -49,6 +49,7 @@ class FollowCardHeader extends StatelessWidget {
     required this.yourStopName,
     required this.minutesToYourStop,
     required this.tripHeadsign,
+    this.routeLabel,
     required this.onStop,
     required this.onSeeAll,
   });
@@ -60,6 +61,10 @@ class FollowCardHeader extends StatelessWidget {
   /// The followed trip's destination, from [FollowSnapshot.tripId]. Used once
   /// the bus has arrived, when the bus itself may already be on its next trip.
   final String? tripHeadsign;
+
+  /// The followed trip's route, for the badge and strip colour. Falls back to
+  /// the bus's own route, which may be its next trip's once it has arrived.
+  final String? routeLabel;
   final VoidCallback onStop;
   final VoidCallback onSeeAll;
 
@@ -82,6 +87,7 @@ class FollowCardHeader extends StatelessWidget {
       );
     }
     final arrived = snapshot.arrived;
+    final route = routeLabel ?? busLabel(bus);
     // After arrival the bus may be on its next trip: its headsign and delay
     // no longer describe the trip being followed.
     final headsign = arrived || bus.headsign.isEmpty ? tripHeadsign : bus.headsign;
@@ -98,14 +104,14 @@ class FollowCardHeader extends StatelessWidget {
         children: [
           Row(
             children: [
-              RouteBadge.name(busLabel(bus)),
+              RouteBadge.name(route),
               const SizedBox(width: BBSpace.m),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      headsign == null || headsign.isEmpty ? 'Route ${busLabel(bus)}' : 'to $headsign',
+                      headsign == null || headsign.isEmpty ? 'Route $route' : 'to $headsign',
                       style: bb.text.headline,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -116,9 +122,17 @@ class FollowCardHeader extends StatelessWidget {
               ),
               if (minutes != null && !arrived) ...[
                 const SizedBox(width: BBSpace.s),
-                Text(
-                  minutes <= 0 ? 'Now' : '$minutes min',
-                  style: bb.text.headline.copyWith(color: minutes <= 5 ? bb.colors.soon : bb.colors.ink),
+                Semantics(
+                  label: switch (minutes) {
+                    <= 0 => 'Due now',
+                    1 => '1 minute to your stop',
+                    _ => '$minutes minutes to your stop',
+                  },
+                  excludeSemantics: true,
+                  child: Text(
+                    minutes <= 0 ? 'Now' : '$minutes min',
+                    style: bb.text.headline.copyWith(color: minutes <= 5 ? bb.colors.soon : bb.colors.ink),
+                  ),
                 ),
               ],
             ],
@@ -128,7 +142,7 @@ class FollowCardHeader extends StatelessWidget {
           // announces it at most once per stop.
           Semantics(liveRegion: true, label: line, excludeSemantics: true, child: Text(line, style: bb.text.body)),
           const SizedBox(height: BBSpace.s),
-          ExcludeSemantics(child: _StopStrip(snapshot: snapshot, routeLabel: busLabel(bus))),
+          ExcludeSemantics(child: _StopStrip(snapshot: snapshot, routeLabel: route)),
           const SizedBox(height: BBSpace.m),
           BBButton(label: 'See all stops', expand: true, onPressed: onSeeAll),
           const SizedBox(height: BBSpace.s),
@@ -140,14 +154,17 @@ class FollowCardHeader extends StatelessWidget {
 }
 
 /// The last stop driven, the bus, then the stops ahead up to your stop: at
-/// most seven dots. When your stop is further than that, it ends the strip.
+/// most seven stop markers, and nothing after your stop's star. When your stop
+/// is further than the cap it replaces the last dot; once the bus is at your
+/// stop the strip ends there, the bus beside the star. With your stop not on
+/// the trip it shows the next stops and no star.
 class _StopStrip extends StatelessWidget {
   const _StopStrip({required this.snapshot, required this.routeLabel});
 
   final FollowSnapshot snapshot;
   final String routeLabel;
 
-  static const int maxDots = 7;
+  static const int maxMarkers = 7;
 
   @override
   Widget build(BuildContext context) {
@@ -156,19 +173,28 @@ class _StopStrip extends StatelessWidget {
     if (stops.isEmpty) return const SizedBox.shrink();
     final idx = _safeIndices(snapshot);
     final routeLine = RoutePalette.ofName(routeLabel).line;
-
-    final driven = idx.bus >= 0 ? idx.bus : null;
-    final room = maxDots - (driven == null ? 0 : 1);
-    final ahead = [for (var i = idx.bus + 1; i < stops.length && i <= idx.bus + room; i++) i];
     final yours = idx.yours;
-    if (yours != null && yours > idx.bus && !ahead.contains(yours)) {
-      ahead[ahead.length - 1] = yours;
+    final atOrPast = yours != null && yours <= idx.bus;
+
+    // The stop marker behind the bus. At your stop that is the one before it,
+    // since your stop's own marker (the star) closes the strip.
+    final behind = idx.bus == yours ? idx.bus - 1 : idx.bus;
+    final driven = behind >= 0 ? behind : null;
+    final room = maxMarkers - (driven == null ? 0 : 1) - (atOrPast ? 1 : 0);
+    final List<int> ahead;
+    if (atOrPast) {
+      ahead = const [];
+    } else {
+      final last = yours == null ? idx.bus + room : (yours < idx.bus + room ? yours : idx.bus + room);
+      ahead = [for (var i = idx.bus + 1; i < stops.length && i <= last; i++) i];
+      if (yours != null && ahead.isNotEmpty && ahead.last != yours) ahead[ahead.length - 1] = yours;
     }
 
     Widget dot(int i) {
-      if (i == yours) return Icon(BBIcons.star, size: 16, color: bb.colors.brand);
+      if (i == yours) return Icon(BBIcons.star, key: const ValueKey('strip-star'), size: 16, color: bb.colors.brand);
       final passed = i <= idx.bus;
       return Container(
+        key: ValueKey('strip-dot-$i'),
         width: 10,
         height: 10,
         decoration: BoxDecoration(
@@ -182,8 +208,12 @@ class _StopStrip extends StatelessWidget {
     Widget connector(Color color) => Expanded(child: Container(height: 2, color: color));
     final children = <Widget>[
       if (driven != null) ...[dot(driven), connector(bb.colors.line)],
-      BBGlyph(BBGlyphKind.bus, size: 18, color: routeLine),
-      for (final i in ahead) ...[connector(routeLine), dot(i)],
+      BBGlyph(BBGlyphKind.bus, key: const ValueKey('strip-bus'), size: 18, color: routeLine),
+      if (atOrPast) ...[
+        const SizedBox(width: BBSpace.xs),
+        dot(yours),
+      ] else
+        for (final i in ahead) ...[connector(routeLine), dot(i)],
     ];
     return SizedBox(height: 20, child: Row(children: children));
   }
@@ -205,7 +235,8 @@ class FollowCardBody extends StatelessWidget {
     final start = idx.bus + 1;
     final upcoming = start >= all.length ? const <TripStop>[] : all.sublist(start);
     final shown = idx.yours == null ? upcoming.take(6).toList() : upcoming;
-    final diff = snapshot.bus?.schedDiffMins;
+    // After arrival the bus may be on its next trip: its delay isn't ours.
+    final diff = snapshot.arrived ? null : snapshot.bus?.schedDiffMins;
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.l),
       child: Column(
@@ -237,7 +268,7 @@ class _TimelineRow extends StatelessWidget {
     final bb = context.bb;
     final style = yours ? bb.text.label.copyWith(color: bb.colors.brandInk) : bb.text.body;
     return Semantics(
-      label: [stop.name, if (yours) 'your stop', if (eta.isNotEmpty) eta].join(', '),
+      label: [stop.name, if (yours) 'your stop', if (eta.isNotEmpty) eta.replaceFirst(' sched', ' scheduled')].join(', '),
       excludeSemantics: true,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: BBSpace.xs),

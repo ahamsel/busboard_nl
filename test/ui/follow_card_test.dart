@@ -64,6 +64,7 @@ Future<void> _host(
   String? tripHeadsign = 'Downtown',
   VoidCallback? onStop,
   VoidCallback? onSeeAll,
+  String? routeLabel,
   double textScale = 1,
   double width = 390,
 }) async {
@@ -84,6 +85,7 @@ Future<void> _host(
             yourStopName: 'MUN Centre',
             minutesToYourStop: minutes,
             tripHeadsign: tripHeadsign,
+            routeLabel: routeLabel,
             onStop: onStop ?? () {},
             onSeeAll: onSeeAll ?? () {},
           ),
@@ -214,6 +216,82 @@ void main() {
     }
     await _host(tester, _snap(stops: const [], busIndex: 3, yourIndex: 2));
     expect(tester.takeException(), isNull, reason: 'no stops at all');
+  });
+
+  /// The strip's markers left to right: 'bus', 'star', or the stop index.
+  List<String> stripOrder(WidgetTester tester) {
+    final found = find
+        .byWidgetPredicate((w) => w.key is ValueKey<String> && (w.key! as ValueKey<String>).value.startsWith('strip-'))
+        .evaluate()
+        .map((e) => e.widget)
+        .toList()
+      ..sort((a, b) => tester.getTopLeft(find.byWidget(a)).dx.compareTo(tester.getTopLeft(find.byWidget(b)).dx));
+    return [for (final w in found) (w.key! as ValueKey<String>).value.substring('strip-'.length)];
+  }
+
+  List<TripStop> thirty() => [for (var i = 0; i < 30; i++) _stop('s$i', 'Stop $i', i + 1, 43200 + i * 60)];
+
+  testWidgets('strip: ends at your stop, never past it', (tester) async {
+    // Bus before the first stop, your stop third.
+    await _host(tester, _snap(stops: thirty(), busIndex: -1, yourIndex: 2, toGo: 3));
+    expect(stripOrder(tester), ['bus', 'dot-0', 'dot-1', 'star']);
+
+    // Bus mid-trip, your stop within reach.
+    await _host(tester, _snap(stops: thirty(), busIndex: 4, yourIndex: 7, toGo: 3));
+    expect(stripOrder(tester), ['dot-4', 'bus', 'dot-5', 'dot-6', 'star']);
+  });
+
+  testWidgets('strip: a far stop of yours replaces the last dot, at most 7 markers', (tester) async {
+    await _host(tester, _snap(stops: thirty(), busIndex: 3, yourIndex: 25, toGo: 22));
+    final order = stripOrder(tester);
+    expect(order.where((m) => m != 'bus').length, lessThanOrEqualTo(7));
+    expect(order.last, 'star');
+    expect(order.where((m) => m == 'star').length, 1);
+
+    await _host(tester, _snap(stops: thirty(), busIndex: -1, yourIndex: 25, toGo: 26));
+    final fromStart = stripOrder(tester);
+    expect(fromStart.where((m) => m != 'bus').length, lessThanOrEqualTo(7));
+    expect(fromStart.last, 'star');
+  });
+
+  testWidgets("strip: your stop not on the trip shows up to 7 next stops and no star", (tester) async {
+    await _host(tester, _snap(stops: thirty(), busIndex: 3, yourIndex: null, toGo: null), minutes: null);
+    final order = stripOrder(tester);
+    expect(order.contains('star'), isFalse);
+    expect(order.where((m) => m != 'bus').length, lessThanOrEqualTo(7));
+    expect(order, containsAllInOrder(['dot-3', 'bus', 'dot-4']));
+  });
+
+  testWidgets('strip: on arrival the bus sits at your stop and nothing follows it', (tester) async {
+    await _host(tester, _snap(stops: thirty(), busIndex: 10, yourIndex: 10, toGo: 0, arrived: true));
+    final order = stripOrder(tester);
+    expect(order.last, 'star');
+    expect(order, ['dot-9', 'bus', 'star']);
+  });
+
+  testWidgets('body: during the arrival linger ETAs are scheduled, not shifted by the next trip delay', (tester) async {
+    await _host(tester, _snap(busIndex: 1, yourIndex: 1, toGo: 0, arrived: true, schedDiff: -9));
+    expect(find.text('12:02 sched'), findsOneWidget);
+    expect(find.text('12:11'), findsNothing);
+  });
+
+  testWidgets('header: a given route label wins for the badge (linger on a next trip)', (tester) async {
+    await _host(tester, _snap(busIndex: 2, toGo: 0, arrived: true), routeLabel: '12');
+    expect(find.bySemanticsLabel('Route 12'), findsOneWidget);
+    expect(find.bySemanticsLabel('Route 10'), findsNothing);
+  });
+
+  testWidgets('screen readers: minutes and scheduled ETAs are spoken in full', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await _host(tester, _snap(), minutes: 4);
+    expect(find.bySemanticsLabel('4 minutes to your stop'), findsOneWidget);
+    await _host(tester, _snap(), minutes: 1);
+    expect(find.bySemanticsLabel('1 minute to your stop'), findsOneWidget);
+    await _host(tester, _snap(), minutes: 0);
+    expect(find.bySemanticsLabel('Due now'), findsOneWidget);
+    await _host(tester, _snap(schedDiff: null));
+    expect(find.bySemanticsLabel('Stop B, 12:01 scheduled'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('the strip survives 2x text at the smallest width', (tester) async {
