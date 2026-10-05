@@ -1,6 +1,7 @@
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/map/follow_tracker.dart';
 import 'package:busboard_nl/domain/map/route_geometry.dart';
+import 'package:busboard_nl/domain/map/shape_matcher.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 final _t0 = DateTime(2026, 10, 5, 12);
@@ -43,15 +44,19 @@ BusTrackingState _bus({
   BusStatus status = BusStatus.active,
   DateTime? gps,
   String id = '2573',
+  String shape = 's',
+  String headsign = 'Downtown',
+  double lat = 47.56,
+  double lon = -52.71,
 }) => BusTrackingState(
   routeRun: 'Rt 10',
   vehicleId: id,
   routeNumber: 10,
-  headsign: 'Downtown',
+  headsign: headsign,
   currentTripId: trip,
-  shapeId: 's',
-  lat: 47.56,
-  lon: -52.71,
+  shapeId: shape,
+  lat: lat,
+  lon: lon,
   heading: 90,
   progress: progress,
   speedKmh: 30,
@@ -60,8 +65,33 @@ BusTrackingState _bus({
   lastUpdateTime: gps ?? _t0,
 );
 
-FollowTracker _tracker([List<TripStop> stops = _stops]) =>
-    FollowTracker(vehicleId: '2573', stopsFor: (_, _) => stops);
+/// [stops] are trip t1's; any other trip has [others]' stops, or none.
+FollowTracker _tracker([List<TripStop> stops = _stops, Map<String, List<TripStop>> others = const {}]) =>
+    FollowTracker(vehicleId: '2573', stopsFor: (trip, _) => trip == 't1' ? stops : (others[trip] ?? const []));
+
+/// A straight old shape 's' where a fix's [BusTrackingState.lon] is metres
+/// along it and [BusTrackingState.lat] metres off it.
+SnapResult? _fakeSnap(double lat, double lon, String shapeId, {double? expectedAlong, double? minAlong, double? maxAlong}) =>
+    shapeId != 's'
+        ? null
+        : SnapResult(snappedLat: 0, snappedLon: lon, distanceAlongRoute: lon.clamp(0, 1200).toDouble(), perpendicularDistance: lat.abs());
+
+FollowTracker _snapping([List<TripStop> stops = _stops, Map<String, List<TripStop>> others = const {}]) => FollowTracker(
+      vehicleId: '2573',
+      stopsFor: (trip, _) => trip == 't1' ? stops : (others[trip] ?? const []),
+      snap: _fakeSnap,
+    );
+
+/// The bus labelled with trip t2 (shape 's2') while its fix is [along] metres
+/// along the old shape and [off] metres from it; [progress] is on 's2'.
+BusTrackingState _relabelled({required double along, double off = 0, double progress = 5, DateTime? gps}) =>
+    _bus(trip: 't2', shape: 's2', progress: progress, lat: off, lon: along, gps: gps);
+
+const _returnTrip = [
+  TripStop(stopId: 'x', name: 'X', sequence: 1, progress: 0, departureSeconds: 44000),
+  TripStop(stopId: 'mun', name: 'MUN Centre', sequence: 2, progress: 600, departureSeconds: 44100),
+  TripStop(stopId: 'y', name: 'Y', sequence: 3, progress: 1000, departureSeconds: 44200),
+];
 
 void main() {
   test('counts stops to your stop as the bus advances', () {
@@ -362,6 +392,120 @@ void main() {
       now: _at(7),
     );
     expect(s.ended, isNotNull);
+  });
+
+  group('a trip change before arrival (I1/I2)', () {
+    test('a trip change while the fix is still on the old shape keeps following the old trip', () {
+      final t = _snapping();
+      t.update(bus: _bus(progress: 300), drawnProgress: 300, yourStopId: 'mun', now: _t0);
+      // Early, clock-driven switch: 500 m before your stop, the feed relabels.
+      var s = t.update(bus: _relabelled(along: 420), drawnProgress: 5, drawnTripId: 't2', yourStopId: 'mun', now: _at(2));
+      expect((s.ended, s.tripId, s.yourStopIndex, s.stopsToYourStop), (null, 't1', 2, 1));
+      expect(identical(s.stops, _stops), isTrue, reason: 'the old stops are kept');
+      expect(s.progress, 420, reason: 'progress comes from the live fix on the old shape');
+      expect(s.onTrip, isTrue);
+      s = t.update(bus: _relabelled(along: 790), drawnProgress: 10, drawnTripId: 't2', yourStopId: 'mun', now: _at(40));
+      expect((s.arrived, s.ended), (true, null));
+      s = t.update(bus: _relabelled(along: 900), drawnProgress: 20, drawnTripId: 't2', yourStopId: 'mun', now: _at(51));
+      expect(s.ended, FollowEnd.arrived);
+    });
+
+    test('a terminus switch while the drawn bus lags is an arrival, not trip ended', () {
+      final t = _snapping();
+      // The drawn bus is 200 m behind the live one when the feed rolls over.
+      t.update(bus: _bus(progress: 1000), drawnProgress: 1000, yourStopId: 'c', now: _t0);
+      var s = t.update(bus: _relabelled(along: 1195), drawnProgress: 1010, yourStopId: 'c', now: _at(1));
+      expect((s.arrived, s.ended), (true, null));
+      s = t.update(bus: _relabelled(along: 1200), drawnProgress: 1020, yourStopId: 'c', now: _at(12));
+      expect(s.ended, FollowEnd.arrived);
+    });
+
+    test('a trip change first seen after a long frame gap is judged on the live fix', () {
+      final t = _snapping();
+      t.update(bus: _bus(progress: 500), drawnProgress: 500, yourStopId: 'c', now: _t0);
+      // The map was offstage for 4 min; the bus is now at the terminal.
+      final back = _at(240);
+      final s = t.update(bus: _relabelled(along: 1198, gps: back), drawnProgress: 3, yourStopId: 'c', now: back);
+      expect((s.arrived, s.ended), (true, null));
+    });
+
+    test('a held fix that jumps across your stop between two fixes has arrived there', () {
+      final t = _snapping();
+      t.update(bus: _bus(progress: 300), drawnProgress: 300, yourStopId: 'mun', now: _t0);
+      var s = t.update(bus: _relabelled(along: 700), drawnProgress: 5, yourStopId: 'mun', now: _at(2));
+      expect((s.arrived, s.ended), (false, null));
+      // 26 s to the next fix: the bus went through MUN Centre (800) meanwhile.
+      s = t.update(bus: _relabelled(along: 1000), drawnProgress: 5, yourStopId: 'mun', now: _at(28));
+      expect((s.arrived, s.ended, s.yourStopIndex), (true, null, 2));
+    });
+
+    test('a trip change once the fix has left the old shape ends as trip ended', () {
+      final t = _snapping();
+      t.update(bus: _bus(progress: 300), drawnProgress: 300, yourStopId: 'mun', now: _t0);
+      final s = t.update(bus: _relabelled(along: 320, off: 400), drawnProgress: 5, yourStopId: 'mun', now: _at(2));
+      expect(s.ended, FollowEnd.tripEnded);
+    });
+
+    test('a fix behind the old progress has left the old trip', () {
+      final t = _snapping();
+      t.update(bus: _bus(progress: 600), drawnProgress: 600, yourStopId: 'mun', now: _t0);
+      final s = t.update(bus: _relabelled(along: 500), drawnProgress: 5, yourStopId: 'mun', now: _at(2));
+      expect(s.ended, FollowEnd.tripEnded);
+    });
+
+    test('holding on the old shape is capped at 3 min', () {
+      final t = _snapping();
+      t.update(bus: _bus(progress: 300), drawnProgress: 300, yourStopId: 'mun', now: _t0);
+      var s = t.update(bus: _relabelled(along: 320), drawnProgress: 5, yourStopId: 'mun', now: _at(1));
+      expect(s.ended, isNull);
+      s = t.update(bus: _relabelled(along: 330, gps: _at(180)), drawnProgress: 5, yourStopId: 'mun', now: _at(180));
+      expect(s.ended, isNull, reason: 'still within the grace');
+      s = t.update(bus: _relabelled(along: 330, gps: _at(182)), drawnProgress: 5, yourStopId: 'mun', now: _at(182));
+      expect(s.ended, FollowEnd.tripEnded);
+    });
+
+    test('off the old shape with your stop ahead on the new trip, it follows the new trip', () {
+      // The bus carried its finished trip's label; the feed now relabels it
+      // with the trip that serves your stop.
+      final t = _snapping(_stops, {'t2': _returnTrip});
+      var s = t.update(bus: _bus(progress: 1200), drawnProgress: 1150, yourStopId: 'y', now: _t0);
+      expect((s.ended, s.yourStopIndex), (null, null), reason: "your stop isn't on the old trip");
+      s = t.update(bus: _relabelled(along: 900, off: 600, progress: 100), drawnProgress: 1160, drawnTripId: 't1', yourStopId: 'y', now: _at(2));
+      expect((s.ended, s.tripId, s.yourStopIndex, s.busIndex, s.stopsToYourStop), (null, 't2', 2, 0, 2));
+      expect(identical(s.stops, _returnTrip), isTrue);
+      expect(s.progress, 100, reason: 'the drawn bus is still on the old trip, so its progress is not used');
+      s = t.update(bus: _relabelled(along: 900, off: 600, progress: 990), drawnProgress: 990, drawnTripId: 't2', yourStopId: 'y', now: _at(60));
+      expect((s.arrived, s.ended), (true, null));
+    });
+
+    test('off the old shape with your stop behind the bus on the new trip, the follow ends', () {
+      final t = _snapping(_stops, {'t2': _returnTrip});
+      t.update(bus: _bus(progress: 300), drawnProgress: 300, yourStopId: 'mun', now: _t0);
+      final s = t.update(bus: _relabelled(along: 0, off: 600, progress: 800), drawnProgress: 5, yourStopId: 'mun', now: _at(2));
+      expect(s.ended, FollowEnd.tripEnded);
+    });
+
+    test('without the new trip serving your stop, leaving the old shape ends the follow', () {
+      final t = _snapping(_stops, {'t2': _returnTrip});
+      t.update(bus: _bus(progress: 300), drawnProgress: 300, yourStopId: 'b', now: _t0);
+      final s = t.update(bus: _relabelled(along: 0, off: 600, progress: 0), drawnProgress: 5, yourStopId: 'b', now: _at(2));
+      expect(s.ended, FollowEnd.tripEnded);
+    });
+  });
+
+  test('restarting the clock gives a bus not seen yet another 60 s', () {
+    final t = _tracker();
+    t.update(bus: null, drawnProgress: null, yourStopId: 'mun', now: _t0);
+    t.restartClock(_at(360));
+    expect(t.update(bus: null, drawnProgress: null, yourStopId: 'mun', now: _at(361)).ended, isNull);
+    expect(t.update(bus: null, drawnProgress: null, yourStopId: 'mun', now: _at(421)).ended, FollowEnd.notFound);
+  });
+
+  test('a headsign change makes a new snapshot', () {
+    final t = _tracker();
+    final a = t.update(bus: _bus(), drawnProgress: 100, yourStopId: 'mun', now: _t0);
+    final b = t.update(bus: _bus(headsign: 'Village'), drawnProgress: 100, yourStopId: 'mun', now: _at(1));
+    expect(a == b, isFalse);
   });
 }
 
