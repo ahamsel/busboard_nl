@@ -120,12 +120,13 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
   - Duplicate or out-of-order GPS timestamps are ignored.
 - **`DelayedTrackRenderer`:**
   - It draws each bus at **render time = now − D**.
-  - **D** is the rolling median interval between a bus's new fixes, plus 2 s, clamped to 8–20 s. It's ~12 s with today's feed.
+  - **D** covers feed latency plus the fix interval, so render time never outruns the newest fix: the second-largest of the last ≤ 8 values of (next fix's fetch time − this fix's GPS time), plus 1 s, clamped to 8–30 s; with one fix, its age + 15 s. D moves toward its target at ≤ 0.1 s per second. It's ~25 s with today's feed (fixes arrive ~10 s old, every ~16 s). *(Amended 2026-10-05 in 3b-1 Task 5: the original median-interval + 2 s rule assumed zero latency, and the live replay stopped and jumped with it.)*
   - **Position:** the renderer interpolates progress along the shape between the two fixes around the render time.
-    - Progress is clamped so the drawn position never moves backward on the same trip. GPS that runs backward, for example in a detour, holds the bus still until the GPS passes that point again.
+    - Progress is clamped so the drawn position never moves backward on the same trip. GPS that runs backward, for example in a detour, holds the bus still until the GPS passes that point again. A backstep over 150 m (a wrong-pass correction) is not held: a fix pair that far backward crosses geographically, and a hold that far behind is released after 15 s.
     - **Trip change:** the bus is interpolated across the terminal in plain geographic space.
     - **Off-route** (perpendicular distance over 150 m): it interpolates the raw GPS in a straight line.
     - **When the next fix is late:** it extrapolates at the last segment's speed for at most 5 s, then holds.
+    - **Continuity limit:** the drawn bus moves toward that target at ≤ 30 m/s (along the shape when moving forward, else in a straight line), so a late fix, a first fix or a correction becomes a quick glide, never a jump. It snaps only on the first frame or after a render gap over 2 s.
 - **Other effects:**
   - **ETAs aren't delayed.** Countdowns on the board and in the follow card still come from live predictions, so only the dot runs a few seconds behind.
   - **Code removed:** `BusMotionEngine` and its special cases (stop anchor, Kalman progress filter, blend origins, backward counters) are deleted, along with the GTFS-RT adapter's misuse of `gtfsStopSequenceMinsFromStop` as the delay.

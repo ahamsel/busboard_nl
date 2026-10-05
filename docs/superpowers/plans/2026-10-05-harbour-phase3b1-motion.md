@@ -24,7 +24,7 @@ Riverpod providers wire them to the existing poll loop. The map screen and bus s
   - known bus: previous progress + speed × time;
   - new bus or trip change: the trip's next stop, else the timetable position shifted by the reported delay.
   - Stops are placed along the shape in sequence order.
-- Render time = `now − D`. D = rolling median interval between a bus's new fixes, plus 2 s, clamped to 8–20 s (12 s default with fewer than two intervals).
+- Render time = `now − D`. D = second-largest recent (next fetch − GPS time) lag + 1 s, clamped to 8–30 s; one fix: age + 15 s; slewed ≤ 0.1 s/s. *(Amended in Task 5 — was median interval + 2 s, 8–20 s.)* Drawn motion is limited to ≤ 30 m/s.
 - Never draw a bus backward along the same trip. When GPS runs backward, the bus holds.
 - Trip change: geographic interpolation across the terminal.
 - Off-route (perpendicular distance over 150 m): straight-line interpolation of the raw GPS.
@@ -50,7 +50,7 @@ Riverpod providers wire them to the existing poll loop. The map screen and bus s
 - End every commit with your own model's Co-Authored-By trailer.
 
 **Behaviour changes this plan introduces** (reviewers: intended)
-1. Buses on the map are drawn about 8–20 s (typically ~12 s) behind the latest GPS fix, and glide between fixes instead of freezing and catching up.
+1. Buses on the map are drawn about 8–30 s (typically ~25 s, since fixes arrive ~10 s old every ~16 s) behind real time, and glide between fixes instead of freezing and catching up. *(Amended in Task 5 — was ~12 s.)*
 2. `BusStatus` loses `stopped` and `backtracking`. A bus is `active`, `offRoute` or `stale`.
 3. The bus sheet's speed comes from the latest fix (`BusTrackingState.speedKmh`) instead of `observations.last`.
 4. For GTFS-Realtime vehicles, `gtfsStopSequenceMinsFromStop` is 0. It used to be filled with the absolute delay, which only the deleted engine read.
