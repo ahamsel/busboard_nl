@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/timetrack_models.dart';
+import 'package:busboard_nl/domain/map/bus_track.dart';
 import 'package:busboard_nl/domain/map/bus_track_store.dart';
 import 'package:busboard_nl/domain/map/delayed_track_renderer.dart';
 import 'package:busboard_nl/domain/map/route_geometry.dart';
@@ -127,7 +128,11 @@ void main() {
             //    per-trip rule;
             //  - a pass-correction glide (same trip, b more than 150 m behind
             //    a): the renderer deliberately glides between the two snapped
-            //    places instead of drawing along the shape.
+            //    places instead of drawing along the shape;
+            //  - a reverse-run stretch (either fix stored without progress by
+            //    the store's reverse rule): the bus is driving the shape
+            //    backward, so the renderer draws its raw GPS and the
+            //    projection on the shape falls with it.
             // The high water restarts when such a glide ends.
             final renderAt = t.subtract(renderer.currentDelayFor(track.vehicleId) ?? renderer.delayFor(track));
             var exemptGlide = false;
@@ -136,7 +141,8 @@ void main() {
               if (!renderAt.isBefore(a.gpsTime) && renderAt.isBefore(b.gpsTime)) {
                 final tripChange = a.tripId != b.tripId;
                 final passCorrection = !tripChange && a.progress != null && b.progress != null && b.progress! < a.progress! - 150;
-                exemptGlide = tripChange || passCorrection;
+                final reverseRun = _withheld(a) || _withheld(b);
+                exemptGlide = tripChange || passCorrection || reverseRun;
                 break;
               }
             }
@@ -199,6 +205,9 @@ void main() {
     });
   }
 }
+
+/// A fix the store's reverse rule stored without progress.
+bool _withheld(TrackFix f) => f.progress == null && f.snapProgress != null;
 
 /// Metres along the bus's trip shape of the drawn point, searched near
 /// [near] (the previous frame's value); null without a known shape or when

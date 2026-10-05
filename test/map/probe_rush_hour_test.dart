@@ -195,6 +195,7 @@ void main() {
     tw('1627', '12:50:30', '12:52:30', 'v1627 snap 12:51:45 after data gap');
     tw('2446', '12:56:30', '12:58:30', 'v2446 snap 12:58:06 after data gap');
     tw('1311', '12:04:25', '12:06:00', 'v1311 snap 12:05:25');
+    tw('858', '13:03:30', '13:12:30', 'v858 reverse-rule run 13:04');
     final traceStats = <int, Map<String, num>>{};
     final traceOut = <int, StringBuffer>{};
 
@@ -229,6 +230,11 @@ void main() {
     // change): those snap by design.
     var snapsOver100Recreated = 0;
     final seenLatest = <String, DateTime>{};
+    // Fixes the store withheld progress from (the reverse rule).
+    var newFixes = 0, withheldFixes = 0;
+    final withheldSince = <String, DateTime>{};
+    final withheldRuns = <String, (DateTime, int)>{};
+    final withheldLog = <String, Map<String, int>>{};
 
     void closeEp(String kind, String vid, VS s, DateTime now, {bool active = false}) {
       final e = s.ep[kind];
@@ -248,6 +254,28 @@ void main() {
       final (poll, vehicles) = frames[i];
       final before = {for (final t in store.tracks.values) t.vehicleId: t.latest};
       store.ingest(vehicles, poll);
+      for (final t in store.tracks.values) {
+        final latest = t.latest;
+        if (identical(before[t.vehicleId], latest)) continue;
+        newFixes++;
+        final withheld = latest.progress == null && latest.snapProgress != null;
+        if (withheld) {
+          withheldFixes++;
+          final start = withheldSince.putIfAbsent(t.vehicleId, () => latest.gpsTime);
+          final secs = latest.gpsTime.difference(start).inSeconds;
+          final run = withheldRuns[t.vehicleId];
+          if (run == null || run.$1 != start) {
+            withheldRuns[t.vehicleId] = (start, secs);
+          } else {
+            withheldRuns[t.vehicleId] = (start, secs);
+          }
+          if (secs >= 0) {
+            withheldLog[t.vehicleId] = {...?withheldLog[t.vehicleId], z(start): secs};
+          }
+        } else {
+          withheldSince.remove(t.vehicleId);
+        }
+      }
       for (final t in store.tracks.values) {
         final b0 = before[t.vehicleId];
         final latest = t.latest;
@@ -529,6 +557,10 @@ void main() {
     out.writeln('frozen while bus moves: $frozenSec of $movingSec moving vehicle-seconds (${(100 * frozenSec / movingSec).toStringAsFixed(1)}%), '
         'of which starved (render time > newest fix + 5 s) $frozenStarved');
     out.writeln('starved frames: $starvedFrames of $totalFrames (${(100 * starvedFrames / totalFrames).toStringAsFixed(2)}%)');
+    out.writeln('reverse rule: $withheldFixes of $newFixes new fixes withheld progress; runs (start: GPS seconds to last withheld fix):');
+    for (final e in withheldLog.entries) {
+      out.writeln('  v${e.key} ${e.value}');
+    }
     out.writeln('drawn delay: p50 ${pct(delays, .5).toStringAsFixed(1)} s, p90 ${pct(delays, .9).toStringAsFixed(1)} s');
     out.writeln('render delay at the ${DelayedTrackRenderer.maxDelay.inSeconds} s cap: $delayAtMax of $totalFrames frames (${(100 * delayAtMax / totalFrames).toStringAsFixed(1)}%); frames drawn faster than 75 km/h (catch-up): $fastFrames');
     frozenRuns.sort((a, b) => b.$3.compareTo(a.$3));

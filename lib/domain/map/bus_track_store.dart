@@ -13,6 +13,16 @@ import 'shape_matcher.dart';
 /// GPS times are ignored. Each fix is snapped near where the bus should be
 /// (previous progress + speed × time), or for a new bus or trip near the
 /// stop it is approaching or its timetable position.
+///
+/// Reverse rule: a bus whose fixes keep falling along its trip's shape is
+/// driving it backward (the feed still labels the finished trip after the bus
+/// turned round), so its progress means nothing. Once [reverseRunFixes]
+/// fixes in a row on one trip and shape each lie more than
+/// [_reverseFallMeters] behind the one before, the last of them and those
+/// after it are stored without progress (and without a snapped place), so
+/// the renderer draws the raw GPS, until a fix advances more than
+/// [_reverseFallMeters] again or the trip or shape changes. The snap itself
+/// is kept in [TrackFix.snapProgress] for the next fix's window.
 class BusTrackStore {
   BusTrackStore(this._geometry, {this.maxFixes = 24});
 
@@ -29,6 +39,15 @@ class BusTrackStore {
   static const double _windowBackMeters = 250;
   static const double _windowAheadMeters = 400;
   static const double _windowMaxSpeedMps = 30;
+
+  /// How many fixes in a row, each behind the one before, make the bus count
+  /// as running its shape backward: a single step back is a wrong-pass snap
+  /// or GPS jitter, two in a row are a direction.
+  static const int reverseRunFixes = 3;
+
+  /// A fix this far behind the previous one has fallen; this far ahead, it
+  /// advances. Wider than the GPS jitter of a bus waiting at a stop.
+  static const double _reverseFallMeters = 30;
 
   /// How far ahead of the fetch time a feed timestamp may be (clock skew).
   static const Duration _maxFutureSkew = Duration(minutes: 2);
@@ -74,7 +93,7 @@ class BusTrackStore {
       shapeId = previous.shapeId;
     }
     final continuing = previous != null &&
-        previous.progress != null &&
+        previous.snapProgress != null &&
         previous.shapeId == shapeId &&
         previous.tripId == tripId;
 
@@ -86,7 +105,7 @@ class BusTrackStore {
       final snap = continuing
           ? _snapContinuing(v, shapeId, previous, gpsTime)
           : _geometry.snap(v.busLat, v.busLon, shapeId, expectedAlong: _geometry.initialHint(v, tripId, shapeId) ??
-                  (previous?.shapeId == shapeId ? previous?.progress : null));
+                  (previous?.shapeId == shapeId ? previous?.snapProgress : null));
       if (snap != null) {
         if (snap.perpendicularDistance > RouteGeometry.offRouteMeters) {
           offRoute = true;
@@ -96,6 +115,13 @@ class BusTrackStore {
           snappedLon = snap.snappedLon;
         }
       }
+    }
+
+    final snapProgress = progress;
+    if (progress != null && track != null && continuing && _runsBackward(track.fixes, progress)) {
+      progress = null;
+      snappedLat = null;
+      snappedLon = null;
     }
 
     final fix = TrackFix(
@@ -108,6 +134,7 @@ class BusTrackStore {
       tripId: tripId,
       shapeId: shapeId,
       progress: progress,
+      snapProgress: snapProgress,
       snappedLat: snappedLat,
       snappedLon: snappedLon,
       offRoute: offRoute,
@@ -136,9 +163,31 @@ class BusTrackStore {
       ..lastFixAt = fetchTime;
   }
 
+  /// Whether a fix that snapped at [p] on the same trip and shape as the
+  /// newest of [fixes] is part of a backward run (see the class doc): the
+  /// run goes on while the newest fix was withheld and [p] does not advance
+  /// past it, or starts when [p] ends [reverseRunFixes] fixes on one trip
+  /// and shape that each fell from the one before.
+  bool _runsBackward(List<TrackFix> fixes, double p) {
+    final last = fixes.last;
+    final lastP = last.snapProgress!;
+    if (last.progress == null) return p <= lastP + _reverseFallMeters;
+    var next = p;
+    for (var k = 0; k < reverseRunFixes - 1; k++) {
+      final i = fixes.length - 1 - k;
+      if (i < 0) return false;
+      final f = fixes[i];
+      final fp = f.snapProgress;
+      if (fp == null || f.tripId != last.tripId || f.shapeId != last.shapeId) return false;
+      if (next >= fp - _reverseFallMeters) return false;
+      next = fp;
+    }
+    return true;
+  }
+
   SnapResult? _snapContinuing(TimeTrackVehicle v, String shapeId, TrackFix previous, DateTime gpsTime) {
     final dt = gpsTime.difference(previous.gpsTime).inMilliseconds / 1000.0;
-    final prior = previous.progress!;
+    final prior = previous.snapProgress!;
     return _geometry.snap(
       v.busLat,
       v.busLon,
