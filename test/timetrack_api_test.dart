@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
+import 'package:busboard_nl/data/realtime/timetrack_models.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gtfs_realtime_bindings/gtfs_realtime_bindings.dart';
@@ -133,6 +134,59 @@ void main() {
     expect(result.source, LiveDataSource.fleetView);
     expect(result.vehicles.single.vehicle, '963');
     expect(result.vehicles.single.gtfsStopSequenceSchedDifferenceMins, -4);
+  });
+
+  Future<TimeTrackVehicle> fleetViewVehicle(String opStatus, int minsOffSchedule) async {
+    final client = MockClient((request) async {
+      if (request.url.queryParameters['type'] == 'routestatus') {
+        return http.Response(
+          jsonEncode([
+            {
+              'vehicle': '0963',
+              'routeId': 9,
+              'block': '09-1',
+              'positionTime': '15:24:56',
+              'headsign': 'MI - CNA - EAST WHITE HILLS',
+              'stopName': 'Torbay Road Mall',
+              'nearestStopName': 'Torbay Road Mall',
+              'opStatus': opStatus,
+              'minsOffSchedule': minsOffSchedule,
+              'latitude': 47.59,
+              'longitude': -52.70,
+              'speed': 18,
+              'heading': 22,
+            },
+          ]),
+          200,
+        );
+      }
+      return http.Response('', 503);
+    });
+    final result = await TimeTrackApi(client: client).fetchVehiclesResult();
+    expect(result.source, LiveDataSource.fleetView);
+    return result.vehicles.single;
+  }
+
+  test('Fleet View with no known status reports no delay, not on time', () async {
+    for (final status in ['NO DATA', '', 'WEIRD']) {
+      final v = await fleetViewVehicle(status, 7);
+      expect(v.gtfsStopSequenceDeviation, '', reason: status);
+      expect(v.deviation, '', reason: status);
+      expect(v.shortStatus, '', reason: status);
+      expect(v.gtfsStopSequenceSchedDifferenceMins, 0, reason: status);
+    }
+  });
+
+  test('Fleet View keeps its delay for known statuses', () async {
+    final early = await fleetViewVehicle('early', 3);
+    expect(early.gtfsStopSequenceSchedDifferenceMins, 3);
+    expect(early.gtfsStopSequenceDeviation, '3 MINS AHEAD');
+    final late = await fleetViewVehicle('BEHIND', 4);
+    expect(late.gtfsStopSequenceSchedDifferenceMins, -4);
+    expect(late.gtfsStopSequenceDeviation, '4 MINS BEHIND');
+    final onTime = await fleetViewVehicle('ON TIME', 0);
+    expect(onTime.gtfsStopSequenceDeviation, 'ON TIME');
+    expect(onTime.gtfsStopSequenceSchedDifferenceMins, 0);
   });
 
   test('uses legacy TimeTrack as the final fallback', () async {
