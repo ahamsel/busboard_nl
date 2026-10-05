@@ -67,6 +67,86 @@ void main() {
     expect(mobile.asked, ['1150']);
   });
 
+  group('stop arrivals cache', () {
+    testWidgets("your stop's arrivals survive nobody watching; other stops' do not", (tester) async {
+      final mobile = _FakeMobile();
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
+        timetrackApiProvider.overrideWithValue(_FakeTimeTrack()),
+        metrobusMobileApiProvider.overrideWithValue(mobile),
+      ]);
+      await c.read(gtfsRepositoryProvider.future);
+      await c.read(settingsProvider.notifier).setSelectedStop('1150');
+
+      // Your stop: watched, then not watched (a bus card is showing).
+      final mine = c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      expect(mobile.asked, ['1150']);
+      mine.close();
+      await tester.pump(const Duration(milliseconds: 100));
+      final cached = c.read(stopArrivalsProvider('1150'));
+      expect(cached.hasValue, isTrue, reason: 'no skeleton on the way back');
+      expect(mobile.asked, ['1150'], reason: 'and no second fetch');
+
+      // Nobody watching: no polling either.
+      await tester.pump(const Duration(seconds: 30));
+      expect(mobile.asked, ['1150']);
+
+      // Another stop is dropped when its last listener goes.
+      final other = c.listen(stopArrivalsProvider('2000'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      other.close();
+      await tester.pump(const Duration(milliseconds: 100));
+      mobile.asked.clear();
+      c.listen(stopArrivalsProvider('2000'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      expect(mobile.asked, ['2000'], reason: 'fetched afresh');
+      c.dispose();
+    });
+
+    testWidgets('choosing another stop lets the old one go', (tester) async {
+      final mobile = _FakeMobile();
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
+        timetrackApiProvider.overrideWithValue(_FakeTimeTrack()),
+        metrobusMobileApiProvider.overrideWithValue(mobile),
+      ]);
+      await c.read(gtfsRepositoryProvider.future);
+      await c.read(settingsProvider.notifier).setSelectedStop('1150');
+      c.listen(stopArrivalsProvider('1150'), (_, _) {}).close();
+      await tester.pump(const Duration(seconds: 1));
+      await c.read(settingsProvider.notifier).setSelectedStop('2000');
+      await tester.pump(const Duration(seconds: 1));
+      mobile.asked.clear();
+      c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      expect(mobile.asked, ['1150'], reason: 'no longer kept: fetched afresh');
+      c.dispose();
+    });
+
+    testWidgets('watching your stop again refreshes it, keeping the old rows meanwhile', (tester) async {
+      final mobile = _FakeMobile();
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
+        timetrackApiProvider.overrideWithValue(_FakeTimeTrack()),
+        metrobusMobileApiProvider.overrideWithValue(mobile),
+      ]);
+      await c.read(gtfsRepositoryProvider.future);
+      await c.read(settingsProvider.notifier).setSelectedStop('1150');
+      final first = c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      expect(mobile.asked, hasLength(1));
+      first.close();
+      await tester.pump(const Duration(seconds: 30)); // its timer fires with nobody watching
+      expect(mobile.asked, hasLength(1));
+      final sub = c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      expect(sub.read().hasValue, isTrue);
+      await tester.pump(const Duration(seconds: 1));
+      expect(mobile.asked.length, 2, reason: 'one refresh on coming back');
+      c.dispose();
+    });
+  });
+
   group('stop arrivals and the app lifecycle', () {
     ProviderContainer containerWith(_FakeMobile mobile) {
       final c = ProviderContainer(overrides: [

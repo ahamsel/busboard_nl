@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
@@ -140,7 +142,7 @@ Future<void> _frames(WidgetTester tester, int n) async {
   }
 }
 
-Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, Map<String, BusTrackingState> buses = const {}, double textScale = 1, Size? size}) async {
+Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, Map<String, BusTrackingState> buses = const {}, double textScale = 1, Size? size, List<ArrivalRow> arrivals = const []}) async {
   if (size != null) {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -161,7 +163,7 @@ Future<void> _pump(WidgetTester tester, {Map<String, Object> prefs = const {}, M
     overrides: [
       mapViewBuilderProvider.overrideWithValue(_stubMap),
       gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
-      stopArrivalsProvider.overrideWith((ref, stopId) async => const <ArrivalRow>[]),
+      stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
       busTrackingStreamProvider.overrideWith((ref) => Stream.value(buses)),
     ],
     child: MaterialApp.router(
@@ -370,6 +372,31 @@ void main() {
       expect(surface.locationReads, 3);
       expect(surface.moves.single.$1, const LatLng(47.51, -52.80));
     });
+  });
+
+  testWidgets("the peek is tall enough for your stop's two arrivals", (tester) async {
+    ArrivalRow arrival(int minutes) => ArrivalRow(
+          routeShortName: '10',
+          headsign: 'Downtown',
+          scheduledTime: GtfsTime.parse('09:52:00'),
+          predictedTime: GtfsTime.parse('09:55:00'),
+          minutesAway: minutes,
+          liveStatus: LiveStatus.behind,
+          isLive: true,
+          tripId: 't$minutes',
+          vehicleNumber: '2134',
+          isEnhanced: false,
+          routeRun: '10-1',
+        );
+    await _pump(tester, size: const Size(390, 844), prefs: {'selectedStopId': '1150'}, arrivals: [arrival(3), arrival(9), arrival(15)]);
+    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    final tiles = find.byType(ArrivalRowTile);
+    expect(tiles, findsAtLeastNWidgets(2));
+    for (final i in [0, 1]) {
+      final r = tester.getRect(tiles.at(i));
+      expect(r.top, greaterThanOrEqualTo(card.top));
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: 'arrival ${i + 1} fits inside the peeking card');
+    }
   });
 
   testWidgets('choosing a new stop recentres the map on it', (tester) async {

@@ -39,6 +39,11 @@ class BusCardHeader extends ConsumerWidget {
         child: Text('This bus is no longer reporting', style: bb.text.body),
       );
     }
+    // The live feed carries no headsign: take the destination from the trip.
+    final tripId = bus.currentTripId;
+    final headsign = bus.headsign.isNotEmpty
+        ? bus.headsign
+        : (tripId == null ? '' : ref.watch(gtfsRepositoryProvider).value?.tripsById[tripId]?.tripHeadsign ?? '');
     final delay = delayText(bus.schedDiffMins);
     final (pill, tone) = switch (bus.status) {
       BusStatus.active => ('Live', BBPillTone.live),
@@ -56,7 +61,7 @@ class BusCardHeader extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  bus.headsign.isNotEmpty ? 'to ${bus.headsign}' : 'Route ${bus.routeNumber}',
+                  headsign.isNotEmpty ? 'to $headsign' : 'Route ${bus.routeNumber}',
                   style: bb.text.headline,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
