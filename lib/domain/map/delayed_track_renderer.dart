@@ -49,8 +49,9 @@ class RenderedBus {
 /// short, at most [_longDataGap]. A short gap is no reason to jump: it keeps
 /// the never-backward rules (so a target behind the mark of the same trip
 /// and shape is held, never snapped back), and the limiter catches up at
-/// [_gapCatchUpMps] until it reaches the target, along the shape or across
-/// a trip change in a straight line.
+/// [_gapCatchUpMps] along the shape until it reaches the target; a straight
+/// line across the map (a trip change, a skipped spur) keeps
+/// [_maxCatchUpMps].
 ///
 /// [render] updates per-vehicle state (the never-backward mark and the
 /// smoothed delay), so call it once per bus per frame with a monotonic
@@ -301,27 +302,35 @@ class DelayedTrackRenderer {
   }
 
   /// Final stage: the drawn bus moves at most [_maxCatchUpMps] per second
-  /// ([_gapCatchUpMps] while catching up after a short data gap) from where
-  /// this vehicle was last drawn toward [target]. See the class doc.
+  /// ([_gapCatchUpMps] along the shape while catching up after a short data
+  /// gap) from where this vehicle was last drawn toward [target]. See the
+  /// class doc.
   RenderedBus _limitStep(RenderedBus target, DateTime now, _VehicleState state, {bool snap = false}) {
     final prev = state.drawn;
     final prevNow = state.drawnAt;
     var out = target;
+    var reached = true;
     if (!snap && prev != null && prevNow != null) {
       final gap = now.difference(prevNow);
       if (gap > Duration.zero && gap <= _continuityGap) {
-        final mps = state.catchingUp ? _gapCatchUpMps : _maxCatchUpMps;
-        out = _towards(prev, target, mps * gap.inMicroseconds / 1e6);
+        final seconds = gap.inMicroseconds / 1e6;
+        final along = (state.catchingUp ? _gapCatchUpMps : _maxCatchUpMps) * seconds;
+        (bus: out, reached: reached) = _towards(prev, target, alongStep: along, chordStep: _maxCatchUpMps * seconds);
       }
     }
     // The fast catch-up ends once the bus is drawn where it should be.
-    if (identical(out, target)) state.catchingUp = false;
+    if (reached) state.catchingUp = false;
     state.drawn = out;
     state.drawnAt = now;
     return out;
   }
 
-  RenderedBus _towards(RenderedBus prev, RenderedBus target, double maxStep) {
+  /// One limiter step from [prev] toward [target]: at most [alongStep] along
+  /// the shape, or [chordStep] in a straight line. The fast gap catch-up
+  /// ([_gapCatchUpMps]) is only for running along the road; a chord across
+  /// the map (a trip change, a skipped spur) keeps [_maxCatchUpMps], since
+  /// it crosses whatever lies between. [reached] says the step got there.
+  ({RenderedBus bus, bool reached}) _towards(RenderedBus prev, RenderedBus target, {required double alongStep, required double chordStep}) {
     final prevP = prev.progress;
     final targetP = target.progress;
     final shapeId = target.shapeId;
@@ -335,25 +344,28 @@ class DelayedTrackRenderer {
         prev.shapeId == shapeId &&
         prev.tripId == target.tripId &&
         targetP >= prevP &&
-        _plausibleAlong(targetP - prevP, prev.lat, prev.lon, target.lat, target.lon)) {
-      if (targetP - prevP <= maxStep) return target;
-      return _onShape(target.vehicleId, shapeId, prevP + maxStep, target.tripId) ?? target;
+        plausibleAlong(targetP - prevP, prev.lat, prev.lon, target.lat, target.lon)) {
+      if (targetP - prevP <= alongStep) return (bus: target, reached: true);
+      final step = _onShape(target.vehicleId, shapeId, prevP + alongStep, target.tripId);
+      return step == null ? (bus: target, reached: true) : (bus: step, reached: false);
     }
     final d = NearestStopService.haversineDistance(prev.lat, prev.lon, target.lat, target.lon);
-    if (d <= maxStep) return target;
-    final f = maxStep / d;
-    return RenderedBus(
+    if (d <= chordStep) return (bus: target, reached: true);
+    final f = chordStep / d;
+    final step = RenderedBus(
       vehicleId: target.vehicleId,
       lat: prev.lat + (target.lat - prev.lat) * f,
       lon: prev.lon + (target.lon - prev.lon) * f,
       heading: bearingDegrees(prev.lat, prev.lon, target.lat, target.lon),
       tripId: target.tripId,
     );
+    return (bus: step, reached: false);
   }
 
   /// Whether a forward step of [along] metres along the shape between two
-  /// places fits their map distance (see [_alongStretch]).
-  static bool _plausibleAlong(double along, double aLat, double aLon, double bLat, double bLon) {
+  /// places fits their map distance (see [_alongStretch]). Public so the
+  /// replay test can tell the renderer's spur glides apart.
+  static bool plausibleAlong(double along, double aLat, double aLon, double bLat, double bLon) {
     if (along <= _alongSlackMeters) return true;
     final geo = NearestStopService.haversineDistance(aLat, aLon, bLat, bLon);
     return along <= math.max(_alongStretch * geo, geo + _alongSlackMeters);
@@ -380,7 +392,7 @@ class DelayedTrackRenderer {
         a.progress != null &&
         b.progress != null &&
         b.progress! >= a.progress! - _glideBackwardMeters &&
-        _plausibleAlong(b.progress! - a.progress!, a.snappedLat ?? a.lat, a.snappedLon ?? a.lon, b.snappedLat ?? b.lat, b.snappedLon ?? b.lon);
+        plausibleAlong(b.progress! - a.progress!, a.snappedLat ?? a.lat, a.snappedLon ?? a.lon, b.snappedLat ?? b.lat, b.snappedLon ?? b.lon);
     if (sameAxis) {
       final p = a.progress! + (b.progress! - a.progress!) * f;
       final onShape = _onShape(id, a.shapeId!, p, b.tripId);
@@ -423,7 +435,7 @@ class DelayedTrackRenderer {
       if (prev.tripId == last.tripId && prev.shapeId == last.shapeId && prev.progress != null) {
         final along = last.progress! - prev.progress!;
         final segSeconds = last.gpsTime.difference(prev.gpsTime).inMilliseconds / 1000.0;
-        final plausible = _plausibleAlong(along, prev.snappedLat ?? prev.lat, prev.snappedLon ?? prev.lon, last.snappedLat ?? last.lat, last.snappedLon ?? last.lon);
+        final plausible = plausibleAlong(along, prev.snappedLat ?? prev.lat, prev.snappedLon ?? prev.lon, last.snappedLat ?? last.lat, last.snappedLon ?? last.lon);
         final speed = segSeconds <= 0 || !plausible ? 0.0 : (along / segSeconds).clamp(0.0, _maxCatchUpMps);
         final onShape = _onShape(track.vehicleId, last.shapeId!, last.progress! + _deadReckoned(speed, at.difference(last.gpsTime)), last.tripId);
         if (onShape != null) return onShape;

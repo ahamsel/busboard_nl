@@ -214,6 +214,13 @@ void main() {
       expect([for (final x in f) tens(x.progress)], [900, null, null, null, null, 800]);
     });
 
+    test('a bus creeping forward 20 m a fix leaves raw GPS once 30 m past the run\'s lowest point', () {
+      reverse([900, 800, 700, 690, 710, 730, 750]);
+      final f = store.tracks['2573']!.fixes;
+      // Lowest 690: 710 is within the 30 m deadband, 730 is past it.
+      expect([for (final x in f) tens(x.progress)], [900, null, null, null, null, 730, 750]);
+    });
+
     test('one step back is not enough', () {
       reverse([900, 800, 860, 780, 840]);
       expect([for (final x in store.tracks['2573']!.fixes) tens(x.progress)], [900, 800, 860, 780, 840]);
