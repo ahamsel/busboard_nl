@@ -175,6 +175,60 @@ void main() {
     expect(f.offRoute, isFalse);
   });
 
+  group('a bus running its shape backward (a stale trip after a late feed switch)', () {
+    // Westward along the outbound leg, 100 m a fix: every fix falls 100 m.
+    void reverse(List<double> meters, {int from = 0, String tripId = outAndBackTripId}) {
+      for (var i = 0; i < meters.length; i++) {
+        poll(from + i, [fix(meters: meters[i], seconds: 43200 + (from + i) * 10, lat: nearOutboundCurb, speed: 0, tripId: tripId)]);
+      }
+    }
+
+    // To the nearest 10 m (the snap sits a metre or so from the GPS).
+    int? tens(double? m) => m == null ? null : (m / 10).round() * 10;
+
+    test('from the third fix in a row each more than 30 m behind the last, progress is withheld', () {
+      reverse([900, 800, 700, 600, 500]);
+      final f = store.tracks['2573']!.fixes;
+      expect([for (final x in f) tens(x.progress)], [900, 800, null, null, null]);
+      // The snap is kept, so the next fix's window still follows the bus.
+      expect([for (final x in f) tens(x.snapProgress)], [900, 800, 700, 600, 500]);
+      // Withheld fixes are drawn on raw GPS: no snapped place either.
+      expect(f[2].snappedLat, isNull);
+      expect(f[2].offRoute, isFalse);
+      expect(f[2].shapeId, outAndBackShapeId);
+    });
+
+    test('progress stays withheld while the bus waits, and returns when it advances again', () {
+      reverse([900, 800, 700, 690, 710, 800]);
+      final f = store.tracks['2573']!.fixes;
+      // 690 falls 10 m (jitter), 710 creeps 20 m: neither is a clear
+      // advance. 800 advances 90 m: back on the shape.
+      expect([for (final x in f) tens(x.progress)], [900, 800, null, null, null, 800]);
+    });
+
+    test('one step back is not enough', () {
+      reverse([900, 800, 860, 780, 840]);
+      expect([for (final x in store.tracks['2573']!.fixes) tens(x.progress)], [900, 800, 860, 780, 840]);
+    });
+
+    test('small falls (30 m or less) do not count', () {
+      reverse([900, 880, 860, 840, 820]);
+      expect(store.tracks['2573']!.fixes.every((x) => x.progress != null), isTrue);
+    });
+
+    test('a trip change ends the run', () {
+      final repo = outAndBackRepo();
+      repo.tripsById['next-trip'] = repo.tripsById[outAndBackTripId]!.copyForTest(tripId: 'next-trip');
+      store = BusTrackStore(RouteGeometry(repo));
+      reverse([900, 800, 700]);
+      reverse([600], from: 3, tripId: 'next-trip');
+      final f = store.tracks['2573']!.fixes;
+      expect(f[2].progress, isNull);
+      expect(f[3].tripId, 'next-trip');
+      expect(f[3].progress, isNotNull);
+    });
+  });
+
   test('schedDiffMins follows the reported delay and is null when none was reported', () {
     poll(0, [fix(meters: 100, seconds: 43200, deviation: '2 MINS BEHIND', schedDifferenceMins: -2)]);
     expect(store.tracks['2573']!.latest.schedDiffMins, -2);

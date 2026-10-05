@@ -10,6 +10,7 @@ class TrackFix {
     this.tripId,
     this.shapeId,
     this.progress,
+    this.snapProgress,
     this.snappedLat,
     this.snappedLon,
     this.offRoute = false,
@@ -28,8 +29,15 @@ class TrackFix {
   final String? tripId;
   final String? shapeId;
 
-  /// Metres along [shapeId]; null when off route or without a shape.
+  /// Metres along [shapeId]; null when off route, without a shape, or while
+  /// the bus runs the shape backward (see [snapProgress]).
   final double? progress;
+
+  /// Where the fix snapped along [shapeId], kept even when [progress] is
+  /// withheld because the bus is running the shape backward (BusTrackStore's
+  /// reverse rule): the next fix's snap window still follows the bus.
+  /// Null when off route or without a shape.
+  final double? snapProgress;
   final double? snappedLat;
   final double? snappedLon;
 
