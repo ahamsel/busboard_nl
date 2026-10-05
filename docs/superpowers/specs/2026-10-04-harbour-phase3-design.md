@@ -126,7 +126,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
     - **Trip change:** the bus is interpolated across the terminal in plain geographic space.
     - **Off-route** (perpendicular distance over 150 m): it interpolates the raw GPS in a straight line.
     - **When the next fix is late:** it extrapolates at the last segment's speed for at most 5 s, then holds.
-    - **Continuity limit:** the drawn bus moves toward that target at ≤ 30 m/s (along the shape when moving forward, else in a straight line), so a late fix, a first fix or a correction becomes a quick glide, never a jump. It snaps only on the first frame or after a render gap over 2 s.
+    - **Continuity limit:** the drawn bus moves toward that target at ≤ 30 m/s (along the shape when moving forward, else in a straight line), so a late fix, a first fix or a correction becomes a quick glide, never a jump. It snaps only on the first frame, after a render gap over 2 s, after a data gap (newest fix more than 60 s after the previous one), or when the track was re-created.
 - **Other effects:**
   - **ETAs aren't delayed.** Countdowns on the board and in the follow card still come from live predictions, so only the dot runs a few seconds behind.
   - **Code removed:** `BusMotionEngine` and its special cases (stop anchor, Kalman progress filter, blend origins, backward counters) are deleted, along with the GTFS-RT adapter's misuse of `gtfsStopSequenceMinsFromStop` as the delay.
