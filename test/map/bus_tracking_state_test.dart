@@ -6,7 +6,7 @@ void main() {
   final fetched = DateTime(2026, 10, 5, 12, 0, 10);
   final gps = DateTime(2026, 10, 5, 12, 0, 0);
 
-  BusTrack track({bool offRoute = false, bool snapped = true}) => BusTrack(
+  BusTrack track({bool offRoute = false, bool snapped = true, int? schedDiffMins}) => BusTrack(
         vehicleId: '2573',
         routeNumber: 10,
         routeRun: 'Rt 10',
@@ -25,6 +25,7 @@ void main() {
             snappedLat: offRoute || !snapped ? null : 47.5600,
             snappedLon: offRoute || !snapped ? null : -52.7001,
             offRoute: offRoute,
+            schedDiffMins: schedDiffMins,
           ),
         ],
         lastFixAt: fetched,
@@ -57,5 +58,10 @@ void main() {
     expect(s.lat, 47.5601);
     expect(s.lon, -52.7);
     expect(s.progress, isNull);
+  });
+
+  test('fromTrack carries the latest fix\'s schedule difference (null when unreported)', () {
+    expect(BusTrackingState.fromTrack(track(schedDiffMins: -2), stale: false).schedDiffMins, -2);
+    expect(BusTrackingState.fromTrack(track(), stale: false).schedDiffMins, isNull);
   });
 }

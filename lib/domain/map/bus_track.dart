@@ -13,6 +13,7 @@ class TrackFix {
     this.snappedLat,
     this.snappedLon,
     this.offRoute = false,
+    this.schedDiffMins,
   });
 
   /// When the bus measured this position (from the feed's position time).
@@ -34,6 +35,10 @@ class TrackFix {
 
   /// More than RouteGeometry.offRouteMeters from the shape.
   final bool offRoute;
+
+  /// Schedule difference reported with this fix, in minutes: positive = ahead
+  /// (early), negative = behind (late), null = the feed reported no delay.
+  final int? schedDiffMins;
 }
 
 /// The recent fixes of one physical bus (keyed by vehicle ID).

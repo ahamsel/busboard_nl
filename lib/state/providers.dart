@@ -12,8 +12,6 @@ import '../data/realtime/service_alert_models.dart';
 import '../data/realtime/service_alerts_api.dart';
 import '../data/realtime/timetrack_api.dart';
 import '../data/realtime/timetrack_models.dart';
-import '../domain/arrival/arrival_models.dart';
-import '../domain/arrival/arrival_service.dart';
 import '../domain/location/nearest_stop_service.dart';
 import '../domain/map/bus_track_store.dart';
 import '../domain/map/delayed_track_renderer.dart';
@@ -220,40 +218,6 @@ final timetrackVehiclesProvider = FutureProvider<List<TimeTrackVehicle>>((
 ) async {
   final api = ref.read(timetrackApiProvider);
   return api.fetchVehicles();
-});
-
-// ─── Arrivals for selected stop ────────────────────────────
-
-final arrivalsProvider = FutureProvider.autoDispose<List<ArrivalRow>>((
-  ref,
-) async {
-  final settings = ref.watch(settingsProvider);
-  final stopId = settings.selectedStopId;
-  if (stopId == null) return [];
-
-  final repoAsync = ref.watch(gtfsRepositoryProvider);
-  final repo = repoAsync.asData?.value;
-  if (repo == null) return [];
-
-  final service = ArrivalService(repo);
-
-  // Try to get live vehicles
-  List<TimeTrackVehicle>? liveVehicles;
-  try {
-    final api = ref.read(timetrackApiProvider);
-    final result = await api.fetchVehiclesResult();
-    if (result.succeeded) {
-      liveVehicles = result.vehicles;
-    }
-  } catch (_) {
-    // Live data unavailable — continue with schedule only
-  }
-
-  return service.getUpcomingArrivals(
-    stopId: stopId,
-    now: DateTime.now(),
-    liveVehicles: liveVehicles,
-  );
 });
 
 // ─── Nearest Stops ─────────────────────────────────────────

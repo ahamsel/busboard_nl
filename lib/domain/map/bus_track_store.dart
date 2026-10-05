@@ -111,6 +111,9 @@ class BusTrackStore {
       snappedLat: snappedLat,
       snappedLon: snappedLon,
       offRoute: offRoute,
+      // The adapters leave the deviation text empty exactly when no delay was
+      // reported; the difference is then 0 and means "unknown", not on time.
+      schedDiffMins: v.gtfsStopSequenceDeviation.isEmpty ? null : v.gtfsStopSequenceSchedDifferenceMins,
     );
 
     if (track == null) {

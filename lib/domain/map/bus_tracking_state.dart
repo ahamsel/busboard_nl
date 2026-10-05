@@ -23,6 +23,10 @@ class BusTrackingState {
   final BusStatus status;
   final DateTime lastUpdateTime;
 
+  /// Minutes ahead (positive) or behind (negative) schedule; null when the
+  /// feed reported no delay.
+  final int? schedDiffMins;
+
   const BusTrackingState({
     required this.routeRun,
     required this.vehicleId,
@@ -38,6 +42,7 @@ class BusTrackingState {
     required this.lastGpsTime,
     required this.status,
     required this.lastUpdateTime,
+    this.schedDiffMins,
   });
 
   factory BusTrackingState.fromTrack(BusTrack track, {required bool stale}) {
@@ -57,6 +62,7 @@ class BusTrackingState {
       lastGpsTime: f.gpsTime,
       status: stale ? BusStatus.stale : (f.offRoute ? BusStatus.offRoute : BusStatus.active),
       lastUpdateTime: track.lastFixAt,
+      schedDiffMins: f.schedDiffMins,
     );
   }
 }
