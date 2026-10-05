@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:busboard_nl/ui/map/map_surface.dart';
-import 'package:flutter/widgets.dart' show EdgeInsets;
+import 'package:flutter/widgets.dart' show EdgeInsets, Size;
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 /// Records every call the map layers make, in order.
@@ -77,7 +77,14 @@ class FakeMapSurface implements MapSurface, MapCamera {
   Future<void> moveTo(LatLng target, double zoom, {required bool animate}) async => moves.add((target, zoom, animate));
 
   @override
-  Future<void> fitBounds(LatLng a, LatLng b, {required EdgeInsets padding, required bool animate}) async =>
+  Future<void> fitBounds(
+    LatLng a,
+    LatLng b, {
+    required EdgeInsets padding,
+    required Size view,
+    required double maxZoom,
+    required bool animate,
+  }) async =>
       fits.add((a, b, padding, animate));
 
   @override

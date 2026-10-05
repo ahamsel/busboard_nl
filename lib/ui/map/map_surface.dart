@@ -1,8 +1,9 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/widgets.dart' show EdgeInsets;
+import 'package:flutter/widgets.dart' show EdgeInsets, Size;
 import 'package:maplibre_gl/maplibre_gl.dart';
+
+import 'follow_camera.dart';
 
 /// The slice of MapLibre the map layers use, so layer setup and updates are
 /// tested against a fake. [MapLibreSurface] adapts a live controller.
@@ -23,8 +24,16 @@ abstract interface class MapCamera {
   Future<void> moveTo(LatLng target, double zoom, {required bool animate});
   Future<LatLng?> myLocation();
 
-  /// Shows both points with [padding] kept clear (sheet, chips).
-  Future<void> fitBounds(LatLng a, LatLng b, {required EdgeInsets padding, required bool animate});
+  /// Shows both points inside the part of the [view] that [padding] leaves
+  /// clear (sheet, chips), never closer than [maxZoom].
+  Future<void> fitBounds(
+    LatLng a,
+    LatLng b, {
+    required EdgeInsets padding,
+    required Size view,
+    required double maxZoom,
+    required bool animate,
+  });
 }
 
 class MapLibreSurface implements MapSurface, MapCamera {
@@ -73,18 +82,18 @@ class MapLibreSurface implements MapSurface, MapCamera {
   }
 
   @override
-  Future<void> fitBounds(LatLng a, LatLng b, {required EdgeInsets padding, required bool animate}) async {
-    final bounds = LatLngBounds(
-      southwest: LatLng(math.min(a.latitude, b.latitude), math.min(a.longitude, b.longitude)),
-      northeast: LatLng(math.max(a.latitude, b.latitude), math.max(a.longitude, b.longitude)),
-    );
-    final update = CameraUpdate.newLatLngBounds(
-      bounds,
-      left: padding.left,
-      top: padding.top,
-      right: padding.right,
-      bottom: padding.bottom,
-    );
+  Future<void> fitBounds(
+    LatLng a,
+    LatLng b, {
+    required EdgeInsets padding,
+    required Size view,
+    required double maxZoom,
+    required bool animate,
+  }) async {
+    // Not CameraUpdate.newLatLngBounds: MapLibre iOS centres the bounds as if
+    // the padding were symmetric (see FollowCamera.fitCamera).
+    final cam = FollowCamera.fitCamera(a, b, padding: padding, view: view, maxZoom: maxZoom);
+    final update = CameraUpdate.newCameraPosition(CameraPosition(target: cam.target, zoom: cam.zoom));
     if (animate) {
       await controller.animateCamera(update);
     } else {

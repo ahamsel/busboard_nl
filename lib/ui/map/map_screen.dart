@@ -120,6 +120,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   // and the peeking sheet; refreshed by every layout.
   EdgeInsets _fitPadding = const EdgeInsets.fromLTRB(48, 96, 48, 220);
 
+  /// The map's size, for the follow camera's fit.
+  Size _mapSize = const Size(390, 844);
+
   // One controller per selection: BBSheet is re-keyed on every selection, and a
   // DraggableScrollableController can be attached to a single sheet at a time.
   // The incoming sheet attaches before the outgoing one is disposed, so they
@@ -436,7 +439,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     try {
       switch (move) {
         case FitMove(:final bus, :final stop):
-          await camera.fitBounds(bus, stop, padding: _fitPadding, animate: animate);
+          await camera.fitBounds(bus, stop,
+              padding: _fitPadding, view: _mapSize, maxZoom: FollowCamera.nearZoom, animate: animate);
         case CenterMove(:final target, :final zoom):
           await camera.moveTo(target, zoom, animate: animate);
       }
@@ -688,6 +692,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
         math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
         constraints.maxHeight - creditTextHeight,
       );
+      _mapSize = constraints.biggest;
       // The follow camera keeps the bus and your stop clear of the chips, the
       // credit and the card, with room for half a followed marker on each side.
       _fitPadding = EdgeInsets.fromLTRB(
