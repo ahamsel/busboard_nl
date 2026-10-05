@@ -56,8 +56,10 @@ void main() {
       var advancedFrames = 0;
       var maxKmh = 0.0;
       var maxImpliedKmh = 0.0;
-      // Backward check on every frame: the drawn point projected on the shape.
+      // Backward check on every frame: the drawn point projected on the shape,
+      // against the vehicle's high-water projection on its trip.
       final projected = <String, ({String? trip, double? along})>{};
+      final highWater = <String, ({String? trip, double along, double lat, double lon})>{};
       final backwardProjected = <String>[];
 
       for (var i = 0; i < frames.length; i++) {
@@ -70,17 +72,52 @@ void main() {
             final prev = last[bus.vehicleId];
             last[bus.vehicleId] = (trip: bus.tripId, p: bus.progress, lat: bus.lat, lon: bus.lon);
             final prevProj = projected[bus.vehicleId];
-            final proj = _project(geometry, bus, prevProj?.trip == bus.tripId ? prevProj?.along : null);
+            final proj = _project(geometry, bus, bus.progress ?? (prevProj?.trip == bus.tripId ? prevProj?.along : null));
             final along = proj.along;
             projected[bus.vehicleId] = (trip: bus.tripId, along: along);
-            // A projection onto the shape is only evidence of backward motion
-            // when the drawn point itself moved that far. Where the shape folds
-            // back over itself (a loop, a terminal) the projection can jump by
-            // tens of metres while the dot moved centimetres: not a move.
-            final moved = prev == null ? 0.0 : NearestStopService.haversineDistance(prev.lat, prev.lon, bus.lat, bus.lon);
-            if (!proj.reseeded && along != null && prevProj?.along != null && prevProj!.trip == bus.tripId &&
-                along < prevProj.along! - 5 && prevProj.along! - along <= moved + 1) {
-              backwardProjected.add('${bus.vehicleId} +${t.difference(frames.first.$1).inSeconds}s ${prevProj.along!.round()}→${along.round()}');
+            // Cumulative: the projection falling more than 5 m below the high
+            // water on this trip is backward motion, but only when the drawn
+            // point really is that far from where the high water was drawn.
+            // Where the shape folds back over itself (a loop, a terminal) the
+            // projection can jump by tens of metres while the dot moved
+            // centimetres: not a move. A projection outside the search window
+            // is another pass over the same road (vehicle 755: 6198 -> 4538 m
+            // for a dot that did not move), so it restarts the high water, as
+            // do a trip change and an off-shape frame.
+            // Two kinds of glide are exempt from this check, found from the
+            // fix pair around the render time (the bus's trip tag lags until
+            // the halfway point of a pair):
+            //  - a trip-change glide (a.tripId != b.tripId): the next trip's
+            //    start can lie behind the old trip's end (a terminal
+            //    turnaround), which is real motion; never-backward is a
+            //    per-trip rule;
+            //  - a pass-correction glide (same trip, b more than 150 m behind
+            //    a): the renderer deliberately glides between the two snapped
+            //    places instead of drawing along the shape.
+            // The high water restarts when such a glide ends.
+            final renderAt = t.subtract(renderer.currentDelayFor(track.vehicleId) ?? renderer.delayFor(track));
+            var exemptGlide = false;
+            for (var k = 0; k + 1 < track.fixes.length; k++) {
+              final a = track.fixes[k], b = track.fixes[k + 1];
+              if (!renderAt.isBefore(a.gpsTime) && renderAt.isBefore(b.gpsTime)) {
+                final tripChange = a.tripId != b.tripId;
+                final passCorrection = !tripChange && a.progress != null && b.progress != null && b.progress! < a.progress! - 150;
+                exemptGlide = tripChange || passCorrection;
+                break;
+              }
+            }
+            final hw = highWater[bus.vehicleId];
+            if (along == null || exemptGlide) {
+              highWater.remove(bus.vehicleId);
+            } else if (proj.reseeded || hw == null || hw.trip != bus.tripId || along >= hw.along) {
+              highWater[bus.vehicleId] = (trip: bus.tripId, along: along, lat: bus.lat, lon: bus.lon);
+            } else {
+              final drop = hw.along - along;
+              final shown = NearestStopService.haversineDistance(hw.lat, hw.lon, bus.lat, bus.lon);
+              if (drop > 5 && shown >= drop) {
+                backwardProjected.add('${bus.vehicleId} +${t.difference(frames.first.$1).inSeconds}s '
+                    'high water ${hw.along.round()} → ${along.round()} (${drop.round()} m), drawn ${shown.round()} m from the high water');
+              }
             }
             if (prev == null) continue;
             final meters = NearestStopService.haversineDistance(prev.lat, prev.lon, bus.lat, bus.lon);
@@ -110,7 +147,7 @@ void main() {
       }
 
       expect(backward, isEmpty, reason: backward.take(5).join('\n'));
-      expect(backwardProjected, isEmpty, reason: '${backwardProjected.length} drops over 5 m:\n${backwardProjected.take(5).join('\n')}');
+      expect(backwardProjected, isEmpty, reason: '${backwardProjected.length} drops over 5 m below the high water:\n${backwardProjected.take(5).join('\n')}');
       expect(movingFrames, greaterThan(0));
       expect(advancedFrames / movingFrames, greaterThanOrEqualTo(0.95),
           reason: '$advancedFrames of $movingFrames moving frames advanced');
