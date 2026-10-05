@@ -19,7 +19,8 @@ dart run tool/capture_timetrack_snapshots.dart \
 `capture.json` and a `gtfs/` directory through the map motion pipeline
 (`BusTrackStore` + `DelayedTrackRenderer`), so a new fixture needs only its
 folder. It checks that buses never move backward on a trip, that drawn motion
-stays at or under 30 m/s, and that buses keep moving while their fixes do.
+stays at or under 30 m/s (60 m/s while catching up after a data gap of up to
+3 min), and that buses keep moving while their fixes do.
 Metrobus open data.
 
 Build one from a capture and the GTFS folder it was recorded against:

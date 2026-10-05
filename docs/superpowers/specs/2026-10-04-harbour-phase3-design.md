@@ -119,15 +119,19 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
     - Stops are placed along the shape in sequence order.
   - **Reset rule:** a route-number change starts a new track. A trip change continues the same track across the terminal.
   - Duplicate or out-of-order GPS timestamps are ignored.
+  - **Reverse rule:** after a late feed switch the bus drives its next trip backward along the finished trip's shape. Once three fixes in a row on one trip and shape each lie more than 30 m behind the one before, all of them but the first, and the fixes after them, are stored without progress (the snap is kept for the next fix's window), so the renderer draws the raw GPS. Progress returns when a fix advances more than 30 m, or on a trip or shape change. *(Amended in 3b-4.)*
 - **`DelayedTrackRenderer`:**
   - It draws each bus at **render time = now − D**.
   - **D** covers feed latency plus the fix interval, so render time never outruns the newest fix: the second-largest of the last ≤ 8 values of (next fix's fetch time − this fix's GPS time), plus 1 s, clamped to 8–30 s; with one fix, its age + 15 s. D moves toward its target at ≤ 0.1 s per second. It's ~25 s with today's feed (fixes arrive ~10 s old, every ~16 s). *(Amended 2026-10-05 in 3b-1 Task 5: the original median-interval + 2 s rule assumed zero latency, and the live replay stopped and jumped with it.)*
+    - D is now the **largest** of those lags plus 1 s, clamped to **8–40 s**. On the 2026-10-05 rush hour it is p50 39 s and p90 40 s, about 9 s more than before. The feed's lag there was p90 39 s, and with a 30 s cap the dot ran out of data in 13% of frames. *(Amended in 3b-4.)*
   - **Position:** the renderer interpolates progress along the shape between the two fixes around the render time.
     - Progress is clamped so the drawn position never moves backward on the same trip. GPS that runs backward, for example in a detour, holds the bus still until the GPS passes that point again. A backstep over 150 m (a wrong-pass correction) is not held: a fix pair that far backward crosses geographically, and a hold that far behind is released after 15 s.
+    - **A step along the shape must fit the map:** a forward step is drawn along the shape only if it is at most max(1.6 × the map distance between its two places, that distance + 200 m). A bigger step went round a loop or spur the bus skipped (route 14's 1.85 km spur, route 2's 500 m loop), so the pair glides across the map. The continuity limit uses the same test before it walks along the shape. *(Amended in 3b-4.)*
     - **Trip change:** the bus is interpolated across the terminal in plain geographic space.
     - **Off-route** (perpendicular distance over 150 m): it interpolates the raw GPS in a straight line.
-    - **When the next fix is late:** it extrapolates at the last segment's speed for at most 5 s, then holds.
+    - **When the next fix is late:** it dead-reckons along the shape at the last pair's speed v, decaying: v·τ·(1 − e^(−t/τ)) metres after t seconds, with τ = 7 s, t capped at 20 s and the distance at 55 m. The cap sits under the 60 m jitter hold, so if the bus in fact stopped, the next fix is held rather than drawn as a step back. A last pair that fails the map-distance test above gives no speed. *(Amended in 3b-4: it was "extrapolates at the last segment's speed for at most 5 s, then holds", and the dot froze for 7.3% of the time its bus moved.)*
     - **Continuity limit:** the drawn bus moves toward that target at ≤ 30 m/s (along the shape when moving forward, else in a straight line), so a late fix, a first fix or a correction becomes a quick glide, never a jump. It snaps only on the first frame, after a render gap over 2 s, after a data gap (newest fix more than 60 s after the previous one), or when the track was re-created.
+      - A data gap of at most 3 min on a track that was not re-created no longer snaps. It keeps the never-backward rules, so a target behind the mark is held, never snapped back. The limiter catches up at up to 60 m/s until the dot reaches its target. Re-created tracks and gaps over 3 min still snap. *(Amended in 3b-4.)*
 - **Other effects:**
   - **ETAs aren't delayed.** Countdowns on the board and in the follow card still come from live predictions, so only the dot runs a few seconds behind.
   - **Code removed:** `BusMotionEngine` and its special cases (stop anchor, Kalman progress filter, blend origins, backward counters) are deleted, along with the GTFS-RT adapter's misuse of `gtfsStopSequenceMinsFromStop` as the delay.
@@ -188,6 +192,8 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
     - `route_run_flap_2026-10-04`, already on this branch;
     - a 22-bus slice of the 2026-10-04 capture;
     - a rush-hour slice from the 2026-10-05 capture.
+    - two more 10-minute rush-hour slices, `rush_1204` and `rush_1330` (the route 14 spur, route 2's loop, a gap snap back, a runaway). The replay test exempts only glides the renderer draws off the shape by design (trip change, pass correction, reverse run, spur step, off route) from its projected-backward check, and it allows 60 m/s while catching up after a short data gap. *(Amended in 3b-4.)*
+  - **Probe:** `test/map/probe_rush_hour_test.dart` replays a full local capture and reports far episodes, snaps, frozen and starved time, and lag. It is skipped without the capture. *(Amended in 3b-4.)*
     - They assert the §1 success criteria, measured inside the renderer and not by projecting drawn points onto the shape (that is fooled by routes that reuse a road).
 - **Follow mode:**
   - widget tests for entry from a Board row, pause on pan, the Back chip, the end-of-trip and arrival endings, the stale marker, and live-region announcements;

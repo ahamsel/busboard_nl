@@ -54,9 +54,9 @@ Each vehicle reports: lat/lon, speed (km/h), compass heading, route number, head
 Buses on the map are drawn a little behind live and glide along their route between real GPS fixes (`lib/domain/map/`, pure Dart):
 
 - **`BusTrackStore`** — one track per physical vehicle ID, built from each poll. Fixes are snapped to the GTFS route shape with a progress hint, so a bus on an out-and-back route stays on its own pass. Duplicate or out-of-order GPS timestamps are ignored; a bus with no new fix for 90 s is stale, and its track is dropped after 5 min.
-- **`DelayedTrackRenderer`** — draws each bus at `now − D`, interpolated by distance along the shape between two real fixes. D is latency-aware (feed lag plus about one fix interval, clamped to 8–30 s, typically about 25 s) and eased in at 0.1 s per second.
+- **`DelayedTrackRenderer`** — draws each bus at `now − D`, interpolated by distance along the shape between two real fixes. D is latency-aware (the largest recent feed lag plus 1 s, clamped to 8–40 s, typically about 40 s at rush hour) and eased in at 0.1 s per second.
 - **Never backward** — a bus never moves backward along the same trip; when GPS runs backward it holds.
-- **Edge cases** — geographic interpolation across a trip change and for off-route buses (over 150 m from the shape); extrapolation for at most 5 s past the newest fix, then hold; drawn motion is capped at 30 m/s.
+- **Edge cases** — geographic interpolation across a trip change, for off-route buses (over 150 m from the shape), for a bus driving its shape backward (a late trip switch), and for a step along the shape far longer than the map distance (a skipped loop or spur). Past the newest fix the bus dead-reckons, slowing, for at most 20 s and 55 m, then holds. Drawn motion is capped at 30 m/s, or 60 m/s while catching up after a data gap of up to 3 min.
 - **Replay fixtures** — `test/map/motion_replay_test.dart` replays recorded captures from `test/fixtures/timetrack/` through the pipeline (see the README there).
 
 ## Architecture
@@ -75,7 +75,7 @@ lib/
       route_geometry.dart           → Snap to shapes, poses along them, stop/timetable hints
       bus_track.dart                → GPS fixes and tracks per vehicle
       bus_track_store.dart          → Ingests each poll into per-vehicle tracks
-      delayed_track_renderer.dart   → Where to draw each bus now (about 25 s behind, gliding)
+      delayed_track_renderer.dart   → Where to draw each bus now (about 40 s behind, gliding)
       bus_tracking_state.dart       → Per-bus snapshot for the map and sheet
       heading_smoother.dart         → Eases bus heading changes so notches don't flick
       shape_matcher.dart            → Snap GPS to route geometry
@@ -119,6 +119,10 @@ flutter test
 
 # Replay recorded captures through the motion pipeline
 flutter test test/map/motion_replay_test.dart
+
+# Measure the motion on a full local capture (skipped without these files)
+PROBE_CAPTURE=test/fixtures/timetrack/capture_2026-10-05.json PROBE_GTFS=build/gtfs_2026-09-01 \
+  flutter test test/map/probe_rush_hour_test.dart
 
 # Regenerate the two map styles from OpenFreeMap Positron
 dart run tool/build_map_styles.dart
