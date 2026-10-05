@@ -14,9 +14,11 @@ import 'support/replay_clock.dart';
 
 /// Replays every recorded capture under test/fixtures/timetrack/ through the
 /// motion pipeline at the map's 120 ms frame rate and checks spec §1:
-/// never backward on a trip, never faster than the fixes imply, and moving
-/// whenever the fixes on both sides show movement. Measured inside the
-/// renderer (progress along the shape), not by projecting drawn points.
+/// never backward on a trip, never faster than the continuity limit (30 m/s
+/// plus 5%), and moving whenever the fixes on both sides show movement.
+/// Backward motion is checked twice: on the progress the renderer reports,
+/// and on every frame (progress or not) by projecting the drawn point onto
+/// the trip's shape.
 void main() {
   final dirs = Directory('test/fixtures/timetrack')
       .listSync()
@@ -54,8 +56,9 @@ void main() {
       var advancedFrames = 0;
       var maxKmh = 0.0;
       var maxImpliedKmh = 0.0;
-      var renderedFrames = 0;
-      final buses = <String>{};
+      // Backward check on every frame: the drawn point projected on the shape.
+      final projected = <String, ({String? trip, double? along})>{};
+      final backwardProjected = <String>[];
 
       for (var i = 0; i < frames.length; i++) {
         final (poll, vehicles) = frames[i];
@@ -64,10 +67,21 @@ void main() {
         for (var t = poll; t.isBefore(end); t = t.add(step)) {
           for (final track in store.tracks.values) {
             final bus = renderer.render(track, t);
-            renderedFrames++;
-            buses.add(bus.vehicleId);
             final prev = last[bus.vehicleId];
             last[bus.vehicleId] = (trip: bus.tripId, p: bus.progress, lat: bus.lat, lon: bus.lon);
+            final prevProj = projected[bus.vehicleId];
+            final proj = _project(geometry, bus, prevProj?.trip == bus.tripId ? prevProj?.along : null);
+            final along = proj.along;
+            projected[bus.vehicleId] = (trip: bus.tripId, along: along);
+            // A projection onto the shape is only evidence of backward motion
+            // when the drawn point itself moved that far. Where the shape folds
+            // back over itself (a loop, a terminal) the projection can jump by
+            // tens of metres while the dot moved centimetres: not a move.
+            final moved = prev == null ? 0.0 : NearestStopService.haversineDistance(prev.lat, prev.lon, bus.lat, bus.lon);
+            if (!proj.reseeded && along != null && prevProj?.along != null && prevProj!.trip == bus.tripId &&
+                along < prevProj.along! - 5 && prevProj.along! - along <= moved + 1) {
+              backwardProjected.add('${bus.vehicleId} +${t.difference(frames.first.$1).inSeconds}s ${prevProj.along!.round()}→${along.round()}');
+            }
             if (prev == null) continue;
             final meters = NearestStopService.haversineDistance(prev.lat, prev.lon, bus.lat, bus.lon);
             maxKmh = math.max(maxKmh, meters / 0.12 * 3.6);
@@ -95,20 +109,34 @@ void main() {
         }
       }
 
-      // ignore: avoid_print
-      print('REPLAY_METRICS ${dir.path.split('/').last}: poll frames=${frames.length} rendered frames=$renderedFrames '
-          'buses=${buses.length} backward=${backward.length} moving=$movingFrames advanced=$advancedFrames '
-          'ratio=${movingFrames == 0 ? 'n/a' : (advancedFrames / movingFrames).toStringAsFixed(4)} '
-          'maxDrawnKmh=${maxKmh.toStringAsFixed(1)} maxImpliedKmh=${maxImpliedKmh.toStringAsFixed(1)}');
-
       expect(backward, isEmpty, reason: backward.take(5).join('\n'));
+      expect(backwardProjected, isEmpty, reason: '${backwardProjected.length} drops over 5 m:\n${backwardProjected.take(5).join('\n')}');
       expect(movingFrames, greaterThan(0));
       expect(advancedFrames / movingFrames, greaterThanOrEqualTo(0.95),
           reason: '$advancedFrames of $movingFrames moving frames advanced');
-      // Geographic hops at trip changes and off-route stretches are allowed
-      // up to the fastest implied segment speed plus margin.
-      expect(maxKmh, lessThan(math.max(maxImpliedKmh, 60) * 1.5 + 20),
+      // The continuity limiter caps every frame at 30 m/s; allow 5% for the
+      // frame-time rounding at poll boundaries.
+      expect(maxKmh, lessThanOrEqualTo(30 * 1.05 * 3.6),
           reason: 'max drawn ${maxKmh.round()} km/h, max implied ${maxImpliedKmh.round()} km/h');
     });
   }
+}
+
+/// Metres along the bus's trip shape of the drawn point, searched near
+/// [near] (the previous frame's value); null without a known shape or when
+/// the point is off the shape. A projection that lands outside the search
+/// window is another pass over the same road (the window is dropped when
+/// nothing fits it): it cannot be a move of one frame, so it is reported as
+/// a fresh start (`reseeded`) and never compared.
+({double? along, bool reseeded}) _project(RouteGeometry geometry, RenderedBus bus, double? near) {
+  final shapeId = geometry.shapeIdForTrip(bus.tripId);
+  if (shapeId == null) return (along: null, reseeded: true);
+  const back = 100.0, ahead = 200.0;
+  final snap = near == null
+      ? geometry.snap(bus.lat, bus.lon, shapeId, expectedAlong: bus.progress)
+      : geometry.snap(bus.lat, bus.lon, shapeId, expectedAlong: near, minAlong: near - back, maxAlong: near + ahead);
+  if (snap == null || snap.perpendicularDistance > RouteGeometry.offRouteMeters) return (along: null, reseeded: true);
+  final along = snap.distanceAlongRoute;
+  final inWindow = near != null && along >= near - back && along <= near + ahead;
+  return (along: along, reseeded: !inWindow);
 }
