@@ -54,6 +54,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   bool _tickersEnabled = true;
   bool _appResumed = true;
   final _controlsKey = GlobalKey();
+  // The sheet header's own key and height: one per sheet (a re-keyed sheet's
+  // outgoing header is still mounted while the incoming one is built).
+  var _headerKey = GlobalKey();
+  double? _headerHeight;
+  bool _headerMeasureScheduled = false;
   double _controlsHeight = 44 + BBSpace.m + 44;
   bool _measureScheduled = false;
   bool _frameInFlight = false;
@@ -334,6 +339,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   BBSheetController _sheetFor(MapSelection? selection) {
     if (selection != _sheetSelection) {
       _sheetSelection = selection;
+      _headerKey = GlobalKey();
+      _headerHeight = null;
       _retiredSheets.add(_sheet);
       _sheet = BBSheetController();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -399,6 +406,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final media = MediaQuery.of(context);
     final navInset = BBNavBar.reservedHeight(context);
     _scheduleControlsMeasure();
+    if (_headerHeight == null) _scheduleHeaderMeasure();
 
     // The credit link: one line, text size capped, measured so MapLibre's own
     // attribution button can sit right after it.
@@ -417,7 +425,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       // BBSheet pads top + s above and bottomInset + s below, and its fractions
       // apply to what is left: this is where the peeking card's top really is.
       final sheetArea = math.max(1.0, constraints.maxHeight - (media.padding.top + BBSpace.s) - (navInset + BBSpace.s));
-      final peekPx = (168 * media.textScaler.scale(1)).clamp(140.0, 320.0);
+      // The peek shows the whole header: handle (8 + 4 + 8) and a little air
+      // under it. Until the header has been measured, an estimate.
+      final measured = _headerHeight;
+      final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
       final peek = (peekPx / sheetArea).clamp(0.12, 0.45);
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
       // Just above the card, but below the chips and the my-location pill. With
@@ -539,11 +550,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 peekFraction: peek,
                 bottomInset: navInset,
                 semanticLabel: 'Map sheet',
-                header: switch (selection) {
+                header: _measuredHeader(switch (selection) {
                   null => MyStopCard.header(),
                   StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),
                   BusSelection(:final vehicleId) => BusCardHeader(vehicleId: vehicleId),
-                },
+                }),
                 slivers: [
                   SliverToBoxAdapter(
                     child: switch (selection) {
@@ -558,6 +569,30 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
           ],
         ),
       );
+    });
+  }
+
+  /// Reports the header's height whenever it changes (arrivals load, text
+  /// wraps), so the peek can show all of it.
+  Widget _measuredHeader(Widget header) => NotificationListener<SizeChangedLayoutNotification>(
+        onNotification: (_) {
+          _scheduleHeaderMeasure();
+          return false;
+        },
+        child: SizeChangedLayoutNotifier(key: _headerKey, child: header),
+      );
+
+  void _scheduleHeaderMeasure() {
+    if (_headerMeasureScheduled) return;
+    _headerMeasureScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerMeasureScheduled = false;
+      if (!mounted) return;
+      final height = _headerKey.currentContext?.size?.height;
+      final previous = _headerHeight;
+      if (height != null && (previous == null || (height - previous).abs() > 0.5)) {
+        setState(() => _headerHeight = height);
+      }
     });
   }
 

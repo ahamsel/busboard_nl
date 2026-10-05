@@ -17,14 +17,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _mun = StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 47.57, stopLon: -52.73);
 
-GtfsRepository _repo() => GtfsRepository()..stopsById['1150'] = _mun;
+GtfsRepository _repo() => GtfsRepository()
+  ..stopsById['1150'] = _mun
+  ..tripsById['t-16'] = const TripInfo(
+    tripId: 't-16',
+    routeId: 'r16',
+    serviceId: 's',
+    tripHeadsign: 'Downtown',
+    directionId: 0,
+  );
 
-BusTrackingState _bus({int? schedDiffMins = -1, BusStatus status = BusStatus.active, int routeNumber = 10, String routeRun = 'Rt 10'}) =>
+BusTrackingState _bus({int? schedDiffMins = -1, BusStatus status = BusStatus.active, int routeNumber = 10, String routeRun = 'Rt 10', String headsign = 'Downtown', String? tripId}) =>
     BusTrackingState(
       routeRun: routeRun,
       vehicleId: '2573',
       routeNumber: routeNumber,
-      headsign: 'Downtown',
+      headsign: headsign,
+      currentTripId: tripId,
       lat: 47.56,
       lon: -52.71,
       heading: 90,
@@ -110,6 +119,23 @@ void main() {
     expect(find.bySemanticsLabel('Route 10'), findsOneWidget);
     expect(find.text('to Downtown'), findsOneWidget);
     expect(find.text('Bus 2573 · 1 min late'), findsOneWidget);
+  });
+
+  testWidgets('with no headsign in the live feed, the destination comes from its trip', (tester) async {
+    await _host(tester,
+        header: const BusCardHeader(vehicleId: '2573'),
+        body: const BusCardBody(vehicleId: '2573'),
+        buses: {'2573': _bus(headsign: '', tripId: 't-16')});
+    expect(find.text('to Downtown'), findsOneWidget);
+  });
+
+  testWidgets('a bus whose trip is unknown falls back to its route', (tester) async {
+    await _host(tester,
+        header: const BusCardHeader(vehicleId: '2573'),
+        body: const BusCardBody(vehicleId: '2573'),
+        buses: {'2573': _bus(headsign: '', tripId: 'nope')});
+    expect(find.text('Route 10'), findsWidgets);
+    expect(find.textContaining('to '), findsNothing);
   });
 
   testWidgets('a bus with no route number wears the same badge as on the map', (tester) async {

@@ -87,13 +87,36 @@ final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>,
   final repo = ref.watch(gtfsRepositoryProvider).value;
   if (repo == null) return const [];
   final seconds = ref.watch(settingsProvider.select((s) => s.refreshIntervalSeconds));
+  // Your stop's arrivals outlive their last listener (a bus card replaces the
+  // your-stop card for a while): coming back shows them at once, no skeleton.
+  // The link is closed when the selection moves to another stop.
+  final selectedStopId = ref.watch(settingsProvider.select((s) => s.selectedStopId));
+  if (selectedStopId == stopId) ref.keepAlive();
+
+  // Nobody watching (kept alive only): do not poll; refresh once on return.
+  var watched = true;
+  var stale = false;
+  ref.onCancel(() => watched = false);
+  ref.onResume(() {
+    watched = true;
+    // Invalidating from inside the resume callback itself had no effect.
+    if (stale) scheduleMicrotask(() => ref.mounted ? ref.invalidateSelf() : null);
+  });
+  void refreshWhenWatched() {
+    if (watched) {
+      ref.invalidateSelf();
+    } else {
+      stale = true;
+    }
+  }
+
   // Background: no timer. Foreground again: refresh now, which re-arms it.
   ref.listen(appForegroundProvider, (_, foreground) {
-    if (foreground) ref.invalidateSelf();
+    if (foreground) refreshWhenWatched();
   });
   if (ref.read(appForegroundProvider)) {
     final timer = Timer(Duration(seconds: seconds), () {
-      if (ref.read(appForegroundProvider)) ref.invalidateSelf();
+      if (ref.read(appForegroundProvider)) refreshWhenWatched();
     });
     ref.onDispose(timer.cancel);
   }
