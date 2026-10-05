@@ -567,16 +567,46 @@ class TimeTrackApi {
   }
 
   /// Build a lookup map of trip_id → vehicle for arrival matching.
+  ///
+  /// The feed can report one trip on two vehicles: a ghost frozen at an old
+  /// position next to the bus really running it. The one whose position is
+  /// newest at [now] wins, so a fix over 5 minutes old never beats a fresher
+  /// one. A vehicle with no usable position time ranks as exactly 5 minutes
+  /// old; among equals the later one wins.
   static Map<String, TimeTrackVehicle> buildTripIndex(
-    List<TimeTrackVehicle> vehicles,
-  ) {
+    List<TimeTrackVehicle> vehicles, {
+    DateTime? now,
+  }) {
+    final at = now ?? DateTime.now();
     final map = <String, TimeTrackVehicle>{};
+    final ages = <String, Duration>{};
     for (final vehicle in vehicles) {
-      if (vehicle.gtfsTripId.isNotEmpty) {
-        map[vehicle.gtfsTripId] = vehicle;
+      final trip = vehicle.gtfsTripId;
+      if (trip.isEmpty) continue;
+      final age = _positionAge(vehicle, at) ?? _unknownPositionAge;
+      final best = ages[trip];
+      if (best == null || age <= best) {
+        map[trip] = vehicle;
+        ages[trip] = age;
       }
     }
     return map;
+  }
+
+  static const Duration _unknownPositionAge = Duration(minutes: 5);
+
+  /// How old [v]'s position is at [now]: from its full timestamp when it has
+  /// one, else from its seconds of the day, read as the most recent such
+  /// time (so 00:00:30 is newer than 23:40 just after midnight).
+  static Duration? _positionAge(TimeTrackVehicle v, DateTime now) {
+    final stamp = DateTime.tryParse(v.positionTime);
+    if (stamp != null) return now.difference(stamp);
+    final seconds = v.positionTimeSeconds;
+    if (seconds <= 0 || seconds >= Duration.secondsPerDay) return null;
+    final nowSeconds = now.hour * 3600 + now.minute * 60 + now.second;
+    var age = (nowSeconds - seconds) % Duration.secondsPerDay;
+    if (age > Duration.secondsPerDay ~/ 2) age -= Duration.secondsPerDay; // slightly ahead of us
+    return Duration(seconds: age);
   }
 
   void dispose() {
