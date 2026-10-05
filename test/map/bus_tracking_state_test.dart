@@ -38,8 +38,8 @@ void main() {
     expect(s.headsign, 'Kelsey Drive');
     expect(s.currentTripId, 'trip');
     expect(s.shapeId, 'shape');
-    expect(s.smoothedLat, 47.5600);
-    expect(s.smoothedLon, -52.7001);
+    expect(s.lat, 47.5600);
+    expect(s.lon, -52.7001);
     expect(s.progress, 250);
     expect(s.speedKmh, 29);
     expect(s.lastGpsTime, gps);
@@ -54,8 +54,8 @@ void main() {
   test('fromTrack reports offRoute and falls back to the raw position', () {
     final s = BusTrackingState.fromTrack(track(offRoute: true), stale: false);
     expect(s.status, BusStatus.offRoute);
-    expect(s.smoothedLat, 47.5601);
-    expect(s.smoothedLon, -52.7);
+    expect(s.lat, 47.5601);
+    expect(s.lon, -52.7);
     expect(s.progress, isNull);
   });
 }

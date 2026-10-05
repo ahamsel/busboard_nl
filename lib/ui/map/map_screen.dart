@@ -558,8 +558,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
     for (final entry in filtered.entries) {
       final state = entry.value;
       final pos = drawn[entry.key];
-      final lat = pos?.lat ?? state.smoothedLat;
-      final lon = pos?.lon ?? state.smoothedLon;
+      final lat = pos?.lat ?? state.lat;
+      final lon = pos?.lon ?? state.lon;
 
       features.add({
         'type': 'Feature',
@@ -701,8 +701,8 @@ class _MapScreenState extends ConsumerState<MapScreen>
     for (final entry in tracking.entries) {
       if (entry.value.status == BusStatus.stale) continue;
       final pos = drawn[entry.key];
-      final lat = pos?.lat ?? entry.value.smoothedLat;
-      final lon = pos?.lon ?? entry.value.smoothedLon;
+      final lat = pos?.lat ?? entry.value.lat;
+      final lon = pos?.lon ?? entry.value.lon;
       final dist = NearestStopService.haversineDistance(
         tap.latitude,
         tap.longitude,
