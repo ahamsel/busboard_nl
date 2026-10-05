@@ -26,7 +26,8 @@ class RenderedBus {
 /// Draws each bus about one GPS update behind live, gliding along its route
 /// between two real fixes (spec §3.4): render time = now − D, interpolated by
 /// distance along the shape, never backward on the same trip; geographic
-/// interpolation across a trip change or off route; at most
+/// interpolation across a trip change, off route or a backward step of more
+/// than 150 m (a pass correction, not motion); at most
 /// [maxExtrapolation] past the newest fix, then hold.
 ///
 /// [render] updates per-vehicle state (the never-backward mark and the
@@ -51,6 +52,11 @@ class DelayedTrackRenderer {
 
   /// Never-backward hold: backward moves up to this far are jitter, held.
   static const double _jitterMeters = 60;
+
+  /// A pair of fixes on one trip whose progress falls by more than this is a
+  /// pass correction or a glitch, not motion: the bus glides across the map
+  /// between the two snapped points instead of along the shape.
+  static const double _glideBackwardMeters = 150;
 
   /// A backward jump whose two places are this close on the map is the same
   /// road seen from the other pass: accepted at once.
@@ -149,7 +155,7 @@ class DelayedTrackRenderer {
   }
 
   RenderedBus _between(String id, TrackFix a, TrackFix b, double f) {
-    final sameAxis = a.tripId == b.tripId && a.shapeId != null && a.shapeId == b.shapeId && a.progress != null && b.progress != null;
+    final sameAxis = a.tripId == b.tripId && a.shapeId != null && a.shapeId == b.shapeId && a.progress != null && b.progress != null && b.progress! >= a.progress! - _glideBackwardMeters;
     if (sameAxis) {
       final p = a.progress! + (b.progress! - a.progress!) * f;
       final onShape = _onShape(id, a.shapeId!, p, b.tripId);
@@ -225,9 +231,8 @@ class DelayedTrackRenderer {
     }
     final pose = _geometry.poseAt(shapeId, p);
     if (pose != null && NearestStopService.haversineDistance(pose.lat, pose.lon, markPose.lat, markPose.lon) <= _relabelMeters) {
-      // The hold episode, if one is under way, keeps its start: a bus that
-      // sweeps back across the other pass is still one backward move.
-      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at)..holdStart = mark.holdStart;
+      // A relabel makes a new mark: any hold under way ends with it.
+      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
       return bus;
     }
     final holdStart = mark.holdStart ?? at;

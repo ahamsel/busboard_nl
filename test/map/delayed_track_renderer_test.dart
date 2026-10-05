@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_track.dart';
 import 'package:busboard_nl/domain/map/delayed_track_renderer.dart';
@@ -152,52 +154,99 @@ void main() {
       expect(r.render(track, _t0.add(const Duration(seconds: 42))).progress, closeTo(450, 1e-6));
     });
 
-    test('a wrong-pass fix does not freeze the bus: the hold ends within 15 s', () {
+    // Metres from (lat, lon) to the segment a–b, on a local flat projection.
+    double metersToSegment(double lat, double lon, ShapePose a, ShapePose b) {
+      final kx = 111320 * math.cos(a.lat * math.pi / 180);
+      const ky = 110574.0;
+      final px = (lon - a.lon) * kx, py = (lat - a.lat) * ky;
+      final bx = (b.lon - a.lon) * kx, by = (b.lat - a.lat) * ky;
+      final len2 = bx * bx + by * by;
+      final t = len2 == 0 ? 0.0 : ((px * bx + py * by) / len2).clamp(0.0, 1.0);
+      return math.sqrt(math.pow(px - bx * t, 2) + math.pow(py - by * t, 2));
+    }
+
+    // The longest stretch of render time (s) over which the drawn place does not change.
+    double longestFrozen(List<({double at, RenderedBus bus})> frames) {
+      var longest = 0.0;
+      var since = frames.first.at;
+      for (var i = 1; i < frames.length; i++) {
+        final moved = frames[i].bus.lat != frames[i - 1].bus.lat || frames[i].bus.lon != frames[i - 1].bus.lon;
+        if (moved) {
+          since = frames[i].at;
+        } else {
+          longest = math.max(longest, frames[i].at - since);
+        }
+      }
+      return longest;
+    }
+
+    test('a wrong-pass fix glides geographically to the right pass, never frozen', () {
       final r = DelayedTrackRenderer(_geometry);
       final track = _track([_fix(0, 1500), _fix(10, 1560), _fix(20, 300), _fix(30, 380), _fix(40, 460)]);
       final frames = sweep(r, track, 0, 40);
-      // The mark is the furthest the bus got before the bad fix (~1560).
-      final mark = frames.where((f) => f.at <= 10.2).map((f) => f.bus.progress!).reduce((a, b) => a > b ? a : b);
-      expect(mark, closeTo(1560, 1));
-      final held = frames.where((f) => f.at > 10 && (f.bus.progress! - mark).abs() < 1e-6).map((f) => f.at);
-      expect(held, isNotEmpty);
-      expect(held.last - 10, lessThanOrEqualTo(15.0));
-      // Soon after, the bus is at its true place.
-      final at26 = frames.firstWhere((f) => f.at >= 26).bus.progress!;
-      expect(at26, closeTo(300 + 8 * (26 - 20), 1));
+      final from = _geometry.poseAt(outAndBackShapeId, 1560)!;
+      final to = _geometry.poseAt(outAndBackShapeId, 300)!;
+      for (final f in frames.where((f) => f.at > 10.2 && f.at < 19.9)) {
+        expect(f.bus.progress, isNull, reason: 'glide at ${f.at} s');
+        expect(metersToSegment(f.bus.lat, f.bus.lon, from, to), lessThan(50), reason: 'at ${f.at} s');
+      }
+      expect(longestFrozen(frames), lessThanOrEqualTo(10.0));
+      // Past the 300 fix the bus tracks its true progress again.
+      for (final f in frames.where((f) => f.at >= 20.2)) {
+        expect(f.bus.progress, closeTo(300 + 8 * (f.at - 20), 1), reason: 'at ${f.at} s');
+      }
     });
 
-    test('a forward glitch (260 → 650 → 340) holds for at most 15 s of render time', () {
+    test('a forward glitch (260 → 650 → 340) glides back instead of freezing', () {
       final r = DelayedTrackRenderer(_geometry);
       final track = _track([_fix(0, 260), _fix(10, 650), _fix(20, 340), _fix(30, 420), _fix(40, 500)]);
       final frames = sweep(r, track, 0, 40);
-      final mark = frames.where((f) => f.at <= 10.2).map((f) => f.bus.progress!).reduce((a, b) => a > b ? a : b);
-      expect(mark, closeTo(650, 2));
-      final peak = frames.firstWhere((f) => (f.bus.progress! - mark).abs() < 1e-6).at;
-      final lastHeld = frames.where((f) => f.at >= peak && (f.bus.progress! - mark).abs() < 1e-6).last.at;
-      // The hold only begins once the drop exceeds the 60 m jitter band, ~2 s
-      // after the peak, then runs at most 15 s.
-      expect(lastHeld - peak, lessThanOrEqualTo(17.5));
-      expect(frames.firstWhere((f) => f.at >= 28).bus.progress, closeTo(340 + 8 * 8, 1));
+      expect(longestFrozen(frames), lessThanOrEqualTo(10.0));
+      expect(frames.firstWhere((f) => f.at >= 30).bus.progress, closeTo(420, 1));
+    });
+
+    test('a backstep of 60-150 m holds, for at most 15 s', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final track = _track([_fix(0, 300), _fix(10, 500), _fix(20, 380), _fix(70, 380), _fix(80, 400)]);
+      // 120 m back: still along the shape, so held, then released after 15 s.
+      final frames = sweep(r, track, 10, 40);
+      final mark = frames.first.bus.progress!;
+      expect(mark, closeTo(500, 1e-6));
+      final held = frames.where((f) => (f.bus.progress! - mark).abs() < 1e-6).map((f) => f.at);
+      // The hold begins once 60 m are lost (render time 15 s) and lasts 15 s.
+      expect(held.last, inInclusiveRange(29.0, 30.2));
+      expect(frames.last.bus.progress, lessThan(mark));
     });
 
     test('a pass relabel within 40 m is accepted at once: progress jumps, the dot barely moves', () {
       final r = DelayedTrackRenderer(_geometry);
-      // Return pass 1400 → 1500 (lon 632 → 532 m), then a fix on the outbound
-      // pass at 540 m, 8 m (plus the 7.8 m curb gap) from where the bus was.
-      final track = _track([_fix(0, 1400), _fix(10, 1500), _fix(20, 540), _fix(30, 620)]);
-      final frames = sweep(r, track, 0, 30);
-      var jumped = false;
-      for (var i = 1; i < frames.length; i++) {
-        final prev = frames[i - 1].bus;
-        final cur = frames[i].bus;
-        if (cur.progress! < prev.progress! - 100) {
-          jumped = true;
-          final moved = NearestStopService.haversineDistance(prev.lat, prev.lon, cur.lat, cur.lon);
-          expect(moved, lessThanOrEqualTo(40), reason: 'relabel at ${frames[i].at} s moved $moved m');
-        }
-      }
-      expect(jumped, isTrue);
+      // Render time 15 s: 5 s past the newest fix, the bus is extrapolated
+      // along the return pass to 1550 m.
+      final early = _track([_fix(0, 1400), _fix(10, 1500)]);
+      final before = r.render(early, _t0.add(const Duration(seconds: 27)));
+      expect(before.progress, closeTo(1550, 1));
+      // A late fix puts the bus on the outbound pass (7.8 m of curb apart).
+      final late = _track([_fix(0, 1400), _fix(10, 1500), _fix(12, 490), _fix(22, 510)]);
+      final after = r.render(late, _t0.add(const Duration(seconds: 29))); // render time 17 s
+      expect(after.progress, closeTo(500, 1e-6));
+      expect(NearestStopService.haversineDistance(before.lat, before.lon, after.lat, after.lon), lessThanOrEqualTo(40));
+    });
+
+    test('a relabel ends the hold: the next backstep starts a fresh 15 s', () {
+      final r = DelayedTrackRenderer(_geometry);
+      DateTime nowAt(int atS) => _t0.add(Duration(seconds: atS + 12));
+      // Mark 1550 by extrapolation (render time 15 s).
+      r.render(_track([_fix(0, 1400), _fix(10, 1500)]), nowAt(15));
+      // A backstep of 80 m below the mark begins a hold at 16 s.
+      final held = r.render(_track([_fix(0, 1400), _fix(10, 1500), _fix(20, 1450)]), nowAt(16));
+      expect(held.progress, closeTo(1550, 1e-6));
+      // The bus is then seen on the other pass: relabel to 500.
+      final relabel = r.render(_track([_fix(0, 1400), _fix(10, 1500), _fix(12, 490), _fix(22, 510)]), nowAt(17));
+      expect(relabel.progress, closeTo(500, 1e-6));
+      // 94 m below the new mark at 38 s (22 s after the first hold began):
+      // it is a new hold, so it holds rather than being released at once.
+      final next = r.render(_track([_fix(0, 1400), _fix(10, 1500), _fix(12, 490), _fix(22, 510), _fix(42, 380)]), nowAt(38));
+      expect(next.progress, closeTo(500, 1e-6));
     });
 
     test('the same trip ID a day later draws at the true position', () {
