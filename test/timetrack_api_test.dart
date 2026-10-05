@@ -235,4 +235,44 @@ void main() {
     expect(result.source, LiveDataSource.gtfsRealtime);
     expect(result.vehicles, isEmpty);
   });
+
+  group('trip index (the Board links each trip to one bus)', () {
+    TimeTrackVehicle vehicle(String id, {required String positionTime, required int seconds, String trip = '262921'}) =>
+        TimeTrackVehicle.fromJson({
+          'vehicle': id,
+          'routeNumber': 18,
+          'routeRun': 'Rt 18',
+          'busLat': 47.5,
+          'busLon': -52.7,
+          'positionTime': positionTime,
+          'positionTimeSeconds': seconds,
+          'gtfsTripId': trip,
+        });
+
+    // The diagnosis' ghost: 1629 froze at 09:13:05 but kept reporting the
+    // trip bus 1311 was really running, and came after it in every poll.
+    final now = DateTime(2026, 10, 5, 9, 30);
+    final real = vehicle('1311', positionTime: '2026-10-05T09:29:55.000', seconds: 9 * 3600 + 29 * 60 + 55);
+    final ghost = vehicle('1629', positionTime: '2026-10-05T09:13:05.000', seconds: 9 * 3600 + 13 * 60 + 5);
+
+    test('a frozen ghost on the same trip never beats the bus that is reporting', () {
+      expect(TimeTrackApi.buildTripIndex([real, ghost], now: now)['262921']!.vehicle, '1311');
+      expect(TimeTrackApi.buildTripIndex([ghost, real], now: now)['262921']!.vehicle, '1311');
+    });
+
+    test('without a full timestamp the age wraps at midnight', () {
+      // Fleet View style clock times: 30 s after midnight beats 23:40.
+      final justNow = vehicle('1311', positionTime: '00:00:30', seconds: 30);
+      final old = vehicle('1629', positionTime: '23:40:00', seconds: 23 * 3600 + 40 * 60);
+      final atMidnight = DateTime(2026, 10, 5, 0, 1);
+      expect(TimeTrackApi.buildTripIndex([justNow, old], now: atMidnight)['262921']!.vehicle, '1311');
+      expect(TimeTrackApi.buildTripIndex([old, justNow], now: atMidnight)['262921']!.vehicle, '1311');
+    });
+
+    test('a bus alone on its trip is kept, and other trips are untouched', () {
+      final index = TimeTrackApi.buildTripIndex([ghost, vehicle('2573', positionTime: '', seconds: 0, trip: '1')], now: now);
+      expect(index['262921']!.vehicle, '1629');
+      expect(index['1']!.vehicle, '2573');
+    });
+  });
 }
