@@ -103,3 +103,5 @@ Parity fixes re-review: clean. Phase 3b-2 complete; live-bus + Android parity pe
 - Returning from a bus card to your stop flashes the arrivals skeleton (stopArrivalsProvider auto-disposed while unwatched).
 - Rush-hour monitor (scheduled task) restarted captures at 09:34; early finding: route 18 trip 262894 assigned to bus 1311 (live) and 1629 (frozen, 11+ min old) — the 3b-1 store drops fixes > 5 min old, so 1629 never reaches the map.
 Ruling: polish round — peek fraction from the measured header height; bus card destination falls back to the GTFS trip headsign; keep the selected stop's arrivals alive across selection changes — all rider-visible, small — cost: none.
+Live polish: f342f5f — re-review clean; verified on iOS sim (peek fits 2 rows; bus card "to AVALON MALL – MUN CENTRE…", 7 min late, route detour alert).
+Minor (deferred): peek change mid-drag drops the gesture (rare); fallback→measured peek re-snap one frame after each selection; selection change refetches watched stop providers once (narrow the select to `== stopId`).
