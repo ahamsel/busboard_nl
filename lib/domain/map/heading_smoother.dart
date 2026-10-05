@@ -10,6 +10,13 @@ class HeadingSmoother {
   final _state = <String, ({double heading, DateTime at})>{};
 
   double smooth(String vehicleId, double target, DateTime now) {
+    // Ignore non-finite targets: return previous heading without storing state
+    if (!target.isFinite) {
+      final prev = _state[vehicleId];
+      _state.remove(vehicleId); // Clear state for next valid call
+      return prev?.heading ?? 0;
+    }
+
     final goal = _norm(target);
     final prev = _state[vehicleId];
     double out;
@@ -17,8 +24,11 @@ class HeadingSmoother {
       out = goal;
     } else {
       final dt = now.difference(prev.at);
-      if (dt <= Duration.zero) return prev.heading;
-      if (dt > snapGap) {
+      if (dt == Duration.zero) return prev.heading;
+      if (dt < Duration.zero) {
+        // Backward clock jump: snap to goal and store new time
+        out = goal;
+      } else if (dt > snapGap) {
         out = goal;
       } else {
         final diff = shortestDelta(prev.heading, goal);
@@ -38,5 +48,8 @@ class HeadingSmoother {
     return d > 180 ? d - 360 : d;
   }
 
-  static double _norm(double heading) => heading % 360;
+  static double _norm(double heading) {
+    final h = heading % 360;
+    return h >= 360 ? 0.0 : h;
+  }
 }

@@ -44,4 +44,81 @@ void main() {
     s.prune({'b'});
     expect(s.smooth('a', 10, _at(16)), 10, reason: 'a was pruned, so this is a first frame');
   });
+
+  // Fix item 1: NaN or infinite target
+  test('NaN or infinite targets return previous heading without storing state', () {
+    final s = HeadingSmoother();
+    final h1 = s.smooth('a', 90, _t0);
+    expect(h1, closeTo(90, 1e-9));
+
+    // NaN call should return the previous heading
+    final hNaN = s.smooth('a', double.nan, _at(16));
+    expect(hNaN, closeTo(90, 1e-9));
+
+    // After NaN, next valid target is a first frame (snaps)
+    final hValid = s.smooth('a', 45, _at(48));
+    expect(hValid, closeTo(45, 1e-9), reason: 'snaps as first frame');
+  });
+
+  test('NaN on first frame returns 0, next valid target snaps', () {
+    final s = HeadingSmoother();
+    expect(s.smooth('a', double.nan, _t0), 0);
+    expect(s.smooth('a', 180, _at(16)), 180, reason: 'snaps as first frame');
+  });
+
+  // Fix item 2: Counter-clockwise path
+  test('10° → 350° turns counter-clockwise through north', () {
+    final s = HeadingSmoother()..smooth('a', 10, _t0);
+    for (var ms = 16; ms <= 240; ms += 16) {
+      final h = s.smooth('a', 350, _at(ms));
+      expect(h < 30 || h > 330, isTrue, reason: 'heading $h at $ms ms');
+    }
+    expect(s.smooth('a', 350, _at(256)), 350);
+  });
+
+  test('0° → 180° maintains consistent direction and reaches target', () {
+    final s = HeadingSmoother()..smooth('a', 0, _t0);
+    double? prevDelta;
+    for (var ms = 16; ms <= 960; ms += 16) {
+      final h = s.smooth('a', 180, _at(ms));
+      final delta = HeadingSmoother.shortestDelta(0, h);
+      if (prevDelta != null) {
+        expect(delta.sign, equals(prevDelta.sign), reason: 'direction consistent at $ms ms');
+      }
+      prevDelta = delta;
+    }
+    expect(s.smooth('a', 180, _at(1000)), closeTo(180, 1e-9));
+  });
+
+  // Fix item 3: Never return 360.0
+  test('smooth never returns 360.0', () {
+    final s = HeadingSmoother();
+    expect(s.smooth('a', -1e-20, _t0), 0.0);
+  });
+
+  // Fix item 4: Backward clock
+  test('backward time jump snaps to target', () {
+    final s = HeadingSmoother()..smooth('a', 0, _t0);
+    final backwardTime = _t0.subtract(Duration(hours: 1));
+    expect(s.smooth('a', 180, backwardTime), 180);
+    expect(s.smooth('a', 90, _at(16)), 90, reason: 'normal rate-limiting resumes');
+  });
+
+  // Fix item 5: Coverage
+  test('snap after gap exceeds 2 seconds', () {
+    final s = HeadingSmoother()..smooth('a', 0, _t0);
+    // After 2.1s gap, snap to new target
+    expect(s.smooth('a', 180, _t0.add(Duration(seconds: 2, milliseconds: 100))), closeTo(180, 1e-9));
+  });
+
+  test('prune keeps other vehicles\' state; kept vehicle rate-limits normally', () {
+    final s = HeadingSmoother()
+      ..smooth('a', 0, _t0)
+      ..smooth('b', 0, _t0);
+    s.prune({'b'});
+    // After prune, 'a' is gone; 'b' is still tracked
+    expect(s.smooth('b', 90, _at(250)), closeTo(45, 1e-9), reason: 'b still rate-limited');
+    // 'a' is treated as new vehicle
+    expect(s.smooth('a', 180, _at(250)), 180, reason: 'a is first frame after prune');
+  });
 }
