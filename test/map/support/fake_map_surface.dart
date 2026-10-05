@@ -23,6 +23,7 @@ class FakeMapSurface implements MapSurface, MapCamera {
 
   @override
   Future<void> addGeoJsonSource(String id, Map<String, dynamic> data) async {
+    if (sources.containsKey(id)) throw StateError('Source with id $id already exists.');
     calls.add('source $id');
     sources[id] = data;
   }
@@ -35,6 +36,7 @@ class FakeMapSurface implements MapSurface, MapCamera {
 
   @override
   Future<void> addCircleLayer(String sourceId, String layerId, CircleLayerProperties p, {double? minzoom}) async {
+    if (layers.containsKey(layerId)) throw StateError('Layer with id $layerId already exists.');
     calls.add('layer $layerId');
     layers[layerId] = p;
     layerMinZoom[layerId] = minzoom;
@@ -42,9 +44,23 @@ class FakeMapSurface implements MapSurface, MapCamera {
 
   @override
   Future<void> addSymbolLayer(String sourceId, String layerId, SymbolLayerProperties p, {double? minzoom}) async {
+    if (layers.containsKey(layerId)) throw StateError('Layer with id $layerId already exists.');
     calls.add('layer $layerId');
     layers[layerId] = p;
     layerMinZoom[layerId] = minzoom;
+  }
+
+  @override
+  Future<void> removeLayer(String layerId) async {
+    calls.add('remove layer $layerId');
+    if (layers.remove(layerId) == null) throw StateError('Layer $layerId does not exist.');
+    layerMinZoom.remove(layerId);
+  }
+
+  @override
+  Future<void> removeSource(String sourceId) async {
+    calls.add('remove source $sourceId');
+    if (sources.remove(sourceId) == null) throw StateError('Source $sourceId does not exist.');
   }
 
   @override

@@ -171,6 +171,37 @@ void main() {
       });
     });
 
+    testWidgets('install twice on the same style succeeds and leaves one of each', (tester) async {
+      // onStyleLoaded can fire twice for one native style: the second install
+      // finds our sources and layers already there.
+      await tester.runAsync(() async {
+        final surface = FakeMapSurface();
+        final layers = MapLayers(surface, brightness: Brightness.light, pixelRatio: 1);
+        await layers.install(stops: const [_mun]);
+        await layers.install(stops: const [_mun]);
+        expect(surface.sources.keys, unorderedEquals([MapLayers.stopsSource, MapLayers.myStopSource, MapLayers.busesSource]));
+        expect(surface.layers.keys,
+            unorderedEquals([MapLayers.stopsLayer, MapLayers.myStopLayer, MapLayers.notchLayer, MapLayers.badgeLayer]));
+        // Each install clears first, layers before the sources they draw from
+        // (the first install finds nothing there, and shrugs).
+        final removals = surface.calls.where((c) => c.startsWith('remove ')).toList();
+        final oneClear = [
+          for (final l in [MapLayers.badgeLayer, MapLayers.notchLayer, MapLayers.myStopLayer, MapLayers.stopsLayer]) 'remove layer $l',
+          for (final src in [MapLayers.busesSource, MapLayers.myStopSource, MapLayers.stopsSource]) 'remove source $src',
+        ];
+        expect(removals, [...oneClear, ...oneClear]);
+        expect(surface.features(MapLayers.stopsSource), hasLength(1));
+      });
+    });
+
+    testWidgets('install on a fresh style tolerates there being nothing to remove', (tester) async {
+      await tester.runAsync(() async {
+        final surface = FakeMapSurface();
+        await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const []);
+        expect(surface.layers, hasLength(4));
+      });
+    });
+
     testWidgets('your stop is one feature, or none', (tester) async {
       await tester.runAsync(() async {
         final surface = FakeMapSurface();

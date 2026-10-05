@@ -105,6 +105,20 @@ class MapLayers {
   final _images = <String>{};
 
   Future<void> install({required Iterable<StopInfo> stops}) async {
+    // onStyleLoaded can fire more than once for the same native style (the iOS
+    // plugin re-applies the style on creation), so a second install finds our
+    // layers and sources already there. Clear them first, layers before the
+    // sources they draw from; on a fresh style there is nothing to remove.
+    for (final layer in [badgeLayer, notchLayer, myStopLayer, stopsLayer]) {
+      try {
+        await surface.removeLayer(layer);
+      } catch (_) {}
+    }
+    for (final source in [busesSource, myStopSource, stopsSource]) {
+      try {
+        await surface.removeSource(source);
+      } catch (_) {}
+    }
     _images.clear();
     await surface.addImage(MarkerImages.myStopId, await MarkerImages.myStop(brightness: brightness, pixelRatio: pixelRatio));
     _images.add(MarkerImages.myStopId);
