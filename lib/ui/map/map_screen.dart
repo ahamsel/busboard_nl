@@ -540,10 +540,11 @@ class _MapScreenState extends ConsumerState<MapScreen>
     final drawn = renderer.renderAll(store.tracks.values, DateTime.now());
     _lastDrawn = drawn;
 
-    // Unseen vehicles remain in the engine briefly so a transient feed gap
-    // does not destroy their motion history, but they are not live map dots.
-    // This prevents a replaced bus and its stale predecessor being shown as
-    // one route "jumping" between two physical vehicles.
+    // The store keeps a bus that has gone unseen: it is stale after 90 s
+    // without a new fix and dropped after 5 min, and the renderer drops its
+    // state with the track. A stale bus is not a live map dot, which keeps a
+    // replaced bus and its stale predecessor from being shown as one route
+    // "jumping" between two physical vehicles.
     final filtered = Map.fromEntries(
       tracking.entries.where(
         (entry) =>

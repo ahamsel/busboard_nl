@@ -294,7 +294,7 @@ final nearestStopsProvider = FutureProvider.autoDispose<List<NearbyStop>>((
 // ─── Bus motion (spec §3.4) ───────────────────────────────
 
 final routeGeometryProvider = Provider<RouteGeometry?>((ref) {
-  final repo = ref.watch(gtfsRepositoryProvider).asData?.value;
+  final repo = ref.watch(gtfsRepositoryProvider).value;
   return repo == null ? null : RouteGeometry(repo);
 });
 

@@ -29,6 +29,38 @@ void main() {
 
   test('at least one replay fixture is present', () => expect(dirs, isNotEmpty));
 
+  group('the cumulative projected-backward check', () {
+    // A drawn path round a bend: the projection falls 50 m (the arc) while
+    // the dot is only 35 m (the chord) from where the high water was drawn.
+    // The check must see that as backward motion.
+    test('flags a 50 m backward step on a curve, though the chord is shorter than the arc', () {
+      final check = ProjectedBackwardCheck();
+      expect(check.observe(vehicleId: 'v', trip: 't', along: 100, reseeded: true, exempt: false, lat: 47.5600, lon: -52.7500, label: 'start'), isNull);
+      expect(check.observe(vehicleId: 'v', trip: 't', along: 200, reseeded: false, exempt: false, lat: 47.5600, lon: -52.7490, label: 'high'), isNull);
+      // 35 m north of the high-water point, 50 m back along the route.
+      final flagged = check.observe(vehicleId: 'v', trip: 't', along: 150, reseeded: false, exempt: false, lat: 47.5600 + 35 / 110574, lon: -52.7490, label: 'back');
+      expect(flagged, isNotNull);
+      expect(flagged, contains('200 → 150'));
+    });
+
+    test('ignores a projection that falls while the dot did not move (a fold in the shape)', () {
+      final check = ProjectedBackwardCheck();
+      check.observe(vehicleId: 'v', trip: 't', along: 200, reseeded: true, exempt: false, lat: 47.56, lon: -52.749, label: 'high');
+      expect(check.observe(vehicleId: 'v', trip: 't', along: 160, reseeded: false, exempt: false, lat: 47.56 + 1 / 110574, lon: -52.749, label: 'fold'), isNull);
+    });
+
+    test('exempt glides, other trips and reseeded frames never count', () {
+      final check = ProjectedBackwardCheck();
+      check.observe(vehicleId: 'v', trip: 't', along: 200, reseeded: true, exempt: false, lat: 47.56, lon: -52.749, label: 'high');
+      final far = 47.56 + 80 / 110574;
+      expect(check.observe(vehicleId: 'v', trip: 't', along: 100, reseeded: false, exempt: true, lat: far, lon: -52.749, label: 'glide'), isNull);
+      check.observe(vehicleId: 'v', trip: 't', along: 200, reseeded: true, exempt: false, lat: 47.56, lon: -52.749, label: 'high');
+      expect(check.observe(vehicleId: 'v', trip: 'other', along: 100, reseeded: false, exempt: false, lat: far, lon: -52.749, label: 'trip'), isNull);
+      check.observe(vehicleId: 'v', trip: 't', along: 200, reseeded: true, exempt: false, lat: 47.56, lon: -52.749, label: 'high');
+      expect(check.observe(vehicleId: 'v', trip: 't', along: 100, reseeded: true, exempt: false, lat: far, lon: -52.749, label: 'reseed'), isNull);
+    });
+  });
+
   for (final dir in dirs) {
     test('replay ${dir.path.split('/').last}', () async {
       final repo = GtfsRepository();
@@ -59,7 +91,8 @@ void main() {
       // Backward check on every frame: the drawn point projected on the shape,
       // against the vehicle's high-water projection on its trip.
       final projected = <String, ({String? trip, double? along})>{};
-      final highWater = <String, ({String? trip, double along, double lat, double lon})>{};
+      final backwardCheck = ProjectedBackwardCheck();
+      final lastLatest = <String, DateTime>{};
       final backwardProjected = <String>[];
 
       for (var i = 0; i < frames.length; i++) {
@@ -77,7 +110,8 @@ void main() {
             projected[bus.vehicleId] = (trip: bus.tripId, along: along);
             // Cumulative: the projection falling more than 5 m below the high
             // water on this trip is backward motion, but only when the drawn
-            // point really is that far from where the high water was drawn.
+            // point really is at least half that far from where the high water
+            // was drawn (see ProjectedBackwardCheck).
             // Where the shape folds back over itself (a loop, a terminal) the
             // projection can jump by tens of metres while the dot moved
             // centimetres: not a move. A projection outside the search window
@@ -106,22 +140,29 @@ void main() {
                 break;
               }
             }
-            final hw = highWater[bus.vehicleId];
-            if (along == null || exemptGlide) {
-              highWater.remove(bus.vehicleId);
-            } else if (proj.reseeded || hw == null || hw.trip != bus.tripId || along >= hw.along) {
-              highWater[bus.vehicleId] = (trip: bus.tripId, along: along, lat: bus.lat, lon: bus.lon);
-            } else {
-              final drop = hw.along - along;
-              final shown = NearestStopService.haversineDistance(hw.lat, hw.lon, bus.lat, bus.lon);
-              if (drop > 5 && shown >= drop) {
-                backwardProjected.add('${bus.vehicleId} +${t.difference(frames.first.$1).inSeconds}s '
-                    'high water ${hw.along.round()} → ${along.round()} (${drop.round()} m), drawn ${shown.round()} m from the high water');
-              }
-            }
+            final flagged = backwardCheck.observe(
+              vehicleId: bus.vehicleId,
+              trip: bus.tripId,
+              along: along,
+              reseeded: proj.reseeded,
+              exempt: exemptGlide,
+              lat: bus.lat,
+              lon: bus.lon,
+              label: '+${t.difference(frames.first.$1).inSeconds}s',
+            );
+            if (flagged != null) backwardProjected.add(flagged);
+            // The frame that sees a data gap (a newest fix over 60 s after the
+            // previous one, or a re-created track) snaps by design, so the
+            // continuity limit does not apply to it.
+            final latestGps = track.fixes.last.gpsTime;
+            final prevLatest = lastLatest[bus.vehicleId];
+            lastLatest[bus.vehicleId] = latestGps;
+            final snapFrame = prevLatest != null &&
+                prevLatest != latestGps &&
+                (latestGps.difference(prevLatest) > const Duration(seconds: 60) || !track.fixes.any((f) => f.gpsTime == prevLatest));
             if (prev == null) continue;
             final meters = NearestStopService.haversineDistance(prev.lat, prev.lon, bus.lat, bus.lon);
-            maxKmh = math.max(maxKmh, meters / 0.12 * 3.6);
+            if (!snapFrame) maxKmh = math.max(maxKmh, meters / 0.12 * 3.6);
             if (prev.trip == bus.tripId && prev.p != null && bus.progress != null) {
               if (bus.progress! < prev.p! - 0.01) backward.add('${bus.vehicleId} ${prev.p!.round()}→${bus.progress!.round()}');
               // "Moving" = the two fixes around this frame are on the same
@@ -176,4 +217,45 @@ void main() {
   final along = snap.distanceAlongRoute;
   final inWindow = near != null && along >= near - back && along <= near + ahead;
   return (along: along, reseeded: !inWindow);
+}
+
+/// The cumulative projected-backward check of the replay: the projection of
+/// the drawn point on the trip's shape falling more than 5 m below the
+/// vehicle's high water on that trip is backward motion, but only when the
+/// dot really is at least half that far from where the high water was drawn.
+/// (The drawn distance is a chord and the drop an arc along the route, so on a
+/// curve the chord is shorter; a fold in the shape can make the projection
+/// jump by tens of metres while the dot moved centimetres, which is not a
+/// move.) A reseeded projection, a trip change and an exempt glide restart the
+/// high water, as does a frame with no projection.
+class ProjectedBackwardCheck {
+  final _highWater = <String, ({String? trip, double along, double lat, double lon})>{};
+
+  /// A description when this frame is a backward move, else null.
+  String? observe({
+    required String vehicleId,
+    required String? trip,
+    required double? along,
+    required bool reseeded,
+    required bool exempt,
+    required double lat,
+    required double lon,
+    required String label,
+  }) {
+    final hw = _highWater[vehicleId];
+    if (along == null || exempt) {
+      _highWater.remove(vehicleId);
+      return null;
+    }
+    if (reseeded || hw == null || hw.trip != trip || along >= hw.along) {
+      _highWater[vehicleId] = (trip: trip, along: along, lat: lat, lon: lon);
+      return null;
+    }
+    final drop = hw.along - along;
+    final shown = NearestStopService.haversineDistance(hw.lat, hw.lon, lat, lon);
+    if (drop > 5 && shown >= 0.5 * drop) {
+      return '$vehicleId $label high water ${hw.along.round()} → ${along.round()} (${drop.round()} m), drawn ${shown.round()} m from the high water';
+    }
+    return null;
+  }
 }
