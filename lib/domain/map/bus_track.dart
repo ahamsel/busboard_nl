@@ -47,6 +47,25 @@ class TrackFix {
   /// Schedule difference reported with this fix, in minutes: positive = ahead
   /// (early), negative = behind (late), null = the feed reported no delay.
   final int? schedDiffMins;
+
+  /// Whether BusTrackStore's reverse rule withheld [progress] (the snap is
+  /// kept in [snapProgress]).
+  bool get progressWithheld => progress == null && snapProgress != null;
+
+  /// This fix with [progress] and the snapped place withheld.
+  TrackFix withheld() => TrackFix(
+        gpsTime: gpsTime,
+        fetchTime: fetchTime,
+        lat: lat,
+        lon: lon,
+        heading: heading,
+        speedKmh: speedKmh,
+        tripId: tripId,
+        shapeId: shapeId,
+        snapProgress: snapProgress,
+        offRoute: offRoute,
+        schedDiffMins: schedDiffMins,
+      );
 }
 
 /// The recent fixes of one physical bus (keyed by vehicle ID).

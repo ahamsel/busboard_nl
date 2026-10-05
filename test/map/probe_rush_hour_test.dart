@@ -256,9 +256,9 @@ void main() {
       store.ingest(vehicles, poll);
       for (final t in store.tracks.values) {
         final latest = t.latest;
-        if (identical(before[t.vehicleId], latest)) continue;
+        if (before[t.vehicleId]?.gpsTime == latest.gpsTime) continue;
         newFixes++;
-        final withheld = latest.progress == null && latest.snapProgress != null;
+        final withheld = latest.progressWithheld;
         if (withheld) {
           withheldFixes++;
           final start = withheldSince.putIfAbsent(t.vehicleId, () => latest.gpsTime);
@@ -279,8 +279,9 @@ void main() {
       for (final t in store.tracks.values) {
         final b0 = before[t.vehicleId];
         final latest = t.latest;
-        if (b0 == null || identical(b0, latest)) continue;
-        final recreated = !t.fixes.any((f) => identical(f, b0));
+        if (b0 == null || b0.gpsTime == latest.gpsTime) continue;
+        // By GPS time: the store may replace a fix with a withheld copy.
+        final recreated = !t.fixes.any((f) => f.gpsTime == b0.gpsTime);
         if (b0.tripId != latest.tripId || recreated) {
           final sw = SwitchEv(t.vehicleId, b0, latest, poll, recreated);
           switches.add(sw);
