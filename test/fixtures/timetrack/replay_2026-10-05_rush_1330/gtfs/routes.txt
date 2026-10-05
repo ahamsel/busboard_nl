@@ -1,0 +1,19 @@
+route_id,agency_id,route_short_name,route_long_name,route_desc,route_type,route_url,route_color,route_text_color
+1,MB,1,Village-Institutes,,3,https://www.metrobus.com/schedules/fall/route1/,003333,FFFFFF
+2,MB,2,Malls via Lemarchant-Elizabeth,,3,https://www.metrobus.com/schedules/fall/route2/,000080,FFFFFF
+3,MB,3,Village-Stavanger,,3,https://www.metrobus.com/schedules/fall/route3/,000033,FFFFFF
+9,MB,9,Torbay Rd-Institutes,,3,https://www.metrobus.com/schedules/fall/route9/,003300,FFFFFF
+10,MB,10,Downtown-MUN-Avalon-Kelsey,,3,https://www.metrobus.com/schedules/fall/route10/,330000,FFFFFF
+11,MB,11,Shea Hts-Downtown-Avalon Mall,,3,https://www.metrobus.com/schedules/fall/route11/,ED2100,FFFFFF
+12,MB,12,Avalon Mall-Village,,3,https://www.metrobus.com/schedules/fall/route12/,003333,FFFFFF
+14,MB,14,Airport Hts-Torbay Rd-MUN,,3,https://www.metrobus.com/schedules/fall/route14/,FFFF00,000000
+15,MB,15,Forest Rd-Bonaventure-MUN-Avalon,,3,https://www.metrobus.com/schedules/fall/route15/,A8DADC,000000
+16,MB,16,Kenmount Terrace-Institutes,,3,https://www.metrobus.com/schedules/fall/route16/,FF6F61,000000
+18,MB,18,Goulds-Kilbride-Village,,3,https://www.metrobus.com/schedules/fall/route18/,B39CD0,000000
+19,MB,19,Village-Cowan Hts-Mundy Pd-Avalon,,3,https://www.metrobus.com/schedules/fall/route19/,E4E4E4,000000
+20,MB,20,Galway-Village Mall,,3,https://www.metrobus.com/schedules/fall/route20/,FFFF00,000000
+21,MB,21,Mount Pearl,,3,https://www.metrobus.com/schedules/fall/route21/,A8DADC,000000
+22,MB,22,Donovans,,3,https://www.metrobus.com/schedules/fall/route22/,FF6F61,000000
+23,MB,23,Stavanger to Mall,,3,https://www.metrobus.com/schedules/fall/route23/,B39CD0,000000
+29,MB,29,Signal Hill-UC-Mount Scio Rd,,3,https://www.metrobus.com/schedules/fall/route29/,000080,FFFFFF
+30,MB,30,Paradise,,3,https://www.metrobus.com/schedules/fall/route30/,000033,FFFFFF

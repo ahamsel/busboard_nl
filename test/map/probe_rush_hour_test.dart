@@ -222,10 +222,17 @@ void main() {
     var wrongWay = 0;
     final wrongWayLines = <String>[];
     var frozenSec = 0, frozenStarved = 0, movingSec = 0;
+    final frozenWhy = <String, int>{};
+    final frozenStarvedWhy = <String, int>{};
+    var overAhead60 = 0;
+    var maxAhead = 0.0;
     final frozenRuns = <(String, DateTime, int)>[]; // vid, end, seconds (runs >= 10 s)
     var starvedFrames = 0, totalFrames = 0, delayAtMax = 0, fastFrames = 0;
     const starvedAfter = Duration(seconds: 5);
     final delays = <double>[];
+    // Age of the newest fix at each frame: a dot drawn D behind is starved
+    // when this exceeds D + 5 s, whatever the rules.
+    final ages = <double>[];
     // Snap frames over 100 m on a track re-created this frame (a route
     // change): those snap by design.
     var snapsOver100Recreated = 0;
@@ -315,6 +322,7 @@ void main() {
           if (starved) starvedFrames++;
           if (delay >= DelayedTrackRenderer.maxDelay - const Duration(milliseconds: 100)) delayAtMax++;
           delays.add(delay.inMilliseconds / 1000.0);
+          ages.add(t.difference(track.latest.gpsTime).inMilliseconds / 1000.0);
           final prevSeen = seenLatest[vid];
           final recreatedNow = prevSeen != null && prevSeen != track.latest.gpsTime && !track.fixes.any((f) => f.gpsTime == prevSeen);
           seenLatest[vid] = track.latest.gpsTime;
@@ -396,7 +404,50 @@ void main() {
                 movingSec++;
                 if (dotMove < 1) {
                   frozenSec++;
-                  if (starved) frozenStarved++;
+                  if (starved) {
+                    frozenStarved++;
+                    // Why a starved dot is frozen: the dead-reckoning ran
+                    // out, the last pair gives no speed, or the dot is held
+                    // ahead of the dead-reckoned place.
+                    final fx = track.fixes;
+                    final last = fx.last;
+                    final prev = fx.length >= 2 ? fx[fx.length - 2] : null;
+                    String why;
+                    if (renderAt.isAfter(last.gpsTime.add(DelayedTrackRenderer.deadReckonHorizon))) {
+                      why = 'past the horizon';
+                    } else if (prev == null || last.progress == null || prev.progress == null || prev.tripId != last.tripId || prev.shapeId != last.shapeId) {
+                      why = 'last pair off shape';
+                    } else if (last.progress! - prev.progress! < 20) {
+                      why = 'last pair falls or barely moves';
+                    } else if (bus.progress != null && bus.progress! > last.progress! + 1) {
+                      why = 'at the cap or held ahead';
+                    } else {
+                      why = 'other';
+                    }
+                    frozenStarvedWhy[why] = (frozenStarvedWhy[why] ?? 0) + 1;
+                  } else {
+                    // Why a dot with fixes on both sides of render time is
+                    // frozen: the pair falls (GPS backward), the dot is held
+                    // ahead of the pair's place (an overshoot), or other.
+                    final fx = track.fixes;
+                    var why = 'other';
+                    for (var k = 0; k + 1 < fx.length; k++) {
+                      final a = fx[k], b = fx[k + 1];
+                      if (renderAt.isBefore(a.gpsTime) || !renderAt.isBefore(b.gpsTime)) continue;
+                      if (a.progress == null || b.progress == null || a.tripId != b.tripId) {
+                        why = 'off-shape pair';
+                      } else if (b.progress! < a.progress!) {
+                        why = 'pair falls';
+                      } else {
+                        final f = renderAt.difference(a.gpsTime).inMicroseconds / b.gpsTime.difference(a.gpsTime).inMicroseconds;
+                        final want = a.progress! + (b.progress! - a.progress!) * f;
+                        why = bus.progress != null && bus.progress! > want + 1 ? 'held ahead' : (b.progress! - a.progress! < 20 ? 'pair barely moves' : 'other');
+                      }
+                      break;
+                    }
+                    if (renderAt.isAfter(track.latest.gpsTime)) why = 'past newest (<5 s)';
+                    frozenWhy[why] = (frozenWhy[why] ?? 0) + 1;
+                  }
                   s.frozenRun++;
                   if (nearHot) hot['frozenSec'] = hot['frozenSec']! + 1;
                 } else {
@@ -433,6 +484,24 @@ void main() {
             s.sampleLat = bus.lat;
             s.sampleLon = bus.lon;
             s.sampleRenderAt = renderAt;
+          }
+
+          // Overshoot: the dot drawn ahead along the shape of where the two
+          // fixes around render time place the bus (dead-reckoning past a
+          // bus that then slowed). Over 60 m it is outside the jitter hold.
+          if (bus.progress != null) {
+            final fx = track.fixes;
+            for (var k = 0; k + 1 < fx.length; k++) {
+              final a = fx[k], b = fx[k + 1];
+              if (renderAt.isBefore(a.gpsTime) || !renderAt.isBefore(b.gpsTime)) continue;
+              if (a.progress != null && b.progress != null && a.tripId == b.tripId && a.shapeId == b.shapeId && bus.tripId == b.tripId) {
+                final f = renderAt.difference(a.gpsTime).inMicroseconds / b.gpsTime.difference(a.gpsTime).inMicroseconds;
+                final ahead = bus.progress! - (a.progress! + (b.progress! - a.progress!) * f);
+                if (ahead > 60) overAhead60++;
+                if (ahead > maxAhead) maxAhead = ahead;
+              }
+              break;
+            }
           }
 
           // Route 2 hotspot.
@@ -557,11 +626,15 @@ void main() {
     }
     out.writeln('frozen while bus moves: $frozenSec of $movingSec moving vehicle-seconds (${(100 * frozenSec / movingSec).toStringAsFixed(1)}%), '
         'of which starved (render time > newest fix + 5 s) $frozenStarved');
+    out.writeln('dot ahead of its fixes by over 60 m: $overAhead60 frames; max ${maxAhead.round()} m');
+    out.writeln('frozen, not starved, by cause: $frozenWhy');
+    out.writeln('frozen and starved, by cause: $frozenStarvedWhy');
     out.writeln('starved frames: $starvedFrames of $totalFrames (${(100 * starvedFrames / totalFrames).toStringAsFixed(2)}%)');
     out.writeln('reverse rule: $withheldFixes of $newFixes new fixes withheld progress; runs (start: GPS seconds to last withheld fix):');
     for (final e in withheldLog.entries) {
       out.writeln('  v${e.key} ${e.value}');
     }
+    out.writeln('newest-fix age at each frame: p50 ${pct(ages, .5).toStringAsFixed(1)} p90 ${pct(ages, .9).toStringAsFixed(1)} p95 ${pct(ages, .95).toStringAsFixed(1)} p97 ${pct(ages, .97).toStringAsFixed(1)} p99 ${pct(ages, .99).toStringAsFixed(1)} s');
     out.writeln('drawn delay: p50 ${pct(delays, .5).toStringAsFixed(1)} s, p90 ${pct(delays, .9).toStringAsFixed(1)} s');
     out.writeln('render delay at the ${DelayedTrackRenderer.maxDelay.inSeconds} s cap: $delayAtMax of $totalFrames frames (${(100 * delayAtMax / totalFrames).toStringAsFixed(1)}%); frames drawn faster than 75 km/h (catch-up): $fastFrames');
     frozenRuns.sort((a, b) => b.$3.compareTo(a.$3));
