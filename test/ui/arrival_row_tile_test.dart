@@ -109,6 +109,37 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('a live row with onTap calls it and offers a follow action to screen readers', (tester) async {
+    final handle = tester.ensureSemantics();
+    var taps = 0;
+    await tester.pumpWidget(kitHost(ArrivalRowTile(
+      arrival: _row(isLive: true, status: LiveStatus.onTime, vehicle: '2573'),
+      onTap: () => taps++,
+    )));
+    expect(
+      find.semantics.byLabel('Route 29 Signal Hill Rd, on time, 4 minutes'),
+      isSemantics(
+        label: 'Route 29 Signal Hill Rd, on time, 4 minutes',
+        isButton: true,
+        hasTapAction: true,
+        onTapHint: 'follow bus 2573 on the map',
+      ),
+    );
+    await tester.tap(find.text('Signal Hill Rd'));
+    expect(taps, 1);
+    handle.dispose();
+  });
+
+  testWidgets('a row without onTap has no tap action', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: _row(isLive: true, vehicle: '2573'))));
+    expect(
+      find.semantics.byLabel('Route 29 Signal Hill Rd, live, 4 minutes'),
+      isSemantics(label: 'Route 29 Signal Hill Rd, live, 4 minutes', isButton: false, hasTapAction: false),
+    );
+    handle.dispose();
+  });
+
   testWidgets('no overflow at text scale 2.0 on 320pt', (tester) async {
     await tester.pumpWidget(kitHost(
       ArrivalRowTile(arrival: _row(isLive: true, status: LiveStatus.onTime, vehicle: '2134', routeRun: '29-1',

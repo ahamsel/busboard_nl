@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../domain/map/bus_tracking_state.dart';
+import '../../state/follow_providers.dart';
+import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../alerts/service_alert_card.dart';
 import '../kit/kit.dart';
@@ -114,6 +116,16 @@ class _BusCardBodyState extends ConsumerState<BusCardBody> {
             ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => context.go('/alerts')),
             const SizedBox(height: BBSpace.m),
           ],
+          BBButton(
+            label: 'Follow',
+            icon: BBIcons.bus,
+            expand: true,
+            onPressed: () {
+              ref.read(mapSelectionProvider.notifier).clear();
+              ref.read(followProvider.notifier).follow(widget.vehicleId);
+            },
+          ),
+          const SizedBox(height: BBSpace.m),
           BBPressable(
             onTap: () => setState(() => _open = !_open),
             semanticLabel: _open ? 'Technical details, expanded' : 'Technical details, collapsed',

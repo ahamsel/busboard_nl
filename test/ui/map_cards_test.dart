@@ -2,6 +2,7 @@ import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -119,6 +120,18 @@ void main() {
     expect(find.bySemanticsLabel('Route 10'), findsOneWidget);
     expect(find.text('to Downtown'), findsOneWidget);
     expect(find.text('Bus 2573 · 1 min late'), findsOneWidget);
+  });
+
+  testWidgets('bus card Follow button follows this bus and closes the selection', (tester) async {
+    await _host(tester,
+        header: const BusCardHeader(vehicleId: '2573'), body: const BusCardBody(vehicleId: '2573'), buses: {'2573': _bus()});
+    final container = ProviderScope.containerOf(tester.element(find.byType(BusCardBody)));
+    container.read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
+    expect(find.text('Follow'), findsOneWidget);
+    await tester.tap(find.text('Follow'));
+    await tester.pumpAndSettle();
+    expect(container.read(followProvider), const FollowTarget('2573'));
+    expect(container.read(mapSelectionProvider), isNull);
   });
 
   testWidgets('with no headsign in the live feed, the destination comes from its trip', (tester) async {

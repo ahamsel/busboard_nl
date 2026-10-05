@@ -5,6 +5,7 @@ import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
+import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -46,6 +47,78 @@ final _liveFeed = MockClient((request) async {
   return http.Response('down', 500);
 });
 
+/// Same feed as [_liveFeed] but for vehicle 2573 on trip-20.
+final _liveFeed2573 = MockClient((request) async {
+  if (request.url.path.endsWith('vehiclepositions')) {
+    final feed = FeedMessage(
+      header: FeedHeader(gtfsRealtimeVersion: '2.0'),
+      entity: [
+        FeedEntity(
+          id: 'vehicle-2573',
+          vehicle: VehiclePosition(
+            trip: TripDescriptor(tripId: 'trip-20', routeId: '20'),
+            position: Position(latitude: 47.53, longitude: -52.75),
+            timestamp: Int64(DateTime.now().millisecondsSinceEpoch ~/ 1000),
+            vehicle: VehicleDescriptor(id: '2573'),
+          ),
+        ),
+      ],
+    );
+    return http.Response.bytes(feed.writeToBuffer(), 200);
+  }
+  return http.Response('down', 500);
+});
+
+String _clock(int seconds) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(seconds ~/ 3600)}:${two(seconds % 3600 ~/ 60)}:${two(seconds % 60)}';
+}
+
+/// A hand-filled repository has no loader to flip the loaded flag.
+class _LoadedRepository extends GtfsRepository {
+  @override
+  bool get isLoaded => true;
+}
+
+/// MUN Centre with two departures a few minutes out: route 20 on trip-20
+/// (the live vehicle's trip) and route 21 on trip-21 (nothing live).
+GtfsRepository _repoWithDepartures() {
+  final now = DateTime.now();
+  final nowSeconds = now.hour * 3600 + now.minute * 60;
+  final repo = _LoadedRepository()
+    ..stopsById['1150'] = const StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 0, stopLon: 0);
+  repo.calendarsById['daily'] = ServiceCalendar(
+    serviceId: 'daily',
+    monday: true,
+    tuesday: true,
+    wednesday: true,
+    thursday: true,
+    friday: true,
+    saturday: true,
+    sunday: true,
+    startDate: DateTime(2000),
+    endDate: DateTime(2100),
+  );
+  for (final (route, trip, headsign, offset) in [
+    ('20', 'trip-20', 'Live Terminal', 600),
+    ('21', 'trip-21', 'Schedule Terminal', 900),
+  ]) {
+    repo.routesById[route] = RouteInfo(routeId: route, routeShortName: route, routeLongName: route);
+    repo.tripsById[trip] = TripInfo(tripId: trip, routeId: route, serviceId: 'daily', tripHeadsign: headsign, directionId: 0);
+    repo.stopTimesByStopId['1150'] = [
+      ...?repo.stopTimesByStopId['1150'],
+      StopTimeRow(
+        tripId: trip,
+        arrivalTime: _clock(nowSeconds + offset),
+        departureTime: _clock(nowSeconds + offset),
+        stopId: '1150',
+        stopSequence: 5,
+      ),
+    ];
+  }
+  return repo;
+}
+
 ServiceAlert _alert(String header) => ServiceAlert(
       sourceIds: {header},
       header: header,
@@ -76,6 +149,7 @@ Future<void> _pump(
     ]),
     GoRoute(path: '/settings', builder: (_, _) => const Text('SETTINGS')),
     GoRoute(path: '/alerts', builder: (_, _) => const Text('ALERTS')),
+    GoRoute(path: '/map', builder: (_, _) => const Text('MAP')),
   ]);
   final container = ProviderContainer(overrides: [
       gtfsRepositoryProvider.overrideWith((ref) async {
@@ -191,6 +265,29 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('STOP 1150'), findsOneWidget);
     expect(find.text('Change'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('tapping a live row follows that bus and opens the map', (tester) async {
+    await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
+    expect(find.text('Live Terminal'), findsOneWidget);
+    await tester.tap(find.text('Live Terminal'));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(tester.element(find.text('MAP')));
+    expect(container.read(followProvider), const FollowTarget('2573'));
+    expect(find.text('MAP'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('a scheduled-only row is not tappable', (tester) async {
+    await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
+    expect(find.text('Schedule Terminal'), findsOneWidget);
+    await tester.tap(find.text('Schedule Terminal'));
+    await tester.pumpAndSettle();
+    expect(find.text('MAP'), findsNothing);
+    expect(find.text('Schedule Terminal'), findsOneWidget);
+    final container = ProviderScope.containerOf(tester.element(find.text('Schedule Terminal')));
+    expect(container.read(followProvider), isNull);
     await _unmount(tester);
   });
 
