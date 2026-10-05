@@ -130,7 +130,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **Other effects:**
   - **ETAs aren't delayed.** Countdowns on the board and in the follow card still come from live predictions, so only the dot runs a few seconds behind.
   - **Code removed:** `BusMotionEngine` and its special cases (stop anchor, Kalman progress filter, blend origins, backward counters) are deleted, along with the GTFS-RT adapter's misuse of `gtfsStopSequenceMinsFromStop` as the delay.
-  - **Provider changes:** `busMotionEngineProvider` and `busTrackingStreamProvider` are replaced by `busTrackStoreProvider` (a poll-driven notifier) and a map-scoped renderer ticker.
+  - **Provider changes:** `busMotionEngineProvider` is replaced by `routeGeometryProvider`, `busTrackStoreProvider` and `busTrackRendererProvider`; `busTrackingStreamProvider` keeps its name and type but now polls into the store. The map's existing frame ticker calls `renderAll` once per frame. *(Amended in 3b-1 Task 6.)*
 
 ### 3.5 Follow mode
 - **Entry:**
