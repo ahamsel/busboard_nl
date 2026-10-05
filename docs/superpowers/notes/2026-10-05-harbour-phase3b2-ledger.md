@@ -95,3 +95,11 @@ Ruling: on iOS subtract MediaQuery.padding.bottom from the attribution y margin 
 Parity (iOS sim relaunch, build 1f372c5): 'i' now beside credit ✓. BUG: layers missing — log 'Could not install map layers: PlatformException(sourceAlreadyExists … bb-stops)'. onStyleLoaded fires twice for one native style; serialized second install collides and leaves _layers null. Ruling: make MapLayers.install idempotent on the same style (best-effort removeLayer/removeSource before each add, via MapSurface) and confirm the double-fire cause in maplibre_gl iOS source — cost if wrong: a few wasted platform calls per reload. Also noted: Kiosk HTTP 403 every 5 s from stopArrivalsProvider's stop-prediction fetch (Metrobus kiosk forbidden; board does the same) — deferred.
 Parity fixes: 1f372c5 (iOS attribution margin), 11ddee4 (idempotent install; cause: iOS sets styleURL twice at init, both didFinishLoading emit onStyleLoaded). Relaunch verified: star + layers present, no install error in log. Scoped re-review dispatched.
 Parity fixes re-review: clean. Phase 3b-2 complete; live-bus + Android parity pending (feed empty overnight).
+
+## Live parity (iOS simulator, 2026-10-05 10:24 NDT, ~40 live buses)
+- Badges + notches render in route colours; 19 s recording at 1 fps shows steady forward motion along roads, no jumps or backsteps; stopped buses hold.
+- Bus card: "Route 16 · Bus 1628 · 4 min early · Live" — destination missing (GTFS-RT carries no headsign).
+- Peek: your-stop header with 2 arrivals is taller than the fixed 168 pt peek, so the 2nd row is clipped.
+- Returning from a bus card to your stop flashes the arrivals skeleton (stopArrivalsProvider auto-disposed while unwatched).
+- Rush-hour monitor (scheduled task) restarted captures at 09:34; early finding: route 18 trip 262894 assigned to bus 1311 (live) and 1629 (frozen, 11+ min old) — the 3b-1 store drops fixes > 5 min old, so 1629 never reaches the map.
+Ruling: polish round — peek fraction from the measured header height; bus card destination falls back to the GTFS trip headsign; keep the selected stop's arrivals alive across selection changes — all rider-visible, small — cost: none.
