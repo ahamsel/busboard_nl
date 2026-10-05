@@ -46,9 +46,9 @@ String busLabel(BusTrackingState s) {
 
 /// Markers for this frame. The renderer's drawn position wins; a bus it has
 /// not drawn yet uses its latest fix. Stale buses stay, flagged for a grey
-/// badge (spec §3.2). An empty [routeFilter] shows every route. While
-/// [followedVehicleId] is set, that bus is [MarkerEmphasis.followed] and every
-/// other bus [MarkerEmphasis.dimmed].
+/// badge (spec §3.2). An empty [routeFilter] shows every route, except that
+/// the followed bus is always drawn. While [followedVehicleId] is set, that
+/// bus is [MarkerEmphasis.followed] and every other bus [MarkerEmphasis.dimmed].
 List<BusMarker> busMarkers({
   required Map<String, BusTrackingState> tracking,
   required Map<String, RenderedBus> drawn,
@@ -59,7 +59,7 @@ List<BusMarker> busMarkers({
 }) {
   final out = <BusMarker>[];
   for (final MapEntry(key: id, value: s) in tracking.entries) {
-    if (routeFilter.isNotEmpty && !routeFilter.contains(s.routeNumber)) continue;
+    if (routeFilter.isNotEmpty && id != followedVehicleId && !routeFilter.contains(s.routeNumber)) continue;
     final pos = drawn[id];
     final label = busLabel(s);
     out.add(BusMarker(

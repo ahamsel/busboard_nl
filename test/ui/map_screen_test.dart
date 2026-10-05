@@ -592,6 +592,7 @@ void main() {
 
   group('follow mode', () {
     BusTrackingState followed({
+      String id = '2573',
       double progress = 100,
       String trip = outAndBackTripId,
       BusStatus status = BusStatus.active,
@@ -599,7 +600,7 @@ void main() {
     }) =>
         BusTrackingState(
           routeRun: 'Rt 10',
-          vehicleId: '2573',
+          vehicleId: id,
           routeNumber: 10,
           headsign: 'Loop',
           currentTripId: trip,
@@ -624,12 +625,13 @@ void main() {
       BusTrackingState? bus,
       bool disableAnimations = false,
       List<Override> overrides = const [],
+      _RecordingSurface? surfaceOverride,
       Size size = const Size(390, 844),
       double textScale = 1,
     }) async {
       feed = StreamController<Map<String, BusTrackingState>>();
       addTearDown(feed.close);
-      surface = _RecordingSurface();
+      surface = surfaceOverride ?? _RecordingSurface();
       _surface = surface;
       await _pump(
         tester,
@@ -671,8 +673,6 @@ void main() {
     });
 
     testWidgets('a follow already set when the map first builds is followed', (tester) async {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
       await pumpFollow(tester, overrides: [followProvider.overrideWith(() => _PresetFollow('2573'))]);
       await _frames(tester, 3);
       expect(find.text('Following bus 2573'), findsOneWidget);
@@ -834,16 +834,112 @@ void main() {
       expect(surface.features('bb-route'), hasLength(2), reason: 'the new style starts empty; the route is pushed back at once');
     });
 
-    testWidgets('while following, taps near a bus or a stop are ignored', (tester) async {
+    Future<double> sheetTop(WidgetTester tester) async => tester.getRect(find.byKey(BBSheet.cardKey)).top;
+
+    // The sheet's animations need a few frames to run to the end.
+    Future<void> settle(WidgetTester tester) async {
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    Future<void> expandSheet(WidgetTester tester) async {
+      await tester.tap(find.text('See all stops'));
+      await settle(tester);
+    }
+
+    testWidgets('while following, taps near a bus or a stop are ignored and leave the sheet alone', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
+      await expandSheet(tester);
+      final open = await sheetTop(tester);
       _config!.onTap(LatLng(47.560045, lonAt(500)));
-      await tester.pump(const Duration(milliseconds: 400));
+      await settle(tester);
       expect(find.text('Open board'), findsNothing);
+      expect(await sheetTop(tester), open);
       _config!.onTap(LatLng(47.5601, lonAt(100)));
-      await tester.pump(const Duration(milliseconds: 400));
+      await settle(tester);
       expect(containerOf(tester).read(mapSelectionProvider), isNull);
       expect(find.text('Following bus 2573'), findsOneWidget);
+      expect(await sheetTop(tester), open);
+    });
+
+    testWidgets('while following, a tap on empty map collapses the sheet to peek', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final peek = await sheetTop(tester);
+      await expandSheet(tester);
+      expect(await sheetTop(tester), lessThan(peek - 100));
+      _config!.onTap(const LatLng(47.0, -52.0));
+      await settle(tester);
+      expect(await sheetTop(tester), peek);
+    });
+
+    testWidgets('the followed bus is still drawn when the route filter excludes its route', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      containerOf(tester).read(mapRouteFilterProvider.notifier).toggle(99);
+      await _frames(tester, 3);
+      expect(surface.busSets.last.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
+    });
+
+    testWidgets('a two-finger pinch pauses', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final a = await tester.startGesture(const Offset(150, 300));
+      final b = await tester.startGesture(const Offset(250, 300));
+      await a.moveBy(const Offset(-30, 0));
+      await b.moveBy(const Offset(30, 0));
+      await tester.pump(const Duration(milliseconds: 100));
+      await a.up();
+      await b.up();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+    });
+
+    testWidgets('a 10 px jitter does not pause', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final g = await tester.startGesture(const Offset(200, 300));
+      await g.moveBy(const Offset(6, 8));
+      await g.up();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Back to bus 2573'), findsNothing);
+    });
+
+    testWidgets('switching straight from one bus to another follows the new one and draws its route', (tester) async {
+      await pumpFollow(tester);
+      feed.add({'2573': followed(), '2574': followed(id: '2574', progress: 300)});
+      await tester.pump();
+      await startFollowing(tester);
+      await pan(tester);
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      containerOf(tester).read(followProvider.notifier).follow('2574');
+      await _frames(tester, 3);
+      expect(find.text('Following bus 2574'), findsOneWidget);
+      expect(find.text('Back to bus 2573'), findsNothing);
+      expect(find.text('Back to bus 2574'), findsNothing);
+      final driven = (surface.features('bb-route').first['geometry'] as Map)['coordinates'] as List;
+      expect((driven.last as List).first, closeTo(lonAt(300), 1e-4), reason: 'the line is split at bus 2574');
+    });
+
+    testWidgets('a follow that ends while the style is being reinstalled leaves no route on the new style', (tester) async {
+      final gated = _RouteGateSurface();
+      await pumpFollow(tester, surfaceOverride: gated);
+      await startFollowing(tester);
+      expect(gated.features('bb-route'), hasLength(2));
+      gated.gate = Completer<void>();
+      await tester.runAsync(() async {
+        _config!.onStyleLoaded();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      expect(gated.routePushWaiting, isTrue, reason: 'the install is waiting to redraw the route');
+      containerOf(tester).read(followProvider.notifier).stop();
+      await tester.runAsync(() async {
+        gated.gate!.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      });
+      expect(gated.features('bb-route'), isEmpty);
     });
 
     testWidgets('no overflow at 320 pt and text x2.0 while following', (tester) async {
@@ -856,6 +952,23 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+}
+
+/// Holds the route line's redraw until [gate] completes, so a test can end the
+/// follow while an install is waiting on it.
+class _RouteGateSurface extends _RecordingSurface {
+  Completer<void>? gate;
+  bool routePushWaiting = false;
+
+  @override
+  Future<void> setGeoJsonSource(String id, Map<String, dynamic> data) async {
+    final g = gate;
+    if (id == 'bb-route' && g != null && (data['features'] as List).isNotEmpty) {
+      routePushWaiting = true;
+      await g.future;
+    }
+    return super.setGeoJsonSource(id, data);
+  }
 }
 
 class _PresetFollow extends FollowNotifier {

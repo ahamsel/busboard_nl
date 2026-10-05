@@ -94,6 +94,20 @@ void main() {
       expect(ids(const {2}), ['b']);
     });
 
+    test('the followed bus stays even when the route filter excludes its route', () {
+      final tracking = {'a': _bus('a', route: 10), 'b': _bus('b', route: 2), 'c': _bus('c', route: 5)};
+      final markers = busMarkers(
+        tracking: tracking,
+        drawn: const {},
+        routeFilter: const {2},
+        headings: HeadingSmoother(),
+        now: _now,
+        followedVehicleId: 'a',
+      );
+      expect(markers.map((m) => m.vehicleId), unorderedEquals(['a', 'b']));
+      expect(markers.firstWhere((m) => m.vehicleId == 'a').emphasis, MarkerEmphasis.followed);
+    });
+
     test('stale buses stay on the map, flagged stale', () {
       final markers = busMarkers(
         tracking: {'a': _bus('a', status: BusStatus.stale)},

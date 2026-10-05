@@ -227,9 +227,15 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       await layers.updateMyStop(_myStop());
       if (!mounted || generation != _styleGeneration) return;
       // A new style starts without the route line: draw the last one again.
-      final route = _follow?.route;
-      if (route != null) await layers.updateRoute(driven: route.driven, ahead: route.ahead, color: route.color);
-      if (!mounted || generation != _styleGeneration) return;
+      final follow = _follow;
+      final route = follow?.route;
+      if (route != null) {
+        await layers.updateRoute(driven: route.driven, ahead: route.ahead, color: route.color);
+        if (!mounted || generation != _styleGeneration) return;
+        // The follow ended (or moved to another bus) while the line was being
+        // drawn: this style must not keep it. The next frame draws the new one.
+        if (!identical(follow, _follow)) await layers.clearRoute();
+      }
     } catch (e) {
       _log('Could not install map layers: $e');
       return;
@@ -411,13 +417,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   /// camera) and say why, unless the bus simply arrived.
   void _endFollow(FollowEnd why, String id) {
     ref.read(followProvider.notifier).stop();
-    final message = switch (why) {
-      FollowEnd.arrived => null,
-      FollowEnd.passedYourStop => 'Bus $id has passed ${_myStop()?.stopName ?? 'your stop'}',
-      FollowEnd.tripEnded => 'Bus $id has finished its trip',
-      FollowEnd.lostContact => 'Lost contact with bus $id',
-      FollowEnd.notFound => "Bus $id isn't reporting its position",
-    };
+    final message = followEndMessage(why, id, _myStop()?.stopName);
     if (message != null && mounted) BBToast.show(context, message);
   }
 
@@ -445,11 +445,18 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   // ─── Interaction ──────────────────────────────────────────
 
   void _onTap(LatLng tap) {
-    // The follow card owns the sheet: only an empty-map tap does anything.
-    if (_follow != null) return unawaited(_sheet.collapse());
     final radius = tapRadiusMeters(_camera?.zoom ?? _defaultZoom);
     final selection = ref.read(mapSelectionProvider.notifier);
     final markers = _lastMarkers.isNotEmpty ? _lastMarkers : _markersFromTracking();
+    if (_follow != null) {
+      // The follow card owns the sheet: a tap on a bus or a stop does nothing;
+      // a tap on empty map brings the sheet back to peek.
+      final repo = ref.read(gtfsRepositoryProvider).value;
+      final hit = nearestBus(tap, radius, markers) != null ||
+          (repo != null && nearestStop(tap, radius, repo.stopsById.values) != null);
+      if (!hit) unawaited(_sheet.collapse());
+      return;
+    }
     final bus = nearestBus(tap, radius, markers);
     if (bus != null) return _select(BusSelection(bus));
     final repo = ref.read(gtfsRepositoryProvider).value;

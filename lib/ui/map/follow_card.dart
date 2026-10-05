@@ -6,6 +6,16 @@ import '../kit/kit.dart';
 import 'bus_card.dart';
 import 'map_layers.dart';
 
+/// The toast that says why a follow ended; null for an arrival, which the
+/// card has already announced.
+String? followEndMessage(FollowEnd why, String vehicleId, String? yourStopName) => switch (why) {
+      FollowEnd.arrived => null,
+      FollowEnd.passedYourStop => 'Bus $vehicleId has passed ${yourStopName ?? 'your stop'}',
+      FollowEnd.tripEnded => 'Bus $vehicleId has finished its trip',
+      FollowEnd.lostContact => 'Lost contact with bus $vehicleId',
+      FollowEnd.notFound => "Bus $vehicleId isn't reporting its position",
+    };
+
 String stopsToGoText(int? stopsTo, String? yourStopName) {
   final name = yourStopName ?? 'your stop';
   return switch (stopsTo) {
