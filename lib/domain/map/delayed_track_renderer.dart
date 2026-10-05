@@ -38,7 +38,12 @@ class RenderedBus {
 /// both places are on the same trip's shape and the target is ahead, else in a
 /// straight line (progress null). The first frame of a vehicle, and a frame
 /// more than [_continuityGap] after the previous one (an app resume, a clock
-/// jump), snap straight to the target.
+/// jump), snap straight to the target. So does the frame on which a data
+/// discontinuity shows: a newest fix more than [_dataGapSnap] after the
+/// previous newest one (a resumed stream, a feed outage, a stale bus coming
+/// back), or a track re-created for the vehicle (a route change). The limiter
+/// is for catching up after a skipped fix, not for walking a bus along its
+/// route for 40 s after the data stopped.
 ///
 /// [render] updates per-vehicle state (the never-backward mark and the
 /// smoothed delay), so call it once per bus per frame with a monotonic
@@ -82,6 +87,10 @@ class DelayedTrackRenderer {
 
   /// The fastest the drawn bus may move between two frames, m/s.
   static const double _maxCatchUpMps = 30;
+
+  /// A newest fix this much later than the previous newest one is a data gap:
+  /// the frame that sees it snaps to the target.
+  static const Duration _dataGapSnap = Duration(seconds: 60);
 
   /// Frames further apart than this (wall time) are not continuous.
   static const Duration _continuityGap = Duration(seconds: 2);
@@ -148,6 +157,14 @@ class DelayedTrackRenderer {
     final drawn = state.drawn;
     if (drawn != null && state.drawnAt == now) return drawn;
     final at = now.subtract(_slewedDelay(track, state, now));
+    final discontinuity = _dataDiscontinuity(track, state);
+    final snap = discontinuity != _Discontinuity.none;
+    // A track re-created for the vehicle starts afresh: nothing of the old
+    // one (mark, anchor) applies to it.
+    if (discontinuity == _Discontinuity.recreated) {
+      state.mark = null;
+      state.anchor = null;
+    }
     RenderedBus bus;
     if (!at.isAfter(fixes.first.gpsTime)) {
       bus = _atFix(track.vehicleId, fixes.first);
@@ -164,9 +181,50 @@ class DelayedTrackRenderer {
       final f = span <= 0 ? 1.0 : at.difference(a.gpsTime).inMicroseconds / span;
       bus = _between(track.vehicleId, a, b, f.clamp(0.0, 1.0), at, state.anchor);
     }
-    final guarded = _neverBackward(bus, at, state);
+    final guarded = snap ? _startMark(bus, at, state) : _neverBackward(bus, at, state);
     if (state.mark != null) state.anchor = state.mark;
-    return _limitStep(guarded, now, state);
+    return _limitStep(guarded, now, state, snap: snap);
+  }
+
+  /// Whether this frame sees a break in the vehicle's data: a new newest fix
+  /// more than [_dataGapSnap] after the previous newest, or one whose track no
+  /// longer holds the previous newest fix (a track re-created for the
+  /// vehicle; the store trims only the oldest fixes, so a continuing track
+  /// always keeps it). Records the newest fix seen.
+  _Discontinuity _dataDiscontinuity(BusTrack track, _VehicleState state) {
+    final latest = track.fixes.last.gpsTime;
+    final previous = state.latestGps;
+    if (previous == latest) return _Discontinuity.none;
+    state.latestGps = latest;
+    if (previous == null) return _Discontinuity.none;
+    if (!track.fixes.any((f) => f.gpsTime == previous)) return _Discontinuity.recreated;
+    return latest.difference(previous) > _dataGapSnap ? _Discontinuity.gap : _Discontinuity.none;
+  }
+
+  /// A snap draws the target as is and starts the never-backward mark at it.
+  /// The one exception is a target at most [_jitterMeters] behind the mark of
+  /// the same trip and shape (a gap on a continuing track): that is the
+  /// extrapolation overshoot the jitter band exists for, so it is held.
+  RenderedBus _startMark(RenderedBus bus, DateTime at, _VehicleState state) {
+    final p = bus.progress;
+    final shapeId = bus.shapeId;
+    if (p == null || shapeId == null) {
+      state.mark = null;
+      return bus;
+    }
+    final mark = state.mark;
+    if (mark != null &&
+        mark.tripId == bus.tripId &&
+        mark.shapeId == shapeId &&
+        p < mark.progress &&
+        mark.progress - p <= _jitterMeters &&
+        !at.isBefore(mark.at.subtract(_clockBackTolerance)) &&
+        !at.isAfter(mark.at.add(_markLifetime))) {
+      mark.at = at;
+      return _onShape(bus.vehicleId, shapeId, mark.progress, bus.tripId) ?? bus;
+    }
+    state.mark = _Mark(tripId: bus.tripId, shapeId: shapeId, progress: p, at: at);
+    return bus;
   }
 
   /// The delay for this frame: the target, approached at most
@@ -189,11 +247,11 @@ class DelayedTrackRenderer {
 
   /// Final stage: the drawn bus moves at most [_maxCatchUpMps] per second from
   /// where this vehicle was last drawn toward [target]. See the class doc.
-  RenderedBus _limitStep(RenderedBus target, DateTime now, _VehicleState state) {
+  RenderedBus _limitStep(RenderedBus target, DateTime now, _VehicleState state, {bool snap = false}) {
     final prev = state.drawn;
     final prevNow = state.drawnAt;
     var out = target;
-    if (prev != null && prevNow != null) {
+    if (!snap && prev != null && prevNow != null) {
       final gap = now.difference(prevNow);
       if (gap > Duration.zero && gap <= _continuityGap) {
         out = _towards(prev, target, _maxCatchUpMps * gap.inMicroseconds / 1e6);
@@ -253,6 +311,7 @@ class DelayedTrackRenderer {
         a.progress != null &&
         a.shapeId != null &&
         mark.tripId == a.tripId &&
+        mark.shapeId == a.shapeId &&
         mark.progress > a.progress! &&
         !at.isBefore(mark.at.subtract(_clockBackTolerance)) &&
         !at.isAfter(mark.at.add(_markLifetime))) {
@@ -314,14 +373,14 @@ class DelayedTrackRenderer {
     if (mark != null && (at.isBefore(mark.at.subtract(_clockBackTolerance)) || at.isAfter(mark.at.add(_markLifetime)))) {
       mark = null;
     }
-    if (mark == null || mark.tripId != bus.tripId || p >= mark.progress) {
-      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
+    if (mark == null || mark.tripId != bus.tripId || mark.shapeId != shapeId || p >= mark.progress) {
+      state.mark = _Mark(tripId: bus.tripId, shapeId: shapeId, progress: p, at: at);
       return bus;
     }
     final markPose = _geometry.poseAt(shapeId, mark.progress);
     final held = _onShape(bus.vehicleId, shapeId, mark.progress, bus.tripId);
     if (held == null || markPose == null) {
-      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
+      state.mark = _Mark(tripId: bus.tripId, shapeId: shapeId, progress: p, at: at);
       return bus;
     }
     if (mark.progress - p <= _jitterMeters) {
@@ -332,12 +391,12 @@ class DelayedTrackRenderer {
     final pose = _geometry.poseAt(shapeId, p);
     if (pose != null && NearestStopService.haversineDistance(pose.lat, pose.lon, markPose.lat, markPose.lon) <= _relabelMeters) {
       // A relabel makes a new mark: any hold under way ends with it.
-      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
+      state.mark = _Mark(tripId: bus.tripId, shapeId: shapeId, progress: p, at: at);
       return bus;
     }
     final holdStart = mark.holdStart ?? at;
     if (mark.progress - p > _glideBackwardMeters && at.difference(holdStart) > _maxHold) {
-      state.mark = _Mark(tripId: bus.tripId, progress: p, at: at);
+      state.mark = _Mark(tripId: bus.tripId, shapeId: shapeId, progress: p, at: at);
       return bus;
     }
     mark
@@ -348,18 +407,22 @@ class DelayedTrackRenderer {
   }
 }
 
-/// The furthest progress drawn for a bus on one trip, and when it was last
-/// used (render time).
+/// The furthest progress drawn for a bus on one trip and shape, and when it
+/// was last used (render time).
 class _Mark {
-  _Mark({required this.tripId, required this.progress, required this.at});
+  _Mark({required this.tripId, required this.shapeId, required this.progress, required this.at});
 
   final String? tripId;
+  final String shapeId;
   final double progress;
   DateTime at;
 
   /// Render time at which the current hold of a big backward move began.
   DateTime? holdStart;
 }
+
+/// How a frame's newest fix breaks from the vehicle's earlier data.
+enum _Discontinuity { none, gap, recreated }
 
 class _VehicleState {
   _Mark? mark;
@@ -373,6 +436,9 @@ class _VehicleState {
 
   /// Wall time of the previous render.
   DateTime? lastNow;
+
+  /// GPS time of the newest fix the last frame saw.
+  DateTime? latestGps;
 
   /// The bus last drawn, and the `now` it was drawn at.
   RenderedBus? drawn;

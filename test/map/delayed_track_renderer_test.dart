@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_track.dart';
 import 'package:busboard_nl/domain/map/delayed_track_renderer.dart';
@@ -522,6 +523,131 @@ void main() {
         final along = _geometry.snap(bus.lat, bus.lon, outAndBackShapeId, expectedAlong: 1120, minAlong: 1000, maxAlong: 1400)!.distanceAlongRoute;
         expect(along, greaterThanOrEqualTo(1120 - 0.5), reason: 'frame $i');
       }
+    });
+  });
+
+  group('final fix wave', () {
+    const frame = Duration(milliseconds: 120);
+
+    test('a 2 min gap in the fixes snaps to the target instead of walking at 30 m/s', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 100), _fix(10, 180)]);
+      var now = _t0.add(const Duration(seconds: 112)); // render time 100 s: held 5 s past the last fix
+      expect(r.render(before, now).progress, closeTo(220, 1e-6));
+      // A fix 2 min after the last arrives; render time (100 s) is 75% along
+      // the pair, 800+ m ahead of where the bus is drawn.
+      final after = _track([_fix(0, 100), _fix(10, 180), _fix(130, 1000)]);
+      now = now.add(frame);
+      final bus = r.render(after, now);
+      expect(bus.progress, greaterThan(700));
+      expect(bus.progress, closeTo(180 + 820 * (100.12 - 10 - 0.0) / 120, 5));
+    });
+
+    test('a data-gap snap still holds a target within 60 m behind the mark of the same trip', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 100), _fix(10, 180)]);
+      var now = _t0.add(const Duration(seconds: 112));
+      expect(r.render(before, now).progress, closeTo(220, 1e-6)); // extrapolated 40 m past the last fix
+      // The fix 2 min later says the bus is only at about 190: the 30 m
+      // extrapolation overshoot is held, not drawn backward.
+      final after = _track([_fix(0, 100), _fix(10, 180), _fix(130, 190)]);
+      now = now.add(frame);
+      expect(r.render(after, now).progress, closeTo(220, 1e-6));
+    });
+
+    test('a 20 s gap in the fixes still glides at no more than 30 m/s', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 100), _fix(10, 180)]);
+      var now = _t0.add(const Duration(seconds: 112));
+      expect(r.render(before, now).progress, closeTo(220, 1e-6));
+      final after = _track([_fix(0, 100), _fix(10, 180), _fix(30, 1000)]);
+      now = now.add(frame);
+      expect(r.render(after, now).progress, closeTo(220 + 3.6, 1e-6));
+    });
+
+    test('a re-created track (same vehicle) snaps and does not reuse the old mark', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final old = _track([_fix(0, 100), _fix(10, 180)]);
+      var now = _t0.add(const Duration(seconds: 27)); // render time 15 s: mark 220
+      expect(r.render(old, now).progress, closeTo(220, 1e-6));
+      // The vehicle's route changed: a new track with one fix on the same
+      // trip ID, 100 m behind the old mark. Neither the mark (hold at 220)
+      // nor the limiter (3.6 m a frame) may apply.
+      final fresh = _track([_fix(30, 120)]);
+      now = now.add(frame);
+      expect(r.render(fresh, now).progress, closeTo(120, 1e-6));
+    });
+
+    test('a track that only drops its oldest fixes is not re-created', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final full = _track([_fix(0, 100), _fix(10, 180), _fix(20, 260)]);
+      var now = _t0.add(const Duration(seconds: 37)); // render time 25 s: 5 s past the last fix
+      expect(r.render(full, now).progress, closeTo(300, 1e-6));
+      // A fix arrives and the store trims the oldest one: the first fix
+      // differs, yet this is the same track, limited as usual.
+      final trimmed = _track([_fix(10, 180), _fix(20, 260), _fix(30, 1000)]);
+      now = now.add(frame);
+      expect(r.render(trimmed, now).progress, closeTo(300 + 3.6, 1e-6));
+    });
+
+    group('marks are scoped to their shape', () {
+      final repo = outAndBackRepo();
+      final points = [
+        for (final p in outAndBackPoints()) ShapePoint(shapeId: 'other', lat: p.lat, lon: p.lon, sequence: p.sequence),
+      ];
+      repo.shapesById['other'] = points;
+      repo.shapeCumulativeDistances['other'] = cumulativeFor(points);
+      final geometry2 = RouteGeometry(repo);
+
+      // A fix with no trip ID on [shape].
+      TrackFix onShape(String shape, int s, double progress, {String? trip}) {
+        final pose = geometry2.poseAt(shape, progress)!;
+        return TrackFix(
+          gpsTime: _t0.add(Duration(seconds: s)),
+          fetchTime: _t0.add(Duration(seconds: s + 1)),
+          lat: pose.lat, lon: pose.lon, heading: pose.heading, speedKmh: 30,
+          tripId: trip, shapeId: shape, progress: progress,
+          snappedLat: pose.lat, snappedLon: pose.lon,
+        );
+      }
+
+      test('a bus that changes shape is not held at the old shape\'s progress', () {
+        final r = DelayedTrackRenderer(geometry2);
+        final onFirst = _track([onShape(outAndBackShapeId, 0, 1400), onShape(outAndBackShapeId, 10, 1500)]);
+        expect(r.render(onFirst, _t0.add(const Duration(seconds: 27))).progress, closeTo(1550, 1e-6));
+        // The same track now carries fixes on another shape (null trip IDs
+        // match, so only the shape tells the two apart). Render time 18.x s
+        // is inside the new shape's pair, at about 150 m.
+        final onSecond = _track([
+          onShape(outAndBackShapeId, 0, 1400),
+          onShape(outAndBackShapeId, 10, 1500),
+          onShape('other', 12, 100),
+          onShape('other', 22, 180),
+        ]);
+        final bus = r.render(onSecond, _t0.add(const Duration(seconds: 30)));
+        expect(bus.shapeId, 'other');
+        expect(bus.progress, inInclusiveRange(100, 180));
+      });
+
+      test('a glide does not start from an anchor on another shape', () {
+        final r = DelayedTrackRenderer(geometry2);
+        final onFirst = _track([onShape(outAndBackShapeId, 0, 1400), onShape(outAndBackShapeId, 10, 1500)]);
+        expect(r.render(onFirst, _t0.add(const Duration(seconds: 27))).progress, closeTo(1550, 1e-6));
+        // A pair across a trip change on the other shape: a straight line
+        // from its first fix (1000 m), not from the old shape's 1550 m.
+        final changed = _track([
+          onShape(outAndBackShapeId, 0, 1400),
+          onShape(outAndBackShapeId, 10, 1500),
+          onShape('other', 12, 1000),
+          onShape('other', 22, 1100, trip: 'next-trip'),
+        ]);
+        final bus = r.render(changed, _t0.add(const Duration(seconds: 30))); // render time 18 s: 60% along the pair
+        final a = geometry2.poseAt('other', 1000)!;
+        final b = geometry2.poseAt('other', 1100)!;
+        final wantLat = a.lat + (b.lat - a.lat) * 0.6;
+        final wantLon = a.lon + (b.lon - a.lon) * 0.6;
+        expect(NearestStopService.haversineDistance(bus.lat, bus.lon, wantLat, wantLon), lessThan(1));
+      });
     });
   });
 }
