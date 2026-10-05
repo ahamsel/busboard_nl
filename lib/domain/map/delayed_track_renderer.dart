@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../location/nearest_stop_service.dart';
 import 'bus_track.dart';
 import 'route_geometry.dart';
@@ -75,6 +77,18 @@ class DelayedTrackRenderer {
   /// pass correction or a glitch, not motion: the bus glides across the map
   /// between the two snapped points instead of along the shape.
   static const double _glideBackwardMeters = 150;
+
+  /// A forward step along the shape is believed only up to this many times
+  /// the map distance between its two places, or that distance plus
+  /// [_alongSlackMeters] if more: a bigger step went round a loop or spur the
+  /// bus skipped (or the snap reacquired the other pass), so the bus glides
+  /// across the map instead. 1.6 covers the winding of a real street between
+  /// two fixes.
+  static const double _alongStretch = 1.6;
+
+  /// See [_alongStretch]: the slack lets a short turnaround (a terminal loop)
+  /// still be drawn along the shape.
+  static const double _alongSlackMeters = 200;
 
   /// A backward jump whose two places are this close on the map is the same
   /// road seen from the other pass: accepted at once.
@@ -266,10 +280,17 @@ class DelayedTrackRenderer {
     final prevP = prev.progress;
     final targetP = target.progress;
     final shapeId = target.shapeId;
-    // Along the shape only when the target is ahead: a backward target (a
-    // relabel to the other pass, a hold expiry) can be far away along the
+    // Along the shape only when the target is ahead, by a step that fits the
+    // map (see [_alongStretch]): a backward target (a relabel to the other
+    // pass, a hold expiry) or one round a spur can be far away along the
     // shape yet close or at least straight-line reachable on the map.
-    if (prevP != null && targetP != null && shapeId != null && prev.shapeId == shapeId && prev.tripId == target.tripId && targetP >= prevP) {
+    if (prevP != null &&
+        targetP != null &&
+        shapeId != null &&
+        prev.shapeId == shapeId &&
+        prev.tripId == target.tripId &&
+        targetP >= prevP &&
+        _plausibleAlong(targetP - prevP, prev.lat, prev.lon, target.lat, target.lon)) {
       if (targetP - prevP <= maxStep) return target;
       return _onShape(target.vehicleId, shapeId, prevP + maxStep, target.tripId) ?? target;
     }
@@ -285,6 +306,14 @@ class DelayedTrackRenderer {
     );
   }
 
+  /// Whether a forward step of [along] metres along the shape between two
+  /// places fits their map distance (see [_alongStretch]).
+  static bool _plausibleAlong(double along, double aLat, double aLon, double bLat, double bLon) {
+    if (along <= _alongSlackMeters) return true;
+    final geo = NearestStopService.haversineDistance(aLat, aLon, bLat, bLon);
+    return along <= math.max(_alongStretch * geo, geo + _alongSlackMeters);
+  }
+
   RenderedBus _atFix(String id, TrackFix f) {
     if (f.progress != null && f.shapeId != null) {
       return _onShape(id, f.shapeId!, f.progress!, f.tripId) ?? _raw(id, f.lat, f.lon, f.heading, f.tripId);
@@ -293,13 +322,20 @@ class DelayedTrackRenderer {
   }
 
   /// A pair that is not interpolated along one shape (a trip change, an
-  /// off-route stretch, a pass correction) is drawn in a straight line from
+  /// off-route stretch, a pass correction, a step along the shape that does
+  /// not fit the map, see [_alongStretch]) is drawn in a straight line from
   /// [a] to [b]. If the bus was already drawn further along [a]'s trip than
   /// [a] itself (extrapolated past it), the line starts at that drawn point
   /// ([mark], the vehicle's last on-shape high-water mark, which survives the
   /// off-shape frames of the glide), so the bus is not pulled back to [a].
   RenderedBus _between(String id, TrackFix a, TrackFix b, double f, DateTime at, _Mark? mark) {
-    final sameAxis = a.tripId == b.tripId && a.shapeId != null && a.shapeId == b.shapeId && a.progress != null && b.progress != null && b.progress! >= a.progress! - _glideBackwardMeters;
+    final sameAxis = a.tripId == b.tripId &&
+        a.shapeId != null &&
+        a.shapeId == b.shapeId &&
+        a.progress != null &&
+        b.progress != null &&
+        b.progress! >= a.progress! - _glideBackwardMeters &&
+        _plausibleAlong(b.progress! - a.progress!, a.snappedLat ?? a.lat, a.snappedLon ?? a.lon, b.snappedLat ?? b.lat, b.snappedLon ?? b.lon);
     if (sameAxis) {
       final p = a.progress! + (b.progress! - a.progress!) * f;
       final onShape = _onShape(id, a.shapeId!, p, b.tripId);

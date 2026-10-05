@@ -650,4 +650,42 @@ void main() {
       });
     });
   });
+
+  group('3b-4: a step along the shape must fit the map distance', () {
+    // On the out-and-back shape (far end at about 1015 m), 700 m outbound
+    // and 1300 m on the return leg are under 40 m apart on the map but 600 m
+    // apart along the shape.
+    test('a pair whose progress jumps far more than the bus moved glides across the map', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final track = _track([_fix(0, 700), _fix(10, 1300)]);
+      final bus = r.render(track, _t0.add(const Duration(seconds: 17))); // render time 5 s
+      final from = _geometry.poseAt(outAndBackShapeId, 700)!;
+      final to = _geometry.poseAt(outAndBackShapeId, 1300)!;
+      expect(NearestStopService.haversineDistance(from.lat, from.lon, to.lat, to.lon), lessThan(40));
+      expect(bus.progress, isNull);
+      // Halfway along the straight line, not out at the far end.
+      expect(NearestStopService.haversineDistance(bus.lat, bus.lon, (from.lat + to.lat) / 2, (from.lon + to.lon) / 2), lessThan(1));
+    });
+
+    test('a plausible pair still runs along the shape', () {
+      final r = DelayedTrackRenderer(_geometry);
+      // 900 -> 1100 round the far end: 200 m along, 8 m apart, within the
+      // 200 m slack.
+      final bus = r.render(_track([_fix(0, 900), _fix(10, 1100)]), _t0.add(const Duration(seconds: 17)));
+      expect(bus.progress, closeTo(1000, 1));
+    });
+
+    test('the limiter does not walk round a spur to reach a target 50 m away', () {
+      final r = DelayedTrackRenderer(_geometry);
+      final before = _track([_fix(0, 690), _fix(10, 700)]);
+      expect(r.render(before, _t0.add(const Duration(seconds: 22))).progress, closeTo(700, 1e-6));
+      // 2 s later render time is at the 1290 fix: a target on the shape,
+      // 590 m ahead along it but about 50 m away on the map, inside the 60 m
+      // the limiter allows in 2 s.
+      final after = _track([_fix(0, 690), _fix(10, 700), _fix(12, 1290), _fix(22, 1350)]);
+      final bus = r.render(after, _t0.add(const Duration(seconds: 24)));
+      final target = _geometry.poseAt(outAndBackShapeId, 1290)!;
+      expect(NearestStopService.haversineDistance(bus.lat, bus.lon, target.lat, target.lon), lessThan(1));
+    });
+  });
 }
