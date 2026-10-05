@@ -69,7 +69,8 @@ class DelayedTrackRenderer {
 
   /// The longest delay: covers the feed's p90 lag (39 s on the 2026-10-05
   /// rush hour, when 30 s left 13% of frames past the newest fix), at the cost
-  /// of drawing the bus that much behind real time.
+  /// of drawing the bus that much behind real time. The p97 newest-fix age
+  /// (59 s) is left to dead-reckoning: a delay that long is too far behind.
   static const Duration maxDelay = Duration(seconds: 40);
   static const Duration _delayMargin = Duration(seconds: 1);
 
@@ -157,10 +158,12 @@ class DelayedTrackRenderer {
   /// GPS time until the next fix arrives, so D must cover the feed's latency
   /// plus one fix interval. Each consecutive pair of the last [_delaySamples]
   /// + 1 fixes gives `lag = next.fetchTime - previous.gpsTime`: how old the
-  /// older fix of the pair was when the newer one arrived. D is the
-  /// second-largest lag (the largest with fewer than three), plus 1 s, so a
-  /// single late fix does not set the delay. With one fix, D is that fix's age
-  /// plus 15 s (a typical interval). Clamped to [minDelay]..[maxDelay].
+  /// older fix of the pair was when the newer one arrived. D is the largest
+  /// lag plus 1 s: a late fix is the feed's real lag, and drawing a little
+  /// further behind costs only a slower glide while D eases back, where
+  /// drawing too close freezes the bus at the newest fix. With one fix, D is
+  /// that fix's age plus 15 s (a typical interval). Clamped to
+  /// [minDelay]..[maxDelay].
   Duration delayFor(BusTrack track) {
     final fixes = track.fixes;
     final double targetSeconds;
@@ -172,9 +175,7 @@ class DelayedTrackRenderer {
       for (var i = fixes.length - 1; i > 0 && lags.length < _delaySamples; i--) {
         lags.add(fixes[i].fetchTime.difference(fixes[i - 1].gpsTime).inMilliseconds);
       }
-      lags.sort((a, b) => b.compareTo(a));
-      final pick = lags.length >= 3 ? lags[1] : lags[0];
-      targetSeconds = pick / 1000.0 + _delayMargin.inMilliseconds / 1000.0;
+      targetSeconds = lags.reduce(math.max) / 1000.0 + _delayMargin.inMilliseconds / 1000.0;
     }
     final ms = (targetSeconds * 1000).round().clamp(minDelay.inMilliseconds, maxDelay.inMilliseconds);
     return Duration(milliseconds: ms);

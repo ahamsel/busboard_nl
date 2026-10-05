@@ -48,23 +48,23 @@ void main() {
     // One fix: its age on arrival (5 s) plus 15 s.
     expect(r.delayFor(_track([_fix(0, 100, fetchLag: 5)])), const Duration(seconds: 20));
     // Lag of a pair = next fetch - previous GPS time: 10, 16 and 12 s. The
-    // second-largest (12) plus 1 s. (The helper's default fetch lag of 1 s
-    // makes a 10 s interval a 12 s delay, as the other tests assume.)
+    // largest (16) plus 1 s. (The helper's default fetch lag of 1 s makes a
+    // 10 s interval a 12 s delay, as the other tests assume.)
     expect(
       r.delayFor(_track([_fix(0, 100), _fix(10, 180, fetchLag: 0), _fix(20, 260, fetchLag: 6), _fix(30, 340, fetchLag: 2)])),
-      const Duration(seconds: 13),
+      const Duration(seconds: 17),
     );
-    // Two fixes make one pair: the largest (14) plus 1 s.
+    // Two fixes make one pair: its lag (14) plus 1 s.
     expect(r.delayFor(_track([_fix(0, 100), _fix(10, 180, fetchLag: 4)])), const Duration(seconds: 15));
-    // One late fix among nine does not set the delay (lags 40, then 10 s).
-    expect(
-      r.delayFor(_track([
-        _fix(0, 100, fetchLag: 0),
-        _fix(30, 190, fetchLag: 10),
-        for (var i = 2; i <= 8; i++) _fix(30 + (i - 1) * 10, 190.0 + i * 30, fetchLag: 0),
-      ])),
-      const Duration(seconds: 11),
-    );
+    // A late fix sets the delay (lags 31 s, then 10 s) while it is among the
+    // last 8 pairs, and no longer once 8 newer pairs have arrived.
+    final lateFirst = [
+      _fix(0, 100, fetchLag: 0),
+      _fix(30, 190, fetchLag: 1),
+      for (var i = 2; i <= 9; i++) _fix(30 + (i - 1) * 10, 190.0 + i * 30, fetchLag: 0),
+    ];
+    expect(r.delayFor(_track(lateFirst.sublist(0, 9))), const Duration(seconds: 32));
+    expect(r.delayFor(_track(lateFirst)), const Duration(seconds: 11));
     // Fast, low-latency fixes hit the 8 s floor (lags 3 s).
     expect(r.delayFor(_track([_fix(0, 100, fetchLag: 1), _fix(2, 110, fetchLag: 1), _fix(4, 120, fetchLag: 1)])), DelayedTrackRenderer.minDelay);
     // Slow fixes hit the 40 s ceiling (lags 62 s).
@@ -240,8 +240,9 @@ void main() {
       final r = DelayedTrackRenderer(_geometry);
       final track = _track([_fix(0, 300), _fix(10, 500), _fix(20, 380), _fix(70, 380), _fix(80, 400)]);
       // 120 m back along the shape: held at the 500 m mark, and still held
-      // 60 s later (the old rule released it after 15 s).
-      final frames = sweep(r, track, 10, 80);
+      // 60 s later (the old rule released it after 15 s). The 50 s pair's lag
+      // puts D at its 40 s cap.
+      final frames = sweep(r, track, 10, 80, delayS: 40);
       final mark = frames.first.bus.progress!;
       expect(mark, closeTo(500, 1e-6));
       for (final f in frames.where((f) => f.at >= 15)) {
@@ -255,7 +256,8 @@ void main() {
       // No single pair steps back more than 150 m (so none glides), but the
       // bus ends 160 m below its mark.
       final track = _track([_fix(0, 300), _fix(10, 500), _fix(20, 400), _fix(30, 340), _fix(70, 335)]);
-      final frames = sweep(r, track, 10, 45);
+      // The 40 s pair's lag puts D at its 40 s cap.
+      final frames = sweep(r, track, 10, 45, delayS: 40);
       expect(frames.first.bus.progress, closeTo(500, 1e-6));
       final held = frames.where((f) => f.bus.progress != null && (f.bus.progress! - 500).abs() < 1e-6).map((f) => f.at);
       expect(held.last, inInclusiveRange(29.0, 33.0));
