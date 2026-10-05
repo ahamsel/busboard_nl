@@ -97,6 +97,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
    - **Heading notch:** a small triangle in the route colour, rotated to the bus's heading.
    - **Rendering:** the badges are generated per route at runtime with `dart:ui`, registered with `addImage`, and drawn as a symbol layer with `icon-allow-overlap`. The notch is a second symbol layer using `icon-rotate`, aligned to the map.
    - **Followed bus:** drawn 1.35× larger with a 2.6 px outline. Other buses fade to 35% opacity.
+   - **Followed bus:** `icon-size` 1.35, which scales the 2 px outline to 2.7 px; one bitmap per route. *(Amended in 3b-3.)*
    - **Stale bus** (no fix for over 90 s): grey badge.
 
 ### 3.3 Default layout
@@ -137,9 +138,13 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
   - Tapping a **live** arrival row on the Board switches to the Map tab and follows that row's vehicle. Rows without a live vehicle can't be tapped.
   - Or press **Follow** on a bus card.
 - **State:** `followedVehicleIdProvider` (map-scoped) holds a vehicle ID, never a route or trip.
+  - `followProvider` is app-wide (the Board starts a follow from another tab); only the map acts on it. *(Amended in 3b-3.)*
+- **Taps while following:** while following, taps on other buses and stops are ignored; a tap on empty map collapses the card. *(Amended in 3b-3.)*
+- **Route filter:** the followed bus is always drawn, even when the route filter excludes its route. *(Amended in 3b-3.)*
 - **Camera:** it keeps the bus and your stop in view, with padding for the sheet and chips, and zooms in as the bus approaches.
   - If you pan or zoom by gesture, following pauses and a "Back to bus 2573" `BBChip` appears.
   - Camera moves respect Reduce Motion: they jump instead of animating.
+  - The Back to bus chip sits just above the map credit link (which occupies the band above the peeking sheet). *(Amended in 3b-3.)*
 - **Top chip:** "● Following bus 2573".
 - **Card (sheet at peek):**
   - header: route badge · "to <headsign>" · "Bus 2573 · 1 min late" · minutes to your stop, from live predictions (`soon` colour at 5 min or less);
@@ -150,6 +155,8 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
 - **Ending:**
   - **Arrival:** when the bus reaches your stop, the card shows "Arrived at MUN Centre", follows for 10 s more, then ends.
   - **Past your stop or trip ended:** following ends with a `BBToast`.
+  - **Not found:** a bus that never appears in the map feed within 60 s ends the follow with a toast. *(Amended in 3b-3.)*
+  - **Ending toasts:** stop following and an arrival end the follow without a toast. *(Amended in 3b-3.)*
   - **Feed gap:** the marker turns grey and shows "Last seen 1 min ago". After 5 min, following ends with a toast.
   - Following never switches to a different vehicle.
 - **Screen readers:** the card has a live region that announces only changes in stops remaining (at most once per stop). Every control has a label and an action.
