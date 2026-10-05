@@ -174,4 +174,11 @@ void main() {
     expect(f.progress, isNull);
     expect(f.offRoute, isFalse);
   });
+
+  test('schedDiffMins follows the reported delay and is null when none was reported', () {
+    poll(0, [fix(meters: 100, seconds: 43200, deviation: '2 MINS BEHIND', schedDifferenceMins: -2)]);
+    expect(store.tracks['2573']!.latest.schedDiffMins, -2);
+    poll(1, [fix(meters: 180, seconds: 43210, deviation: '', schedDifferenceMins: 0)]);
+    expect(store.tracks['2573']!.latest.schedDiffMins, isNull);
+  });
 }

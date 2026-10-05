@@ -114,6 +114,7 @@ TimeTrackVehicle fix({
   String tripId = outAndBackTripId,
   int departureTimeAtClosestStop = 0,
   int schedDifferenceMins = 0,
+  String deviation = '',
   double speed = 29,
 }) {
   return TimeTrackVehicle(
@@ -134,7 +135,7 @@ TimeTrackVehicle fix({
     gtfsServiceId: '',
     gtfsStopSequenceStatus: 'ON TIME',
     gtfsStopSequenceMinsFromStop: 0,
-    gtfsStopSequenceDeviation: '',
+    gtfsStopSequenceDeviation: deviation,
     gtfsStopSequenceClosestStop: '',
     gtfsStopSequenceSchedDifferenceMins: schedDifferenceMins,
     gtfsTripId: tripId,
