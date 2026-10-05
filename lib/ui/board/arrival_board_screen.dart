@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../state/follow_providers.dart';
 import '../../state/providers.dart';
 import '../../data/realtime/metrobus_mobile_api.dart';
 import '../../data/realtime/service_alert_models.dart';
@@ -272,6 +273,17 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         .toList();
   }
 
+  /// A live row with a known vehicle follows that bus on the map (spec §3.5);
+  /// scheduled-only rows are not tappable.
+  VoidCallback? _followable(ArrivalRow a) {
+    final vehicle = a.vehicleNumber;
+    if (!a.isLive || vehicle == null || vehicle.isEmpty) return null;
+    return () {
+      ref.read(followProvider.notifier).follow(vehicle);
+      context.go('/map');
+    };
+  }
+
   Widget _buildArrivalsList(BuildContext context, Widget? alertBlock) {
     final bottom = BBNavBar.reservedHeight(context) + BBSpace.l;
 
@@ -314,7 +326,10 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         if (index < leading) return alertBlock;
         return Padding(
           padding: EdgeInsets.fromLTRB(BBSpace.screen, index == 0 ? BBSpace.s : 0, BBSpace.screen, BBSpace.s),
-          child: ArrivalRowTile(arrival: _arrivals[index - leading]),
+          child: ArrivalRowTile(
+            arrival: _arrivals[index - leading],
+            onTap: _followable(_arrivals[index - leading]),
+          ),
         );
       },
     );

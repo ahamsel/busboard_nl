@@ -5,9 +5,12 @@ import '../kit/kit.dart';
 
 /// One departure on the Board: route badge · destination + status · minutes.
 class ArrivalRowTile extends StatelessWidget {
-  const ArrivalRowTile({super.key, required this.arrival});
+  const ArrivalRowTile({super.key, required this.arrival, this.onTap});
 
   final ArrivalRow arrival;
+
+  /// Starts following this row's bus; null leaves the row inert.
+  final VoidCallback? onTap;
 
   /// Minutes at or below which the countdown uses the `soon` colour.
   static const int soonThresholdMinutes = 5;
@@ -68,7 +71,12 @@ class ArrivalRowTile extends StatelessWidget {
     return Semantics(
       label: semanticsLabel(a),
       excludeSemantics: true,
+      // The row's own semantics replace the card's, so the tap is restated here.
+      button: onTap != null ? true : null,
+      onTap: onTap,
+      onTapHint: onTap == null ? null : 'follow bus ${a.vehicleNumber} on the map',
       child: BBCard(
+        onTap: onTap,
         child: LayoutBuilder(
           builder: (context, box) => Row(
             children: [
