@@ -101,6 +101,9 @@ flutter test
 # Replay recorded captures through the motion pipeline
 flutter test test/map/motion_replay_test.dart
 
+# Regenerate the two map styles from OpenFreeMap Positron
+dart run tool/build_map_styles.dart
+
 # Capture the app's real production live-data chain (example: 15 minutes)
 dart run tool/capture_timetrack_snapshots.dart \
   --interval 5 \
