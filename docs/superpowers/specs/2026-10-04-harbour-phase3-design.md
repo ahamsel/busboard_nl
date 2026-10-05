@@ -155,7 +155,7 @@ All changes are in `lib/ui/kit/`, so every screen picks them up at once.
   - **Arrival:** when the bus reaches your stop, the card shows "Arrived at MUN Centre", follows for 10 s more, then ends.
   - **Past your stop or trip ended:** following ends with a `BBToast`.
   - **Trip change before arrival:** the feed rolls trip IDs over on the timetable clock, early (340–750 m before the terminal) or late (up to 14 min). A new trip ID before arrival is checked in this order: *(Amended in 3b-3 final review.)*
-    1. while the live fix is still on the old trip's shape (within the off-route distance, and no more than 50 m behind the bus), following stays on the old trip: progress comes from that fix, the old stops are kept, and the usual arrival / passed / trip-ended rules decide the ending (a stop crossed between two such fixes counts as reached). The route line and the camera stay on the old trip. This lasts at most 3 min;
+    1. while the live fix is still on the old trip's shape (within the off-route distance, and no more than 50 m behind the bus), following stays on the old trip: progress comes from that fix, the old stops are kept, and the usual arrival / passed / trip-ended rules decide the ending (a stop crossed between two such fixes counts as reached). The route line and the camera stay on the old trip. This lasts at most 3 min. If the held trip runs out (an out-and-back turnaround), step 2 is tried before it ends;
     2. otherwise, if your stop is ahead of the bus on the new trip (no more than 150 m behind it), following moves to the new trip;
     3. otherwise the trip has ended.
     It is still the same vehicle: following never switches vehicle, but it may switch trip.

@@ -478,6 +478,30 @@ void main() {
       expect((s.arrived, s.ended), (true, null));
     });
 
+    test('a held trip that ends at a turnaround moves to the next trip when your stop is on it (R1)', () {
+      // Out and back: your stop Y is on the return trip t2. The feed relabels
+      // the bus to t2 before the terminal; the return shares the road, so it
+      // is held on t1 until t1 runs out at its last stop.
+      final t = _snapping(_stops, {'t2': _returnTrip});
+      var s = t.update(bus: _bus(progress: 1000), drawnProgress: 1000, yourStopId: 'y', now: _t0);
+      expect((s.ended, s.yourStopIndex), (null, null), reason: "your stop isn't on the outbound trip");
+      s = t.update(bus: _relabelled(along: 1100, progress: 0), drawnProgress: 1005, yourStopId: 'y', now: _at(10));
+      expect((s.ended, s.tripId), (null, 't1'), reason: 'held on the outbound trip');
+      s = t.update(bus: _relabelled(along: 1195, progress: 0), drawnProgress: 1010, yourStopId: 'y', now: _at(20));
+      expect((s.ended, s.tripId, s.yourStopIndex, s.stopsToYourStop), (null, 't2', 2, 2));
+      expect(identical(s.stops, _returnTrip), isTrue);
+      s = t.update(bus: _relabelled(along: 900, off: 600, progress: 990), drawnProgress: 990, drawnTripId: 't2', yourStopId: 'y', now: _at(200));
+      expect((s.arrived, s.ended), (true, null), reason: 'it arrives at Y on the return trip');
+    });
+
+    test('a held trip that ends with your stop not on the next trip ends as trip ended', () {
+      final t = _snapping(_stops, {'t2': _returnTrip});
+      t.update(bus: _bus(progress: 1000), drawnProgress: 1000, yourStopId: 'elsewhere', now: _t0);
+      t.update(bus: _relabelled(along: 1100, progress: 0), drawnProgress: 1005, yourStopId: 'elsewhere', now: _at(10));
+      final s = t.update(bus: _relabelled(along: 1195, progress: 0), drawnProgress: 1010, yourStopId: 'elsewhere', now: _at(20));
+      expect((s.ended, s.tripId), (FollowEnd.tripEnded, 't1'));
+    });
+
     test('off the old shape with your stop behind the bus on the new trip, the follow ends', () {
       final t = _snapping(_stops, {'t2': _returnTrip});
       t.update(bus: _bus(progress: 300), drawnProgress: 300, yourStopId: 'mun', now: _t0);

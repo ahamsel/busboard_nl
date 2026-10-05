@@ -88,6 +88,9 @@ class FollowSnapshot {
 /// 2. otherwise, if your stop is ahead of the bus on the new trip, the follow
 ///    moves to the new trip;
 /// 3. otherwise the trip has ended.
+///
+/// When a trip held in step 1 runs out (an out-and-back turnaround), step 2
+/// is tried before it ends.
 class FollowTracker {
   FollowTracker({required this.vehicleId, required this.stopsFor, this.snap});
 
@@ -206,7 +209,13 @@ class FollowTracker {
     }
     final p = _p;
     if (p != null) {
-      final why = _place(p, yourStopId, now, from: from);
+      var why = _place(p, yourStopId, now, from: from);
+      // The held trip ran out (an out-and-back turnaround) while the feed
+      // already labels the next one: step 2 before ending.
+      if (why == FollowEnd.tripEnded && held != null && trip != null && _moveToTrip(trip, bus, yourStopId)) {
+        _onTrip = true;
+        why = _place(_p!, yourStopId, now);
+      }
       if (why != null) return _end(why, bus, now);
     }
     return _snapshot(bus, now);
