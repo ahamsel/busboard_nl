@@ -10,6 +10,8 @@ abstract interface class MapSurface {
   Future<void> setGeoJsonSource(String id, Map<String, dynamic> data);
   Future<void> addCircleLayer(String sourceId, String layerId, CircleLayerProperties properties, {double? minzoom});
   Future<void> addSymbolLayer(String sourceId, String layerId, SymbolLayerProperties properties, {double? minzoom});
+  Future<void> removeLayer(String layerId);
+  Future<void> removeSource(String sourceId);
 }
 
 /// Camera moves the screen makes (my location, your stop).
@@ -40,6 +42,12 @@ class MapLibreSurface implements MapSurface, MapCamera {
   @override
   Future<void> addSymbolLayer(String sourceId, String layerId, SymbolLayerProperties properties, {double? minzoom}) =>
       controller.addSymbolLayer(sourceId, layerId, properties, minzoom: minzoom, enableInteraction: false);
+
+  @override
+  Future<void> removeLayer(String layerId) => controller.removeLayer(layerId);
+
+  @override
+  Future<void> removeSource(String sourceId) => controller.removeSource(sourceId);
 
   @override
   double get zoom => controller.cameraPosition?.zoom ?? 13;

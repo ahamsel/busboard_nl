@@ -382,6 +382,22 @@ void main() {
   });
 
   group('map layers over time', () {
+    testWidgets('a duplicate style-loaded event for the same style still ends with everything drawn', (tester) async {
+      final surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(tester, prefs: {'selectedStopId': '1150'}, buses: {'2573': _bus()});
+      await tester.runAsync(() async {
+        _config!.onStyleLoaded();
+        _config!.onStyleLoaded();
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+      });
+      await _frames(tester, 3);
+      expect(surface.layers.keys, hasLength(4));
+      expect(surface.features('bb-my-stop').single['properties']['stopId'], '1150', reason: 'your stop is drawn');
+      expect(surface.busSets, isNotEmpty);
+      expect(surface.busSets.last.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
+    });
+
     testWidgets('two style loads in a row install one after the other', (tester) async {
       final surface = _RecordingSurface()..layerDelay = const Duration(milliseconds: 15);
       _surface = surface;
