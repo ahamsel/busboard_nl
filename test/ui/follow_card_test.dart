@@ -70,6 +70,7 @@ Future<void> _host(
   double width = 390,
   bool use24h = true,
   bool actionsFirst = false,
+  Widget? alertAction,
 }) async {
   tester.view.physicalSize = Size(width * 3, 2400);
   tester.view.devicePixelRatio = 3;
@@ -92,6 +93,7 @@ Future<void> _host(
             onStop: onStop ?? () {},
             onSeeAll: onSeeAll ?? () {},
             actionsFirst: actionsFirst,
+            alertAction: alertAction,
           ),
         ),
         SliverToBoxAdapter(child: FollowCardBody(snapshot: snapshot)),
@@ -335,5 +337,12 @@ void main() {
       expect(followEndMessage(FollowEnd.notFound, '2573', 'MUN Centre'), "Bus 2573 isn't reporting its position");
       expect(followEndMessage(FollowEnd.arrived, '2573', 'MUN Centre'), isNull);
     });
+  });
+
+  testWidgets('header: the alert bell shows until the bus has arrived', (tester) async {
+    await _host(tester, _snap(), alertAction: const Text('BELL'));
+    expect(find.text('BELL'), findsOneWidget);
+    await _host(tester, _snap(busIndex: 2, toGo: 0, arrived: true), alertAction: const Text('BELL'));
+    expect(find.text('BELL'), findsNothing);
   });
 }

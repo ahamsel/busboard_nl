@@ -61,6 +61,7 @@ class FollowCardHeader extends StatelessWidget {
     required this.onSeeAll,
     this.actionsFirst = false,
     this.actionsKey,
+    this.alertAction,
   });
 
   final FollowSnapshot snapshot;
@@ -85,6 +86,9 @@ class FollowCardHeader extends StatelessWidget {
 
   /// On the column holding the actions, so the map can keep them in the peek.
   final Key? actionsKey;
+
+  /// The arrival-alert bell, at the end of the title row until the bus arrives.
+  final Widget? alertAction;
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +135,23 @@ class FollowCardHeader extends StatelessWidget {
         BBButton(label: 'Stop following', kind: BBButtonKind.quiet, expand: true, onPressed: onStop),
       ],
     );
+    final trailing = <Widget>[
+      if (minutes != null && !arrived)
+        Semantics(
+          label: switch (minutes) {
+            <= 0 => 'Due now',
+            1 => '1 minute to your stop',
+            _ => '$minutes minutes to your stop',
+          },
+          excludeSemantics: true,
+          child: Text(
+            minutes <= 0 ? 'Now' : '$minutes min',
+            style: bb.text.headline.copyWith(color: minutes <= 5 ? bb.colors.soon : bb.colors.ink),
+          ),
+        ),
+      if (alertAction != null && !arrived) alertAction!,
+    ];
+    final stackTrailing = trailing.length > 1 && MediaQuery.textScalerOf(context).scale(16) > 16 * 1.3;
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),
       child: Column(
@@ -154,20 +175,14 @@ class FollowCardHeader extends StatelessWidget {
                   ],
                 ),
               ),
-              if (minutes != null && !arrived) ...[
+              if (trailing.isNotEmpty) ...[
                 const SizedBox(width: BBSpace.s),
-                Semantics(
-                  label: switch (minutes) {
-                    <= 0 => 'Due now',
-                    1 => '1 minute to your stop',
-                    _ => '$minutes minutes to your stop',
-                  },
-                  excludeSemantics: true,
-                  child: Text(
-                    minutes <= 0 ? 'Now' : '$minutes min',
-                    style: bb.text.headline.copyWith(color: minutes <= 5 ? bb.colors.soon : bb.colors.ink),
-                  ),
-                ),
+                // Large text leaves no room for the bell beside the minutes, so
+                // it goes under them.
+                if (stackTrailing)
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: trailing)
+                else
+                  ...trailing,
               ],
             ],
           ),
