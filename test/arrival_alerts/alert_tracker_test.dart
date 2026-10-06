@@ -94,6 +94,15 @@ void main() {
       final s = tracker.step(alert(), res([dep(run: '10-9', vehicle: '9999', pred: sec(8, 16))]), at(1));
       expect(s.alert.expectedAt, DateTime(2026, 10, 6, 8, 16));
     });
+    test('of two rows on the trip, the realtime one, even when listed second', () {
+      final s = tracker.step(alert(), res([dep(pred: sec(8, 12), live: false), dep(pred: sec(8, 16))]), at(1));
+      expect(s.source, AlertSource.live);
+      expect(s.alert.expectedAt, DateTime(2026, 10, 6, 8, 16));
+    });
+    test('a loop trip at the stop twice: the visit nearest the alert\'s scheduled time', () {
+      final rows = [dep(pred: sec(8, 47), sched: sec(8, 45)), dep(pred: sec(8, 14), sched: sec(8, 12))];
+      expect(tracker.find(alert(), rows, now: at(1))!.predictedDepartureSeconds, sec(8, 14));
+    });
     test('route-run when the feed has no trip ids', () {
       final s = tracker.step(alert(), res([dep(trip: '', vehicle: '9999', pred: sec(8, 15))]), at(1));
       expect(s.source, AlertSource.live);

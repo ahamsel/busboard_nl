@@ -6,8 +6,7 @@ import '../arrival/arrival_models.dart';
 /// Lead times a rider can pick, in minutes (spec §2.1).
 const alertLeadChoices = <int>[3, 5, 10];
 
-/// No bell for a bus closer than this ("Arriving now") or farther than [alertMaxMinutesAway].
-const alertMinMinutesAway = 3;
+/// No bell for a bus farther than this. Nearer buses have one while a lead time is still possible (from 4 min).
 const alertMaxMinutesAway = 60;
 
 /// Whether [row] gets a bell: at least one lead time is still possible, and the bus is at most 60 min away.
@@ -57,6 +56,8 @@ class ArrivalAlert {
     required int leadMinutes,
     required DateTime now,
   }) {
+    // Whole milliseconds, as JSON keeps them, so the alert is still the same one after a round trip.
+    now = DateTime.fromMillisecondsSinceEpoch(now.millisecondsSinceEpoch);
     final scheduledAt = instantOfServiceTime(row.scheduledTime, now);
     final live = row.isLive && row.predictedTime != null;
     return ArrivalAlert(

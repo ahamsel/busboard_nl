@@ -77,6 +77,14 @@ void main() {
       expect(b.toJson(), a.toJson());
       expect(b.isSameAlert(a), isTrue);
     });
+    test('made at a time with microseconds, it is still the same alert after a JSON round trip', () {
+      final t = DateTime(2026, 10, 6, 8, 0, 0, 123, 456);
+      final a = ArrivalAlert.fromArrival(_row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5, now: t);
+      final b = ArrivalAlert.decode(a.encode())!;
+      expect(b.isSameAlert(a), isTrue);
+      expect(b.lastSeenAt, a.lastSeenAt);
+      expect(a.setAt, DateTime(2026, 10, 6, 8, 0, 0, 123));
+    });
     test('garbage decodes to null', () {
       expect(ArrivalAlert.decode(null), isNull);
       expect(ArrivalAlert.decode('not json'), isNull);

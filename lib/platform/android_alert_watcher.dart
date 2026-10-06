@@ -99,9 +99,11 @@ class WatcherCore {
         : null;
 
     if (step.finished) {
-      // Finish first so a failing notification cannot keep the watcher alive.
+      // Finish first so a failing notification cannot keep the watcher alive; each step is tried on its own.
       await store.clear();
-      await notifications.cancelScheduled();
+      try {
+        await notifications.cancelScheduled();
+      } catch (_) {}
       if (message != null) {
         try {
           await notifications.show(message);

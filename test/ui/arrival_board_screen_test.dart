@@ -8,6 +8,7 @@ import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -286,6 +287,23 @@ void main() {
     final container = ProviderScope.containerOf(tester.element(find.text('MAP')));
     expect(container.read(followProvider), const FollowTarget('2573'));
     expect(find.text('MAP'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('the first arrival keeps its top space under a leading card', (tester) async {
+    double firstRowTop() {
+      final pad = tester.widget<Padding>(
+          find.ancestor(of: find.byType(ArrivalRowTile).first, matching: find.byType(Padding)).first);
+      return (pad.padding as EdgeInsets).top;
+    }
+
+    await _pump(tester, repo: _repoWithDepartures(), alerts: [_alert('Water Street Detour')]);
+    expect(find.text('Water Street Detour'), findsOneWidget);
+    expect(firstRowTop(), BBSpace.s);
+    expect((tester.widget<Padding>(find.ancestor(of: find.byType(ArrivalRowTile).at(1), matching: find.byType(Padding)).first)
+                .padding as EdgeInsets)
+            .top,
+        0);
     await _unmount(tester);
   });
 

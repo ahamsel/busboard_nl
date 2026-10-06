@@ -25,7 +25,10 @@ class AlertScheduler {
     }
     await notifications.schedule(
       alertMessage(alert,
-          source: source, minutesAway: alert.leadMinutes, estimateFrom: alert.live ? now : null, use24h: use24h()),
+          source: source,
+          minutesAway: alert.leadMinutes,
+          estimateFrom: alert.live ? alert.lastSeenAt ?? now : null,
+          use24h: use24h()),
       alert.alertAt,
     );
   }

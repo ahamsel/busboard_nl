@@ -29,7 +29,13 @@ final alertRunnerProvider = Provider<AlertRunner>((ref) {
   ));
 });
 
-enum SetAlertResult { set, permissionDenied }
+enum SetAlertResult {
+  set,
+  permissionDenied,
+
+  /// The platform could not start the alert; nothing is set.
+  failed,
+}
 
 /// The one active arrival alert (spec §2).
 final arrivalAlertProvider =
@@ -91,15 +97,26 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
     final alert = ArrivalAlert.fromArrival(row, stopId: stopId, stopName: stopName, leadMinutes: leadMinutes, now: _now());
     await _store.write(alert);
     await _store.saveLead(leadMinutes);
-    await _runner.start(alert);
+    try {
+      await _runner.start(alert);
+    } catch (_) {
+      // A half-started alert may have armed its backup.
+      try {
+        await _runner.stop();
+      } catch (_) {}
+      await _store.clear();
+      state = const AsyncData(null);
+      return SetAlertResult.failed;
+    }
     state = AsyncData(alert);
     return SetAlertResult.set;
   }
 
   Future<void> cancel() async {
+    // Before any await, so a Board refresh meanwhile finds no alert to re-time.
+    state = const AsyncData(null);
     await _runner.stop();
     await _store.clear();
-    state = const AsyncData(null);
   }
 
   /// The Board refreshed [stopId]. On iPhone a newer live prediction re-times the alert.

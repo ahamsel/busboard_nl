@@ -339,7 +339,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         if (index < leading) return leadingItems[index];
         final arrival = _arrivals[index - leading];
         return Padding(
-          padding: EdgeInsets.fromLTRB(BBSpace.screen, index == 0 ? BBSpace.s : 0, BBSpace.screen, BBSpace.s),
+          padding: EdgeInsets.fromLTRB(BBSpace.screen, index == leading ? BBSpace.s : 0, BBSpace.screen, BBSpace.s),
           child: ArrivalRowTile(
             arrival: arrival,
             onTap: _followable(arrival),

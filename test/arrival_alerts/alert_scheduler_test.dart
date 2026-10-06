@@ -36,6 +36,7 @@ ArrivalAlert _alert({bool live = true, DateTime? expected}) => ArrivalAlert(
       live: live,
       leadMinutes: 5,
       setAt: DateTime(2026, 10, 6, 8, 0),
+      lastSeenAt: live ? DateTime(2026, 10, 6, 8, 1) : null,
     );
 
 void main() {
@@ -48,12 +49,12 @@ void main() {
     now = DateTime(2026, 10, 6, 8, 2);
   });
 
-  test('schedules the estimate at expected − lead', () async {
+  test('schedules the estimate at expected − lead, dated from the last live sighting', () async {
     await scheduler().scheduleFor(_alert());
     final (m, at) = notes.scheduled.single;
     expect(at, DateTime(2026, 10, 6, 8, 9));
     expect(m.title, 'Route 10 should be about 5 min away');
-    expect(m.body, 'Estimate from 8:02 AM. Open BusBoard for the latest.');
+    expect(m.body, 'Estimate from 8:01 AM. Open BusBoard for the latest.');
   });
 
   test('a newer prediction replaces the schedule', () async {
