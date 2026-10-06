@@ -11,11 +11,13 @@
 // local zone, so the capture test runs in America/St_Johns (the machine's zone, or `TZ=America/St_Johns`).
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/domain/arrival_alerts/alert_tracker.dart';
 import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
@@ -29,13 +31,19 @@ import 'package:http/testing.dart';
 
 /// One trip's entry in a trip-updates poll: the stops still ahead, in order.
 class TripListing {
-  TripListing(this.seqs, this.stopIds, this.times);
+  TripListing(this.seqs, this.stopIds, this.times, this.delays);
+
+  /// Marks a stop whose update has no delay.
+  static const noDelay = -0x80000000;
 
   final Int32List seqs;
   final List<String> stopIds;
 
   /// The feed's predicted time at each stop, in epoch seconds (0 when the feed gave none).
   final Int64List times;
+
+  /// The feed's delay at each stop, in seconds ([noDelay] when the feed gave none).
+  final Int32List delays;
 
   int indexOf(int seq) {
     for (var i = 0; i < seqs.length; i++) {
@@ -86,9 +94,20 @@ http.Client _clientFor(List<int>? positions, List<int>? updates) => MockClient((
 /// The watcher's check interval; a capture's polls are replayed at this cadence.
 const watcherCadence = Duration(seconds: 30);
 
+/// One GPS fix of a trip's vehicle, in epoch seconds.
+class Fix {
+  const Fix(this.t, this.lat, this.lon);
+
+  final int t;
+  final double lat, lon;
+}
+
 /// Reads a capture's JSON lines one at a time and replays one poll per [watcherCadence] through the production fetch:
 /// every 3rd poll of a 10 s capture, every poll of a 30 s one (tool/capture_gtfsrt_alerts.dart).
-Future<List<ReplayPoll>> loadCapture(Stream<String> lines) async {
+///
+/// When [fixes] is given, it is filled with every trip's distinct GPS fixes from every poll, in time order.
+Future<List<ReplayPoll>> loadCapture(Stream<String> lines, {Map<String, List<Fix>>? fixes}) async {
+  final byTrip = <String, Map<int, Fix>>{};
   final pool = <String, String>{}; // one copy of each stop id across ~1.7 M listings
   final polls = <ReplayPoll>[];
   DateTime? lastReplayed;
@@ -99,13 +118,22 @@ Future<List<ReplayPoll>> loadCapture(Stream<String> lines) async {
     final positions = _feedOf(j['vehicle_positions']);
     final updates = _feedOf(j['trip_updates']);
 
+    if (fixes != null && positions != null) {
+      for (final e in positions.entity) {
+        final v = e.vehicle;
+        if (!e.hasVehicle() || !v.hasPosition() || !v.hasTimestamp() || v.trip.tripId.isEmpty) continue;
+        final t = v.timestamp.toInt();
+        (byTrip[v.trip.tripId] ??= {})[t] ??= Fix(t, v.position.latitude, v.position.longitude);
+      }
+    }
+
     Map<String, TripListing>? trips;
     if (updates != null) {
       trips = {};
       for (final e in updates.entity) {
         if (!e.hasTripUpdate() || e.tripUpdate.trip.tripId.isEmpty) continue;
         final stops = e.tripUpdate.stopTimeUpdate;
-        final seqs = Int32List(stops.length), times = Int64List(stops.length);
+        final seqs = Int32List(stops.length), times = Int64List(stops.length), delays = Int32List(stops.length);
         final ids = List<String>.filled(stops.length, '');
         for (var k = 0; k < stops.length; k++) {
           final s = stops[k];
@@ -117,8 +145,14 @@ Future<List<ReplayPoll>> loadCapture(Stream<String> lines) async {
               ? s.arrival
               : null;
           times[k] = ev == null ? 0 : ev.time.toInt();
+          final withDelay = s.hasDeparture() && s.departure.hasDelay()
+              ? s.departure
+              : s.hasArrival() && s.arrival.hasDelay()
+              ? s.arrival
+              : null;
+          delays[k] = withDelay == null ? TripListing.noDelay : withDelay.delay;
         }
-        trips[e.tripUpdate.trip.tripId] = TripListing(seqs, ids, times);
+        trips[e.tripUpdate.trip.tripId] = TripListing(seqs, ids, times, delays);
       }
     }
 
@@ -130,6 +164,9 @@ Future<List<ReplayPoll>> loadCapture(Stream<String> lines) async {
       feed = await api.fetchLiveVehiclesResult();
     }
     polls.add(ReplayPoll(at, trips, feed));
+  }
+  if (fixes != null) {
+    byTrip.forEach((trip, m) => fixes[trip] = m.values.toList()..sort((a, b) => a.t.compareTo(b.t)));
   }
   return polls;
 }
@@ -158,6 +195,7 @@ class TripSchedule {
 
   String headsignOf(String trip) => _repo.tripsById[trip]?.tripHeadsign ?? '';
   String stopNameOf(String stop) => _repo.stopsById[stop]?.stopName ?? stop;
+  StopInfo? stopOf(String stop) => _repo.stopsById[stop];
 }
 
 // ── Real departures ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -320,12 +358,42 @@ List<int> pickStops(List<DateTime?> predicted, DateTime now) {
   return {first, mid, last}.toList()..sort();
 }
 
-/// Sets and runs alerts for every trip in [polls] and scores them (spec §1).
-ReplaySummary replayAlerts(List<ReplayPoll> polls, TripSchedule schedule) {
-  const tracker = AlertTracker();
-  final records = <AlertRecord>[];
-  final seen = <String>{};
+/// One alert as a rider would set it from the Board at a poll. Every variant runs the same population.
+class AlertSetup {
+  AlertSetup({
+    required this.alert,
+    required this.route,
+    required this.seq,
+    required this.setIndex,
+    required this.dropOff,
+    required this.tooLate,
+  });
 
+  /// As `ArrivalAlert.fromArrival` builds it, with the production prediction as `expectedAt`.
+  final ArrivalAlert alert;
+  final String route;
+  final int seq;
+
+  /// The poll it was set at.
+  final int setIndex;
+
+  /// The stop-drop-off departure truth.
+  final ({DepartureKind kind, DateTime? at}) dropOff;
+
+  /// The prediction was under lead + 1 min away: the app would not offer this lead.
+  final bool tooLate;
+
+  String get trip => alert.tripId;
+  String get stopId => alert.stopId;
+  int get lead => alert.leadMinutes;
+  DateTime get setAt => alert.setAt;
+}
+
+/// The alerts to set: for each trip in the trip-updates feed, at the first replayed poll where the adapter gives it a
+/// live row, up to three of its listed stops ([pickStops]), each with every lead time.
+List<AlertSetup> setupAlerts(List<ReplayPoll> polls, TripSchedule schedule) {
+  final setups = <AlertSetup>[];
+  final seen = <String>{};
   for (var i = 0; i < polls.length; i++) {
     final poll = polls[i];
     if (!poll.replayed || poll.trips == null) continue;
@@ -372,58 +440,376 @@ ReplaySummary replayAlerts(List<ReplayPoll> polls, TripSchedule schedule) {
       for (final k in pickStops(predicted, now)) {
         final seq = listing.seqs[k];
         final p = predicted[k]!;
-        final departure = departureOf(polls, i, trip, seq);
+        final dropOff = departureOf(polls, i, trip, seq);
         for (final lead in alertLeadChoices) {
-          AlertRecord record(Outcome o, {DateTime? firedAt}) => AlertRecord(
-            trip: trip,
-            route: schedule.routeOf(trip),
-            stopId: listing.stopIds[k],
-            seq: seq,
-            lead: lead,
-            setAt: now,
-            scheduledAt: scheduled[k]!,
-            expectedAt: p,
-            outcome: o,
-            departure: departure.at,
-            firedAt: firedAt,
-          );
-          if (p.difference(now) < Duration(minutes: lead + 1)) {
-            records.add(record(Outcome.setTooLate));
-            continue;
-          }
-          if (departure.kind == DepartureKind.ghost) {
-            records.add(record(Outcome.ghost));
-            continue;
-          }
-          if (departure.kind == DepartureKind.captureEnded) {
-            records.add(record(Outcome.captureEnded));
-            continue;
-          }
-
-          var alert = alertFor(k, lead, scheduled[k]!, p, vehicle);
-          DateTime? firedAt;
-          for (var j = i; j < polls.length; j++) {
-            final q = polls[j];
-            if (!q.replayed) continue;
-            final s = tracker.step(alert, liveResultForAlert(alert, q.feed, q.at), q.at);
-            alert = s.alert;
-            if (s.fire) {
-              firedAt = q.at;
-              break;
-            }
-            if (s.finished) break;
-          }
-          final target = departure.at!.subtract(Duration(minutes: lead));
-          records.add(
-            firedAt != null
-                ? record(Outcome.fired, firedAt: firedAt)
-                : record(target.isAfter(polls.last.at) ? Outcome.captureEnded : Outcome.unfired),
+          setups.add(
+            AlertSetup(
+              alert: alertFor(k, lead, scheduled[k]!, p, vehicle),
+              route: schedule.routeOf(trip),
+              seq: seq,
+              setIndex: i,
+              dropOff: dropOff,
+              tooLate: p.difference(now) < Duration(minutes: lead + 1),
+            ),
           );
         }
       }
     });
   }
+  return setups;
+}
+
+// ── Prediction variants (the experiment) ───────────────────────────────────────────────────────────────────────────
+
+/// What feeds `AlertTracker.step` at a replayed poll.
+typedef RowSource = MetrobusDeparturesResult Function(ArrivalAlert alert, ReplayPoll poll);
+
+/// A way of predicting and firing, run on the same alerts as production.
+class Variant {
+  const Variant(this.name, this.source, {this.confirmTwice = false});
+
+  final String name;
+
+  /// A fresh source for each alert (a smoothing source keeps that alert's history).
+  final RowSource Function(AlertSetup setup) source;
+
+  /// Fire only when the tracker's fire decision holds on two replayed polls in a row; the alert time is the second.
+  final bool confirmTwice;
+}
+
+/// A: today's production path.
+MetrobusDeparturesResult productionRows(ArrivalAlert alert, ReplayPoll poll) =>
+    liveResultForAlert(alert, poll.feed, poll.at);
+
+/// The feed's own prediction for stop [seq] of [trip] at [poll]: its `time`, else the timetable plus its `delay`.
+DateTime? feedStopTime(ReplayPoll poll, String trip, int seq, DateTime scheduledAt) {
+  final listing = poll.trips?[trip];
+  final k = listing?.indexOf(seq) ?? -1;
+  if (k < 0) return null;
+  if (listing!.times[k] != 0) return DateTime.fromMillisecondsSinceEpoch(listing.times[k] * 1000);
+  if (listing.delays[k] != TripListing.noDelay) return scheduledAt.add(Duration(seconds: listing.delays[k]));
+  return null;
+}
+
+/// [r] with its one live row predicted at [predictedSeconds] (service-day seconds, as the row counts them).
+MetrobusDeparturesResult _withPredicted(MetrobusDeparturesResult r, int predictedSeconds) {
+  final d = r.departures.first;
+  return MetrobusDeparturesResult(
+    departures: [
+      MetrobusDeparture(
+        routeRun: d.routeRun,
+        routeShortName: d.routeShortName,
+        vehicle: d.vehicle,
+        scheduledTime: d.scheduledTime,
+        predictedTime: d.predictedTime,
+        headsign: d.headsign,
+        currentLocation: d.currentLocation,
+        isTracked: d.isTracked,
+        tripId: d.tripId,
+        scheduledDepartureSeconds: d.scheduledDepartureSeconds,
+        predictedDepartureSeconds: predictedSeconds,
+        isRealtime: d.isRealtime,
+      ),
+    ],
+    succeeded: r.succeeded,
+    realtimeAvailable: r.realtimeAvailable,
+    serviceOperating: r.serviceOperating,
+    fetchedAt: r.fetchedAt,
+  );
+}
+
+/// C: production's live row, re-timed to the feed's own prediction for the alert's stop when the poll lists it.
+RowSource perStopRows(int seq) => (alert, poll) {
+  final r = productionRows(alert, poll);
+  if (r.departures.isEmpty || r.departures.first.scheduledDepartureSeconds == null) return r;
+  final at = feedStopTime(poll, alert.tripId, seq, alert.scheduledAt);
+  if (at == null) return r; // the stop has no update: A's prediction
+  // Keep the row's service-day counting: its scheduled seconds, moved by the feed's offset from the timetable.
+  return _withPredicted(r, r.departures.first.scheduledDepartureSeconds! + at.difference(alert.scheduledAt).inSeconds);
+};
+
+/// E: [inner]'s prediction smoothed as the median of the last 3 polls that had one.
+RowSource smoothedRows(RowSource inner) {
+  final history = <int>[];
+  return (alert, poll) {
+    final r = inner(alert, poll);
+    final p = r.departures.isEmpty ? null : r.departures.first.predictedDepartureSeconds;
+    if (p == null) return r;
+    history.add(p);
+    if (history.length > 3) history.removeAt(0);
+    final s = [...history]..sort();
+    return _withPredicted(r, s.length == 2 ? (s[0] + s[1]) ~/ 2 : s[s.length ~/ 2]);
+  };
+}
+
+final variants = <Variant>[
+  Variant('A production', (_) => productionRows),
+  Variant('B confirm twice', (_) => productionRows, confirmTwice: true),
+  Variant('C per-stop time', (s) => perStopRows(s.seq)),
+  Variant('D B+C', (s) => perStopRows(s.seq), confirmTwice: true),
+  Variant('E C, median of 3', (s) => smoothedRows(perStopRows(s.seq))),
+  // In-sample only: C and A moved 1 min earlier, about their median lateness on the 10-05 capture. Needs a second
+  // capture to confirm.
+  Variant('F C − 60 s (in-sample)', (s) => shiftedRows(perStopRows(s.seq), -60)),
+  Variant('G A − 60 s (in-sample)', (_) => shiftedRows(productionRows, -60)),
+];
+
+/// [inner]'s prediction moved by [seconds].
+RowSource shiftedRows(RowSource inner, int seconds) => (alert, poll) {
+  final r = inner(alert, poll);
+  final p = r.departures.isEmpty ? null : r.departures.first.predictedDepartureSeconds;
+  return p == null ? r : _withPredicted(r, p + seconds);
+};
+
+ArrivalAlert _unfired(ArrivalAlert a) => ArrivalAlert(
+  stopId: a.stopId,
+  stopName: a.stopName,
+  routeShortName: a.routeShortName,
+  headsign: a.headsign,
+  tripId: a.tripId,
+  routeRun: a.routeRun,
+  vehicle: a.vehicle,
+  scheduledAt: a.scheduledAt,
+  expectedAt: a.expectedAt,
+  live: a.live,
+  leadMinutes: a.leadMinutes,
+  setAt: a.setAt,
+  lastSeenAt: a.lastSeenAt,
+);
+
+/// Steps the production tracker from the set poll on, at each replayed poll, until it fires (the fire time) or
+/// finishes or the capture ends (null).
+DateTime? runAlert(AlertSetup setup, List<ReplayPoll> polls, Variant variant) {
+  const tracker = AlertTracker();
+  final source = variant.source(setup);
+  var alert = setup.alert;
+  var armed = false;
+  for (var j = setup.setIndex; j < polls.length; j++) {
+    final q = polls[j];
+    if (!q.replayed) continue;
+    final s = tracker.step(alert, source(alert, q), q.at);
+    if (s.fire) {
+      if (!variant.confirmTwice || armed) return q.at;
+      armed = true;
+      alert = _unfired(s.alert); // re-timed, but not fired yet
+      continue;
+    }
+    armed = false;
+    alert = s.alert;
+    if (s.finished) return null;
+  }
+  return null;
+}
+
+/// Sets and runs alerts for every trip in [polls] on the production path and scores them against the stop-drop-off
+/// truth (spec §1).
+ReplaySummary replayAlerts(List<ReplayPoll> polls, TripSchedule schedule) {
+  final records = <AlertRecord>[];
+  for (final s in setupAlerts(polls, schedule)) {
+    AlertRecord record(Outcome o, {DateTime? firedAt}) => AlertRecord(
+      trip: s.trip,
+      route: s.route,
+      stopId: s.stopId,
+      seq: s.seq,
+      lead: s.lead,
+      setAt: s.setAt,
+      scheduledAt: s.alert.scheduledAt,
+      expectedAt: s.alert.expectedAt,
+      outcome: o,
+      departure: s.dropOff.at,
+      firedAt: firedAt,
+    );
+    if (s.tooLate) {
+      records.add(record(Outcome.setTooLate));
+    } else if (s.dropOff.kind == DepartureKind.ghost) {
+      records.add(record(Outcome.ghost));
+    } else if (s.dropOff.kind == DepartureKind.captureEnded) {
+      records.add(record(Outcome.captureEnded));
+    } else {
+      final firedAt = runAlert(s, polls, variants.first);
+      final target = s.dropOff.at!.subtract(Duration(minutes: s.lead));
+      records.add(
+        firedAt != null
+            ? record(Outcome.fired, firedAt: firedAt)
+            : record(target.isAfter(polls.last.at) ? Outcome.captureEnded : Outcome.unfired),
+      );
+    }
+  }
   return ReplaySummary(records);
+}
+
+// ── GPS truth ───────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// When the trip's bus passed the stop at ([lat], [lon]), from its GPS fixes.
+///
+/// A visit is a run of fixes that comes within 60 m of the stop and ends when the bus is more than 150 m away; its
+/// passage is the fix closest to the stop, interpolated along the track to the point nearest the stop. Visits from
+/// 5 min before [from] on count. A trip can pass a stop twice (out and back on one street, or a loop), and a stop
+/// leaves the feed's predictions only after the bus passed it, so with [until] (the stop-drop-off time) the passage
+/// is the last visit before it, else the first. Null when no fix comes within 60 m.
+DateTime? gpsPassage(List<Fix> fixes, double lat, double lon, DateTime from, {DateTime? until}) {
+  final since = from.millisecondsSinceEpoch ~/ 1000 - 300;
+  final cosLat = math.cos(lat * math.pi / 180);
+  (double, double) xy(Fix f) => ((f.lon - lon) * cosLat * 111320, (f.lat - lat) * 110540);
+  double dist(Fix f) {
+    final (x, y) = xy(f);
+    return math.sqrt(x * x + y * y);
+  }
+
+  // The segment either side of the closest fix whose nearest point to the stop lies inside it, and is nearest.
+  DateTime passage(int best, double bestD) {
+    var at = fixes[best].t.toDouble();
+    var nearest = bestD;
+    for (final (a, b) in [(best - 1, best), (best, best + 1)]) {
+      if (a < 0 || b >= fixes.length) continue;
+      final (ax, ay) = xy(fixes[a]);
+      final (bx, by) = xy(fixes[b]);
+      final vx = bx - ax, vy = by - ay, len2 = vx * vx + vy * vy;
+      if (len2 < 1) continue;
+      final u = -(ax * vx + ay * vy) / len2;
+      if (u < 0 || u > 1) continue;
+      final px = ax + u * vx, py = ay + u * vy, d = math.sqrt(px * px + py * py);
+      if (d < nearest) {
+        nearest = d;
+        at = fixes[a].t + u * (fixes[b].t - fixes[a].t);
+      }
+    }
+    return DateTime.fromMillisecondsSinceEpoch((at * 1000).round());
+  }
+
+  final visits = <DateTime>[];
+  int? best;
+  var bestD = double.infinity;
+  for (var i = 0; i < fixes.length; i++) {
+    if (fixes[i].t < since) continue;
+    final d = dist(fixes[i]);
+    if (best == null) {
+      if (d <= 60) (best, bestD) = (i, d);
+    } else if (d < bestD) {
+      (best, bestD) = (i, d);
+    } else if (d > 150) {
+      visits.add(passage(best, bestD)); // left the stop: the visit is over
+      (best, bestD) = (null, double.infinity);
+    }
+  }
+  if (best != null) visits.add(passage(best, bestD));
+  if (visits.isEmpty) return null;
+  if (until == null) return visits.first;
+  // The drop-off is polled every 10 s and the fixes are a little older than the poll: a minute of slack.
+  final before = visits.where((v) => !v.isAfter(until.add(const Duration(minutes: 1))));
+  return before.isEmpty ? null : before.last;
+}
+
+// ── Experiment scoring ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/// One alert under one variant, against one truth. [error] is null when it never fired (a failure).
+class Trial {
+  Trial(this.setup, this.error);
+
+  final AlertSetup setup;
+  final Duration? error;
+}
+
+/// The accuracy columns for a set of trials.
+String accuracyRow(String label, List<Trial> trials) {
+  final n = trials.length;
+  if (n == 0) return '${label.padRight(22)} n 0';
+  final e = [
+    for (final t in trials)
+      if (t.error != null) t.error!.inSeconds,
+  ];
+  final abs = e.map((x) => x.abs()).toList()..sort();
+  String pct(int k) => '${(100 * k / n).toStringAsFixed(1)}%'.padLeft(6);
+  String q(double f) => abs.isEmpty ? '-' : '${abs[((abs.length - 1) * f).round()]}';
+  final early = e.isEmpty ? '-' : '${e.reduce(math.min)}';
+  final signed = [...e]..sort();
+  final bias = signed.isEmpty ? '-' : '${signed[(signed.length - 1) ~/ 2]}';
+  final late = e.isEmpty ? '-' : '${e.reduce(math.max)}';
+  return [
+    label.padRight(22),
+    '$n'.padLeft(5),
+    '${n - e.length}'.padLeft(4),
+    pct(e.where((x) => x.abs() <= 60).length),
+    pct(e.where((x) => x.abs() <= 120).length),
+    q(0.5).padLeft(5),
+    q(0.9).padLeft(5),
+    bias.padLeft(5),
+    early.padLeft(6),
+    late.padLeft(5),
+    pct(e.where((x) => x > 120).length),
+  ].join(' ');
+}
+
+const accuracyHeader = 'variant / lead             n  unf  ±60s  ±120s  med|e| p90|e|  bias  early  late late>120';
+
+/// The experiment: every variant on the same alerts, scored against the GPS passage and the stop-drop-off truth.
+String accuracyExperiment(List<ReplayPoll> polls, TripSchedule schedule, Map<String, List<Fix>> fixes) {
+  final setups = setupAlerts(polls, schedule).where((s) => !s.tooLate).toList();
+  DateTime? dropOffTruth(AlertSetup s) =>
+      s.dropOff.kind == DepartureKind.passed || s.dropOff.kind == DepartureKind.vanished ? s.dropOff.at : null;
+  final gps = <AlertSetup, DateTime?>{};
+  var noGps = 0, passedBefore = 0;
+  for (final s in setups) {
+    final stop = schedule.stopOf(s.stopId);
+    final g = stop == null
+        ? null
+        : gpsPassage(fixes[s.trip] ?? const [], stop.stopLat, stop.stopLon, s.setAt, until: dropOffTruth(s));
+    if (g == null) {
+      noGps++;
+    } else if (!g.isAfter(s.setAt)) {
+      passedBefore++;
+    } else {
+      gps[s] = g;
+    }
+  }
+  final fired = {
+    for (final v in variants) v: {for (final s in setups) s: runAlert(s, polls, v)},
+  };
+
+  List<Trial> trials(Variant v, DateTime? Function(AlertSetup) truth, bool Function(AlertSetup) keep) => [
+    for (final s in setups)
+      if (keep(s) && truth(s) != null)
+        Trial(s, fired[v]![s]?.difference(truth(s)!.subtract(Duration(minutes: s.lead)))),
+  ];
+  bool all(AlertSetup _) => true;
+  bool tenAhead(AlertSetup s) => s.alert.expectedAt.difference(s.setAt) >= const Duration(minutes: 10);
+
+  final out = StringBuffer()
+    ..writeln(
+      'experiment: ${setups.length} alerts set; GPS truth ${gps.length}, no GPS fix within 60 m $noGps, '
+      'bus passed before the alert was set $passedBefore; drop-off truth '
+      '${setups.where((s) => dropOffTruth(s) != null).length}',
+    );
+  for (final (subset, keep) in [('all alerts', all), ('set at least 10 min ahead', tenAhead)]) {
+    for (final (truthName, truth) in [('GPS passage', (AlertSetup s) => gps[s]), ('stop drop-off', dropOffTruth)]) {
+      out
+        ..writeln(
+          '\n$subset, truth = $truthName (errors in s, + is late; bias = median error; late>120 is a share of n)',
+        )
+        ..writeln(accuracyHeader);
+      for (final v in variants) {
+        out.writeln(accuracyRow(v.name, trials(v, truth, keep)));
+        for (final lead in alertLeadChoices) {
+          out.writeln(accuracyRow('  lead $lead', trials(v, truth, (s) => keep(s) && s.lead == lead)));
+        }
+      }
+    }
+  }
+  String hms(DateTime? t) => t == null ? '-' : t.toIso8601String().substring(11, 19);
+  out.writeln('\nworst 3 against the GPS passage, per variant:');
+  for (final v in variants) {
+    final worst = trials(v, (s) => gps[s], all)
+      ..sort((a, b) => b.error!.inSeconds.abs().compareTo(a.error!.inSeconds.abs()));
+    for (final t in worst.take(3)) {
+      final s = t.setup;
+      out.writeln(
+        '  ${v.name}: trip ${s.trip} rt ${s.route} stop ${s.stopId} (seq ${s.seq}) lead ${s.lead}: set ${hms(s.setAt)}, '
+        'predicted at set ${hms(s.alert.expectedAt)}, GPS ${hms(gps[s])}, drop-off ${hms(dropOffTruth(s))}, '
+        'fired ${hms(fired[v]![s])}, error ${t.error!.inSeconds} s',
+      );
+    }
+  }
+  return out.toString();
 }
 
 // ── Synthetic polls ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -438,7 +824,13 @@ Map<String, Object?> _header(DateTime at) => {
 
 /// One synthetic poll in the capture's line format. [stops] lists the trip's stops still ahead as
 /// (sequence, stop id, scheduled time); null means the trip and its bus are not in the feeds.
-String _pollLine(DateTime at, {required String trip, required List<(int, String, DateTime)>? stops, int delay = 180}) {
+String _pollLine(
+  DateTime at, {
+  required String trip,
+  required List<(int, String, DateTime)>? stops,
+  int Function(int seq)? delayOf,
+}) {
+  int delay(int seq) => delayOf?.call(seq) ?? 180;
   final vehicles = [
     if (stops != null)
       {
@@ -462,8 +854,8 @@ String _pollLine(DateTime at, {required String trip, required List<(int, String,
               {
                 'stopSequence': seq,
                 'stopId': stop,
-                'arrival': {'delay': delay, 'time': '${_epoch(scheduled) + delay}'},
-                'departure': {'delay': delay, 'time': '${_epoch(scheduled) + delay}'},
+                'arrival': {'delay': delay(seq), 'time': '${_epoch(scheduled) + delay(seq)}'},
+                'departure': {'delay': delay(seq), 'time': '${_epoch(scheduled) + delay(seq)}'},
               },
           ],
         },
@@ -500,9 +892,14 @@ TripSchedule _schedule(Map<int, (String, DateTime)> stops) {
 }
 
 /// Polls every 10 s from [start] to [end], the trip's listing given by [stopsAt].
-Stream<String> _polls(DateTime start, DateTime end, List<(int, String, DateTime)>? Function(DateTime) stopsAt) async* {
+Stream<String> _polls(
+  DateTime start,
+  DateTime end,
+  List<(int, String, DateTime)>? Function(DateTime) stopsAt, {
+  int Function(DateTime t, int seq)? delayAt,
+}) async* {
   for (var t = start; !t.isAfter(end); t = t.add(const Duration(seconds: 10))) {
-    yield _pollLine(t, trip: 't1', stops: stopsAt(t));
+    yield _pollLine(t, trip: 't1', stops: stopsAt(t), delayOf: delayAt == null ? null : (seq) => delayAt(t, seq));
   }
 }
 
@@ -511,16 +908,33 @@ AlertRecord _rec(ReplaySummary s, String stop, int lead) =>
 
 // ── Tests ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/// The capture and its GTFS, loaded once for the capture tests.
+typedef _Capture = ({List<ReplayPoll> polls, Map<String, List<Fix>> fixes, TripSchedule schedule, int trips});
+Future<_Capture>? _loaded;
+
+Future<_Capture> _capture(String path, String gtfsDir) => _loaded ??= () async {
+  final fixes = <String, List<Fix>>{};
+  final polls = await loadCapture(
+    File(path).openRead().transform(utf8.decoder).transform(const LineSplitter()),
+    fixes: fixes,
+  );
+  final repo = GtfsRepository();
+  await repo.loadFromDirectory(gtfsDir);
+  final tripIds = {for (final p in polls) ...?p.trips?.keys};
+  return (polls: polls, fixes: fixes, schedule: TripSchedule(repo, tripIds), trips: tripIds.length);
+}();
+
 void main() {
   final capturePath = Platform.environment['ALERT_CAPTURE'];
   final gtfsDir = Platform.environment['ALERT_GTFS'];
+  final captureSkip = capturePath == null || gtfsDir == null
+      ? 'set ALERT_CAPTURE (a capture from tool/capture_gtfsrt_alerts.dart) and ALERT_GTFS (a GTFS directory)'
+      : false;
 
   test(
     'replayed GTFS-RT alerts fire within ±1 min of real departure − lead (spec §1)',
     () async {
-      final polls = await loadCapture(
-        File(capturePath!).openRead().transform(utf8.decoder).transform(const LineSplitter()),
-      );
+      final (:polls, :fixes, :schedule, :trips) = await _capture(capturePath!, gtfsDir!);
       expect(polls, isNotEmpty);
       expect(
         polls.first.at.timeZoneOffset,
@@ -528,10 +942,7 @@ void main() {
         reason: 'GTFS times are St. John\'s wall clock: run with TZ=America/St_Johns',
       );
 
-      final repo = GtfsRepository();
-      await repo.loadFromDirectory(gtfsDir!);
-      final tripIds = {for (final p in polls) ...?p.trips?.keys};
-      final summary = replayAlerts(polls, TripSchedule(repo, tripIds));
+      final summary = replayAlerts(polls, schedule);
 
       // The clock is right: a live prediction lands near its timetable time, not 2.5 h off.
       final first = summary.records.first;
@@ -550,7 +961,7 @@ void main() {
       // ignore: avoid_print
       print(
         'polls ${polls.length} (${polls.where((p) => p.replayed).length} replayed), '
-        '${polls.first.at} .. ${polls.last.at}; trips in trip updates ${tripIds.length}; CSV ${csv.path}\n'
+        '${polls.first.at} .. ${polls.last.at}; trips in trip updates $trips; CSV ${csv.path}\n'
         '${summary.format()}\n'
         'worst 10 by |error| (unfired first):\n'
         '${summary.worst(10).map((r) => '  trip ${r.trip} rt ${r.route} stop ${r.stopId} (seq ${r.seq}) lead ${r.lead}: '
@@ -563,9 +974,20 @@ void main() {
       expect(summary.worstLate() ?? 0, lessThanOrEqualTo(180));
     },
     timeout: const Timeout(Duration(minutes: 20)),
-    skip: capturePath == null || gtfsDir == null
-        ? 'set ALERT_CAPTURE (a capture from tool/capture_gtfsrt_alerts.dart) and ALERT_GTFS (a GTFS directory)'
-        : false,
+    skip: captureSkip,
+  );
+
+  test(
+    'alert accuracy experiment: prediction and firing variants against the GPS passage (no criterion asserted)',
+    () async {
+      final (:polls, :fixes, :schedule, trips: _) = await _capture(capturePath!, gtfsDir!);
+      final report = accuracyExperiment(polls, schedule, fixes);
+      // ignore: avoid_print
+      print(report);
+      expect(report, contains('GPS passage'));
+    },
+    timeout: const Timeout(Duration(minutes: 20)),
+    skip: captureSkip,
   );
 
   group('synthetic GTFS-RT', () {
@@ -660,6 +1082,57 @@ void main() {
         expect(thirtySeconds.every((p) => p.replayed), isTrue);
       },
     );
+
+    test(
+      'a one-poll dip in the bus\'s delay fires production early; confirming twice or the stop\'s own time does not',
+      () async {
+        // At 08:01 the feed says the bus is 5 min early at S1, its first listed stop, but keeps S2 at 08:09.
+        final polls = await loadCapture(
+          _polls(
+            start,
+            at(12),
+            (t) => t.isBefore(at(8)) ? [s1, s2] : (t.isBefore(at(9)) ? [s2] : null),
+            delayAt: (t, seq) => seq == 2 && !t.isBefore(at(1)) && t.isBefore(at(1, 30)) ? -300 : 180,
+          ),
+        );
+        final s2lead3 = setupAlerts(polls, schedule).singleWhere((s) => s.stopId == 'S2' && s.lead == 3);
+        final fired = {for (final v in variants) v.name: runAlert(s2lead3, polls, v)};
+        expect(fired['A production'], at(1), reason: 'S2 predicted at 08:01 for one poll');
+        expect(fired['B confirm twice'], at(6, 30), reason: 'the dip lasted one poll; 08:06 confirmed at 08:06:30');
+        expect(fired['C per-stop time'], at(6), reason: 'S2\'s own time stayed 08:09');
+        expect(fired['D B+C'], at(6, 30));
+        expect(fired['E C, median of 3'], at(6));
+      },
+    );
+
+    test('the GPS passage is the first visit\'s closest point to the stop, between fixes', () {
+      const lat = 47.5, lon = -52.7;
+      final perMetre = 1 / (111320 * math.cos(lat * math.pi / 180));
+      final t0 = DateTime(2026, 10, 6, 8);
+      final s0 = t0.millisecondsSinceEpoch ~/ 1000;
+      Fix f(int dt, double metresEast) => Fix(s0 + dt, lat, lon + metresEast * perMetre);
+      // Westward 200 m, 40 m, then 40 m and 200 m east: it passes the stop halfway between the 2nd and 3rd fixes.
+      final fixes = [f(0, -200), f(10, -40), f(20, 40), f(30, 200)];
+      expect(
+        gpsPassage(fixes, lat, lon, t0)!.difference(t0.add(const Duration(seconds: 15))).inMilliseconds.abs(),
+        lessThan(200),
+      );
+      expect(gpsPassage([f(0, -200), f(10, -80), f(20, 80)], lat, lon, t0), isNull, reason: 'never within 60 m');
+      expect(gpsPassage(fixes, lat, lon, t0.add(const Duration(minutes: 6))), isNull, reason: 'before the window');
+      // Out and back past the stop: the last visit before the stop left the feed, else the first.
+      final twice = [...fixes, f(300, 200), f(310, 40), f(320, -40), f(330, -200)];
+      final second = t0.add(const Duration(seconds: 315));
+      expect(
+        gpsPassage(twice, lat, lon, t0, until: t0.add(const Duration(minutes: 8)))!.difference(second).inSeconds,
+        0,
+      );
+      expect(gpsPassage(twice, lat, lon, t0)!.difference(t0.add(const Duration(seconds: 15))).inSeconds, 0);
+      expect(
+        gpsPassage(twice, lat, lon, t0, until: t0.subtract(const Duration(minutes: 2))),
+        isNull,
+        reason: 'no visit before the drop-off',
+      );
+    });
 
     test('capture time is read as the local clock', () {
       final t = DateTime(2026, 10, 5, 9, 34, 23, 126);
