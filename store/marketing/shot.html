@@ -1,0 +1,65 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Figtree;font-weight:800;src:url(../../assets/fonts/Figtree-ExtraBold.ttf)}
+@font-face{font-family:Figtree;font-weight:600;src:url(../../assets/fonts/Figtree-SemiBold.ttf)}
+@font-face{font-family:Figtree;font-weight:500;src:url(../../assets/fonts/Figtree-Medium.ttf)}
+:root{--blue:#3E7CB1;--navy:#1C2A3A;--cream:#F7F2EA}
+html,body{margin:0;overflow:hidden}
+body{font-family:Figtree;color:var(--cream);position:relative;background:var(--blue)}
+body.navy{background:var(--navy)}
+.glow{position:absolute;border-radius:50%;pointer-events:none}
+.g1{background:radial-gradient(circle,rgba(247,242,234,.18) 0,rgba(247,242,234,0) 62%)}
+.g2{background:radial-gradient(circle,rgba(28,42,58,.28) 0,rgba(28,42,58,0) 62%)}
+body.navy .g1{background:radial-gradient(circle,rgba(62,124,177,.35) 0,rgba(62,124,177,0) 62%)}
+.copy{position:absolute;left:0;right:0;text-align:center}
+h1{margin:0;font-weight:800;letter-spacing:-.02em;line-height:1.04}
+p{margin:0;font-weight:500;opacity:.9;line-height:1.3}
+.dots{display:flex;justify-content:center}
+.dots span{border-radius:50%}
+.device{position:absolute;background:#121A24;box-shadow:0 40px 90px rgba(10,18,28,.45),inset 0 0 0 3px rgba(255,255,255,.08)}
+.device img{position:absolute;display:block;object-fit:cover;object-position:top}
+.island{position:absolute;background:#000;border-radius:999px}
+</style></head><body>
+<div class="glow g1" id="g1"></div><div class="glow g2" id="g2"></div>
+<div class="copy" id="copy"><h1 id="h"></h1><p id="s"></p><div class="dots" id="dots"></div></div>
+<div class="device" id="dev"><img id="img"><div class="island" id="isl"></div></div>
+<script>
+const q = new URLSearchParams(location.search);
+const W = +q.get('w'), H = +q.get('h'), kind = q.get('device');
+document.documentElement.style.width = W + 'px'; document.documentElement.style.height = H + 'px';
+document.body.style.width = W + 'px'; document.body.style.height = H + 'px';
+if (q.get('bg') === 'navy') document.body.classList.add('navy');
+const u = W / 100; // 1u = 1% of width
+const tablet = kind === 'ipad' || kind === 'tablet';
+const head = document.getElementById('h'), sub = document.getElementById('s');
+head.innerHTML = q.get('t'); sub.innerHTML = q.get('sub');
+head.style.fontSize = (tablet ? 6.6 : 9.4) * u + 'px';
+sub.style.fontSize = (tablet ? 2.9 : 4.0) * u + 'px';
+sub.style.marginTop = (tablet ? 1.6 : 2.4) * u + 'px';
+const copy = document.getElementById('copy');
+copy.style.top = (tablet ? 6.5 : 10) * u + 'px'; copy.style.padding = '0 ' + 7 * u + 'px';
+const dots = document.getElementById('dots');
+dots.style.gap = 1.4 * u + 'px'; dots.style.marginTop = (tablet ? 2.2 : 3.4) * u + 'px';
+for (const c of ['#FFD9B8','#FFC9C2','#CFEEDB','#FBE7A6','#E2F0B0','#CFE3FA']) { const d = document.createElement('span'); d.style.background = c; d.style.width = d.style.height = (tablet ? 1.3 : 1.9) * u + 'px'; dots.appendChild(d); }
+const g1 = document.getElementById('g1'), g2 = document.getElementById('g2');
+Object.assign(g1.style, {width: 140*u+'px', height: 140*u+'px', left: -40*u+'px', top: -50*u+'px'});
+Object.assign(g2.style, {width: 160*u+'px', height: 160*u+'px', right: -70*u+'px', bottom: -70*u+'px'});
+// device geometry: screen aspect from the screenshot, device fills the lower area
+const img = document.getElementById('img'), dev = document.getElementById('dev'), isl = document.getElementById('isl');
+img.src = q.get('img');
+img.onload = () => {
+  const aspect = img.naturalWidth / img.naturalHeight;
+  const topPad = H * (tablet ? 0.27 : 0.255); // fixed, so every slide lines up
+  const bezel = (tablet ? 1.5 : 2.2) * u;
+  let devW = W * (tablet ? 0.90 : 0.74);
+  let screenW = devW - 2 * bezel, screenH = screenW / aspect;
+  const maxH = H - topPad + (tablet ? 0 : 6 * u); // phones may bleed a little off the bottom
+  const devH = screenH + 2 * bezel;
+  const radius = (tablet ? 3.6 : 10.5) * u;
+  Object.assign(dev.style, {width: devW+'px', height: devH+'px', left: (W-devW)/2+'px', top: topPad+'px', borderRadius: radius+'px'});
+  Object.assign(img.style, {left: bezel+'px', top: bezel+'px', width: screenW+'px', height: screenH+'px', borderRadius: (radius-bezel)+'px'});
+  if (kind === 'iphone') Object.assign(isl.style, {width: 24*u+'px', height: 7*u+'px', left: (devW-24*u)/2+'px', top: bezel+2.4*u+'px'});
+  else if (kind === 'android') Object.assign(isl.style, {width: 3.4*u+'px', height: 3.4*u+'px', left: (devW-3.4*u)/2+'px', top: bezel+2.2*u+'px'});
+  else isl.style.display = 'none';
+  document.title = 'ready';
+};
+</script></body></html>

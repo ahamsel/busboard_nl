@@ -94,8 +94,10 @@ Map<String, dynamic> _point(double lat, double lon, Map<String, dynamic> propert
 String _hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
 /// Sources, layers and marker images of the Harbour map (spec §3.2), bottom to
-/// top: followed route (casing, line), stops, your stop, bus notches, bus
-/// badges. [install] runs after every style load (a style switch clears
+/// top: followed route (casing, line), stops, bus notches, bus badges, your
+/// stop. Your stop is on top because buses park on it at a terminal and would
+/// hide it; taps are unaffected, since they pick buses (first) and stops by
+/// distance from the tap, not by what is drawn on top. [install] runs after every style load (a style switch clears
 /// everything natively); updates are cheap GeoJSON swaps that register any new marker image first.
 class MapLayers {
   MapLayers(this.surface, {required this.brightness, required this.pixelRatio});
@@ -123,7 +125,7 @@ class MapLayers {
     // plugin re-applies the style on creation), so a second install finds our
     // layers and sources already there. Clear them first, layers before the
     // sources they draw from; on a fresh style there is nothing to remove.
-    for (final layer in [badgeLayer, notchLayer, myStopLayer, stopsLayer, routeLineLayer, routeCasingLayer]) {
+    for (final layer in [myStopLayer, badgeLayer, notchLayer, stopsLayer, routeLineLayer, routeCasingLayer]) {
       try {
         await surface.removeLayer(layer);
       } catch (_) {}
@@ -180,13 +182,6 @@ class MapLayers {
       minzoom: stopsMinZoom,
     );
 
-    await surface.addGeoJsonSource(myStopSource, _collection(const []));
-    await surface.addSymbolLayer(
-      myStopSource,
-      myStopLayer,
-      const SymbolLayerProperties(iconImage: MarkerImages.myStopId, iconAllowOverlap: true, iconIgnorePlacement: true),
-    );
-
     await surface.addGeoJsonSource(busesSource, _collection(const []));
     await surface.addSymbolLayer(
       busesSource,
@@ -213,6 +208,13 @@ class MapLayers {
         iconIgnorePlacement: true,
         symbolSortKey: [Expressions.get, 'sort'],
       ),
+    );
+
+    await surface.addGeoJsonSource(myStopSource, _collection(const []));
+    await surface.addSymbolLayer(
+      myStopSource,
+      myStopLayer,
+      const SymbolLayerProperties(iconImage: MarkerImages.myStopId, iconAllowOverlap: true, iconIgnorePlacement: true),
     );
   }
 

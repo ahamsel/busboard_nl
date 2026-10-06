@@ -158,4 +158,9 @@ void main() {
     final low = await _pump(tester, prefs: {'refreshInterval': 1});
     expect(low.read(settingsProvider).refreshIntervalSeconds, 5);
   });
+
+  testWidgets("the schedule's last-updated time follows the device clock setting", (tester) async {
+    await _pump(tester, prefs: {'lastGtfsUpdate': '2026-10-04T16:11:00.000'});
+    expect(find.textContaining('Oct 4, 2026 4:11 PM', findRichText: true), findsOneWidget);
+  });
 }

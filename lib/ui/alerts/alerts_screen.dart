@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/realtime/service_alert_models.dart';
 import '../../state/providers.dart';
@@ -158,7 +157,7 @@ class _ServiceStatusCard extends StatelessWidget {
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: bb.text.headline),
-            Text('Updated ${DateFormat('h:mm:ss a').format(fetchedAt)}', style: bb.text.caption),
+            Text('Updated ${BBTime.of(fetchedAt, use24h: BBTime.use24h(context), seconds: true)}', style: bb.text.caption),
           ]),
         ),
         if (status?.day.isNotEmpty ?? false)
