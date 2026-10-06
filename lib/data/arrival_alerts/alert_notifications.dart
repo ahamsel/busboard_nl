@@ -16,6 +16,7 @@ abstract class AlertNotifications {
   Future<void> show(AlertMessage m);
 
   /// Schedules the one pending alert (iPhone estimate, Android backup) at [at], replacing any earlier one.
+  /// A time at or before now shows the alert at once.
   Future<void> schedule(AlertMessage m, DateTime at);
   Future<void> cancelScheduled();
 }
@@ -99,6 +100,11 @@ class LocalAlertNotifications implements AlertNotifications {
 
   @override
   Future<void> schedule(AlertMessage m, DateTime at) async {
+    // The plugin throws for a time that is not in the future.
+    if (!at.isAfter(DateTime.now())) {
+      await show(m);
+      return;
+    }
     await init();
     // A UTC instant needs no time-zone lookup: tz.UTC is built into the timezone package.
     await _plugin.zonedSchedule(
