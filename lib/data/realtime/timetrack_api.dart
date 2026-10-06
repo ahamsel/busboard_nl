@@ -25,7 +25,8 @@ class FeedStopTime {
   /// `departure.time`, else `arrival.time`; null when the feed gave neither.
   final DateTime? time;
 
-  /// `departure.delay`, else `arrival.delay`; null when the feed gave neither.
+  /// The delay of the event [time] came from (so time − delay is that event's timetable time); with no time,
+  /// `departure.delay`, else `arrival.delay`. Null when that event has none.
   final Duration? delay;
 
   /// The predicted time at a visit scheduled at [scheduled]: [time], else [scheduled] + [delay]; null when the
@@ -351,7 +352,10 @@ class TimeTrackApi {
             : s.hasArrival() && s.arrival.hasTime()
             ? s.arrival
             : null;
-        final delayed = s.hasDeparture() && s.departure.hasDelay()
+        // The delay comes from the same event as the time, so time − delay is that event's timetable time.
+        final delayed = timed != null
+            ? (timed.hasDelay() ? timed : null)
+            : s.hasDeparture() && s.departure.hasDelay()
             ? s.departure
             : s.hasArrival() && s.arrival.hasDelay()
             ? s.arrival
