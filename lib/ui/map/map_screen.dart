@@ -19,6 +19,7 @@ import '../../domain/map/heading_smoother.dart';
 import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
+import '../arrival_alerts/alert_bell.dart';
 import '../copy/legal_copy.dart';
 import '../kit/kit.dart';
 import 'bus_card.dart';
@@ -912,6 +913,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       onSeeAll: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)),
       actionsFirst: actionsFirst,
       actionsKey: _actionsKey,
+      alertAction: live.isEmpty || myStop == null
+          ? null
+          : AlertBell(arrival: live.first, stopId: myStop.stopId, stopName: myStop.stopName),
     );
   }
 
