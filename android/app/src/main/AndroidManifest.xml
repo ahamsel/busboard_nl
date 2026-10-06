@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove"/>
     <application
         android:label="BusBoard NL"
         android:name="${applicationName}"
@@ -24,6 +25,8 @@
                 android:value="A live transit arrival alert the user starts; it ends when the bus arrives (90 min max)"/>
         </service>
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>
+        <!-- flutter_foreground_task would restart its service on boot; an alert never outlives its ride. -->
+        <receiver android:name="com.pravera.flutter_foreground_task.service.RebootReceiver" tools:node="remove"/>
         <meta-data
             android:name="com.ahamsel.busboard_nl.NOTIFICATION_ICON"
             android:resource="@drawable/ic_notification"/>
