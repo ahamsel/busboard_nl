@@ -171,4 +171,60 @@ void main() {
       expect(worstLate, lessThanOrEqualTo(180));
     }
   }, skip: path == null ? 'set ALERT_CAPTURE to a capture made with tool/capture_stop_predictions.dart' : false);
+
+  test('synthetic fixture: trip reaches zero, leads 3 and 5 fire within ±60s', () async {
+    // Build 18 JSONL lines starting 2026-10-06T08:00:00, 30s apart.
+    // Trip: route 10, t1, 10-4, vehicle 1415, scheduled/predicted 08:08:00.
+    // Samples 0–16 (08:00:00–08:08:00): trip is live.
+    // Sample 17 (08:08:30): trip disappeared (reaches zero at sample 16).
+    // Real departure: 08:08:00 (first sample where prediction is not after sample time).
+    // Lead 10: set too late (8 min out < 11 min needed) → skippedLate=1.
+    // Leads 3, 5: set at samples where bus is 4+, 6+ min out, fire at alert times.
+    // Expected: attempted=2 (leads 3 and 5), unfired=0, skippedLate=1, all errors ±60s.
+    final start = DateTime(2026, 10, 6, 8, 0, 0);
+    final departureSeconds = 8 * 3600 + 8 * 60; // 08:08:00
+    final lines = <String>[];
+
+    // Samples 0–16: trip is live (30s apart, 08:00 through 08:08)
+    for (var i = 0; i < 17; i++) {
+      final sampleTime = start.add(Duration(seconds: i * 30));
+      final body = jsonEncode({
+        'arrivals': [
+          {
+            'route': '10',
+            'trip_id': 't1',
+            'runNumber': '10-4',
+            'vehicle': '1415',
+            'scheduledDepartureSeconds': departureSeconds,
+            'predictedDepartureSeconds': departureSeconds, // Fixed at 08:08:00
+            'isRealtime': true,
+            'direction': 'MUN',
+          }
+        ]
+      });
+      lines.add(jsonEncode({'t': sampleTime.toIso8601String(), 'status': 200, 'body': body}));
+    }
+
+    // Sample 17: trip has disappeared
+    final emptyTime = start.add(const Duration(minutes: 8, seconds: 30));
+    lines.add(jsonEncode({
+      't': emptyTime.toIso8601String(),
+      'status': 200,
+      'body': jsonEncode({'arrivals': []})
+    }));
+
+    final result = await replayCapture(lines, '1150');
+
+    // ignore: avoid_print
+    print(
+      'synthetic: attempted=${result.attempted}, fired=${result.errors.length}, '
+      'unfired=${result.unfired}, skippedLate=${result.skippedLate}',
+    );
+    expect(result.attempted, equals(2), reason: 'Leads 3 and 5 should fire; lead 10 too late');
+    expect(result.unfired, equals(0), reason: 'Both alerts should fire before trip vanishes');
+    expect(result.skippedLate, equals(1), reason: 'Lead 10: bus only 8 min out at sample 0');
+    for (final error in result.errors) {
+      expect(error.inSeconds.abs(), lessThanOrEqualTo(60), reason: 'All errors within ±60s');
+    }
+  });
 }
