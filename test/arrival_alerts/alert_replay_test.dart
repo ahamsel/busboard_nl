@@ -859,13 +859,16 @@ String accuracyExperiment(List<ReplayPoll> polls, TripSchedule schedule, Map<Str
   out.writeln('\nworst 3 against the GPS passage, per variant:');
   for (final v in variants) {
     final worst = trials(v, (s) => gps[s], all)
-      ..sort((a, b) => b.error!.inSeconds.abs().compareTo(a.error!.inSeconds.abs()));
+      ..sort((a, b) {
+        int key(Trial t) => t.error?.inSeconds.abs() ?? 1 << 30; // unfired first
+        return key(b).compareTo(key(a));
+      });
     for (final t in worst.take(3)) {
       final s = t.setup;
       out.writeln(
         '  ${v.name}: trip ${s.trip} rt ${s.route} stop ${s.stopId} (seq ${s.seq}) lead ${s.lead}: set ${hms(s.setAt)}, '
         'predicted at set ${hms(s.alert.expectedAt)}, GPS ${hms(gps[s])}, drop-off ${hms(dropOffTruth(s))}, '
-        'fired ${hms(fired[v]![s])}, error ${t.error!.inSeconds} s',
+        'fired ${hms(fired[v]![s])}, error ${t.error?.inSeconds ?? 'unfired'} s',
       );
     }
   }
