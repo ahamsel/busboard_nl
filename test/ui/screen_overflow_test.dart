@@ -33,6 +33,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../kit/kit_test_helpers.dart';
+import '../helpers/fake_alerts.dart';
 
 /// Large-text guard: every Phase 2 screen is scrolled to its end at 2x text on
 /// the two smallest supported phones, and any layout exception fails the test.
@@ -220,7 +221,9 @@ final _screens = <_Screen>[
   }),
   _Screen('board (alert + failing live feed)', (t) {
     SharedPreferences.setMockInitialValues({});
+    useInMemoryAlertStore();
     return _app(const ArrivalBoardScreen(stopId: '1150'), [
+      ...fakeAlertOverrides,
       gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
       timetrackApiProvider.overrideWithValue(TimeTrackApi(client: _failing)),
       metrobusMobileApiProvider.overrideWithValue(MetrobusMobileApi(client: _emptyKiosk)),
