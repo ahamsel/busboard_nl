@@ -13,14 +13,15 @@ import '../domain/arrival_alerts/arrival_alert.dart';
 import '../platform/alert_runner.dart';
 import '../platform/android_alert_watcher.dart';
 import '../platform/ios_alert_scheduler.dart';
+import '../routing/notification_route.dart';
 
 final alertStoreProvider = Provider<AlertStore>((ref) => AlertStore());
-final alertNotificationsProvider = Provider<AlertNotifications>((ref) => LocalAlertNotifications());
+final alertNotificationsProvider = Provider<AlertNotifications>((ref) => LocalAlertNotifications(onOpen: openAlertRoute));
 final alertClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
 final alertRunnerProvider = Provider<AlertRunner>((ref) {
   final notifications = ref.watch(alertNotificationsProvider);
-  if (defaultTargetPlatform == TargetPlatform.android) return AndroidAlertRunner(notifications);
+  if (defaultTargetPlatform == TargetPlatform.android) return AndroidAlertRunner(notifications, onOpen: openAlertRoute);
   return IosAlertRunner(AlertScheduler(
     notifications: notifications,
     clock: ref.watch(alertClockProvider),
@@ -53,7 +54,9 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
       unawaited(sub.cancel());
       lifecycle.dispose();
     });
-    return _loadFresh();
+    final a = await _loadFresh();
+    _ensureRunning(a);
+    return a;
   }
 
   Future<ArrivalAlert?> _loadFresh() async {
@@ -67,7 +70,17 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
     return null;
   }
 
-  Future<void> _reload() async => state = AsyncData(await _loadFresh());
+  Future<void> _reload() async {
+    final a = await _loadFresh();
+    state = AsyncData(a);
+    _ensureRunning(a);
+  }
+
+  /// A stored alert that has not fired needs its Android watcher: a reboot, force-stop or battery saver ends it.
+  void _ensureRunning(ArrivalAlert? a) {
+    if (a == null || a.firedAt != null || !_runner.watchesLive) return;
+    unawaited(_runner.ensureRunning(a).catchError((Object _) {}));
+  }
 
   Future<int> lastLead() => _store.lastLead();
 

@@ -31,6 +31,8 @@ class FakeNotifications implements AlertNotifications {
       scheduled.add((m, at));
   @override
   Future<void> cancelScheduled() async => cancels++;
+  @override
+  Future<String?> launchRoute() async => null;
 }
 
 final t0 = DateTime(2026, 10, 6, 8, 0);

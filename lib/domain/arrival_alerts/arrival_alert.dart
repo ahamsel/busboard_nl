@@ -105,6 +105,9 @@ class ArrivalAlert {
   /// When the alert fired; it fires once.
   final DateTime? firedAt;
 
+  /// The app route of this stop's Board, which the alert's notifications open (spec §2.2).
+  String get boardRoute => '/board/${Uri.encodeComponent(stopId)}';
+
   /// When the rider wants the heads-up.
   DateTime get alertAt => expectedAt.subtract(Duration(minutes: leadMinutes));
 

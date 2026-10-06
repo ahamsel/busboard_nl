@@ -21,6 +21,8 @@ class FakeNotifications implements AlertNotifications {
   Future<void> schedule(AlertMessage m, DateTime at) async => scheduled.add((m, at));
   @override
   Future<void> cancelScheduled() async => cancels++;
+  @override
+  Future<String?> launchRoute() async => null;
 }
 
 ArrivalAlert _alert({bool live = true, DateTime? expected}) => ArrivalAlert(

@@ -16,6 +16,11 @@ abstract class AlertRunner {
   /// The app is going to the background with [alert] set.
   Future<void> onBackground(ArrivalAlert alert);
 
+  /// The app found [alert] stored and not yet fired, at launch or on coming back: make sure it is still
+  /// running, since a reboot, force-stop or battery saver can end the Android watcher. Android only; the
+  /// controller does not call it where [watchesLive] is false.
+  Future<void> ensureRunning(ArrivalAlert alert);
+
   Future<void> stop();
 
   /// Fires when the platform side ended the alert itself (the bus was due, the cap, or Cancel on the notification).

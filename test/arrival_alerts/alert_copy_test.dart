@@ -41,6 +41,16 @@ void main() {
       expect(m.body, 'MUN Centre (stop 1150) · no live tracking for this trip');
     }
   });
+  test('every alert opens its stop\'s Board', () {
+    expect(_a.boardRoute, '/board/1150');
+    for (final s in AlertSource.values) {
+      expect(alertMessage(_a, source: s, minutesAway: 5, use24h: true).route, '/board/1150');
+    }
+    expect(
+        alertMessage(_a, source: AlertSource.live, minutesAway: 5, estimateFrom: DateTime(2026, 10, 6, 8, 2), use24h: true)
+            .route,
+        '/board/1150');
+  });
   test('due now', () {
     expect(alertMessage(_a, source: AlertSource.live, minutesAway: 0, use24h: true).title, 'Route 10 is due now');
   });

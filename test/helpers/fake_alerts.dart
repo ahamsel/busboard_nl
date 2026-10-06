@@ -19,6 +19,8 @@ class _QuietNotifications implements AlertNotifications {
   Future<void> schedule(AlertMessage m, DateTime at) async {}
   @override
   Future<void> cancelScheduled() async {}
+  @override
+  Future<String?> launchRoute() async => null;
 }
 
 class _QuietRunner implements AlertRunner {
@@ -32,6 +34,8 @@ class _QuietRunner implements AlertRunner {
   Future<void> update(ArrivalAlert alert) async {}
   @override
   Future<void> onBackground(ArrivalAlert alert) async {}
+  @override
+  Future<void> ensureRunning(ArrivalAlert alert) async {}
   @override
   Future<void> stop() async {}
 }
