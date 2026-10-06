@@ -24,9 +24,9 @@ SETS = {
     # name: (device, width, height, source dir)
     'iphone': ('iphone', 1320, 2868, 'app-store/screenshots/APP_IPHONE_69'),
     'ipad': ('ipad', 2064, 2752, 'app-store/screenshots/APP_IPAD_PRO_3GEN_129'),
-    'android': ('android', 1080, 2160, 'google-play/media/en-US/images/phoneScreenshots'),
-    'tab7': ('tablet', 1200, 1920, 'google-play/media/en-US/images/sevenInchScreenshots'),
-    'tab10': ('tablet', 1600, 2560, 'google-play/media/en-US/images/tenInchScreenshots'),
+    'android': ('android', 1080, 2160, 'marketing/clean/phoneScreenshots'),
+    'tab7': ('tablet', 1200, 1920, 'marketing/clean/sevenInchScreenshots'),
+    'tab10': ('tablet', 1600, 2560, 'marketing/clean/tenInchScreenshots'),
 }
 
 def render(name):

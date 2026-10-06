@@ -8,3 +8,8 @@ raw captures in `store/app-store/screenshots/` and `store/google-play/media/en-U
       --screenshot=out.png store/marketing/universal.html   # header + search results asset
 
 `shot.html` is the screenshot template, `render.py` holds the slide order and copy.
+
+The Android sets render from `clean/`: the raw Play captures with the status-bar clock and
+icons removed (ffmpeg `delogo`, plus a feathered blur band on the map shots), so nothing
+sits under the rounded corners of the frame. The iPhone and iPad status bars clear their
+corners and stay as captured.
