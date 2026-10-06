@@ -68,6 +68,7 @@ Future<void> _host(
   String? yourStopName = 'MUN Centre',
   double textScale = 1,
   double width = 390,
+  bool use24h = true,
 }) async {
   tester.view.physicalSize = Size(width * 3, 2400);
   tester.view.devicePixelRatio = 3;
@@ -75,7 +76,7 @@ Future<void> _host(
   await tester.pumpWidget(MaterialApp(
     theme: BBTheme.light(),
     builder: (context, child) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale), alwaysUse24HourFormat: use24h),
       child: child!,
     ),
     home: CustomScrollView(
@@ -108,10 +109,18 @@ void main() {
 
   test('ETA is the timetable shifted by the delay, or marked sched', () {
     final stop = _stop('x', 'X', 1, 43320); // 12:02
-    expect(etaText(stop, -1), '12:03', reason: '1 min late');
-    expect(etaText(stop, 2), '12:00', reason: '2 min early');
-    expect(etaText(stop, null), '12:02 sched');
-    expect(etaText(TripStop(stopId: 'y', name: 'Y', sequence: 1, progress: null, departureSeconds: null), 0), '');
+    expect(etaText(stop, -1, use24h: true), '12:03', reason: '1 min late');
+    expect(etaText(stop, 2, use24h: true), '12:00', reason: '2 min early');
+    expect(etaText(stop, null, use24h: true), '12:02 sched');
+    expect(etaText(TripStop(stopId: 'y', name: 'Y', sequence: 1, progress: null, departureSeconds: null), 0, use24h: true), '');
+    // The device's 12-hour setting, as everywhere else in the app.
+    expect(etaText(stop, -1, use24h: false), '12:03 PM');
+    expect(etaText(_stop('z', 'Z', 1, 9 * 3600 + 5 * 60), null, use24h: false), '9:05 AM sched');
+  });
+
+  testWidgets("body ETAs follow the device's 12-hour setting", (tester) async {
+    await _host(tester, _snap(schedDiff: null), use24h: false);
+    expect(find.text('12:01 PM sched'), findsOneWidget);
   });
 
   testWidgets('header: destination, bus and lateness, stops to go, minutes', (tester) async {

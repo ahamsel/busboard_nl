@@ -19,11 +19,13 @@ Future<void> loadAppFonts() async {
 }
 
 /// Hosts a kit widget in the real Harbour theme on a `bg`-coloured page.
+/// [use24h] is the device's 24-hour clock setting.
 Widget kitHost(
   Widget child, {
   Brightness brightness = Brightness.light,
   double textScale = 1.0,
   double width = 390,
+  bool use24h = true,
 }) {
   return MaterialApp(
     debugShowCheckedModeBanner: false,
@@ -31,7 +33,7 @@ Widget kitHost(
     themeAnimationStyle: AnimationStyle.noAnimation,
     scrollBehavior: const BBScrollBehavior(),
     builder: (context, app) => MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale), alwaysUse24HourFormat: use24h),
       child: app!,
     ),
     home: Builder(

@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/gtfs/gtfs_repository.dart';
 import '../../data/realtime/service_alert_models.dart';
@@ -44,14 +43,13 @@ class ServiceAlertCard extends StatelessWidget {
         _ => BBIcons.alerts,
       };
 
-  static String? periodLabel(ServiceAlert a, DateTime now) {
+  static String? periodLabel(ServiceAlert a, DateTime now, {required bool use24h}) {
     if (a.activePeriods.isEmpty) return null;
     final starts = a.activePeriods.map((p) => p.start).whereType<DateTime>();
     final ends = a.activePeriods.map((p) => p.end).whereType<DateTime>().toList()..sort();
-    final format = DateFormat('MMM d, h:mm a');
     final nextStart = starts.where((s) => s.isAfter(now)).firstOrNull;
-    if (nextStart != null) return 'Starts ${format.format(nextStart)}';
-    if (ends.isNotEmpty) return 'Until ${format.format(ends.last)}';
+    if (nextStart != null) return 'Starts ${BBTime.dated(nextStart, use24h: use24h)}';
+    if (ends.isNotEmpty) return 'Until ${BBTime.dated(ends.last, use24h: use24h)}';
     return 'Active now';
   }
 
@@ -61,7 +59,7 @@ class ServiceAlertCard extends StatelessWidget {
     final tone = toneOf(alert);
     final title = alert.header.isNotEmpty ? alert.header : alert.effect.label;
     final routes = alert.routeIds.toList()..sort(GtfsRepository.compareRouteNames);
-    final period = compact ? null : periodLabel(alert, DateTime.now());
+    final period = compact ? null : periodLabel(alert, DateTime.now(), use24h: BBTime.use24h(context));
 
     return BBCard(
       onTap: onTap,

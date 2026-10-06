@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import '../../state/follow_providers.dart';
 import '../../state/providers.dart';
 import '../../data/realtime/metrobus_mobile_api.dart';
@@ -163,7 +162,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     final relevantAlerts = _relevantAlerts(
       ref.watch(serviceUpdatesProvider).value,
     );
-    final updated = DateFormat('HH:mm:ss').format(_lastUpdate);
+    final updated = BBTime.of(_lastUpdate, use24h: BBTime.use24h(context), seconds: true);
     // The live region carries only the state, so assistive tech announces
     // live <-> schedule transitions but not every refresh timestamp.
     final checking = _loading && _error == null;
