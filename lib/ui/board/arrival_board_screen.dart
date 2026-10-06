@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../state/arrival_alert_providers.dart';
 import '../../state/follow_providers.dart';
 import '../../state/providers.dart';
 import '../../data/realtime/metrobus_mobile_api.dart';
@@ -10,6 +11,8 @@ import '../../data/realtime/timetrack_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
 import '../alerts/service_alert_card.dart';
+import '../arrival_alerts/alert_bell.dart';
+import '../arrival_alerts/alert_strip.dart';
 import '../kit/kit.dart';
 import 'arrival_row_tile.dart';
 
@@ -127,6 +130,8 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
       );
 
       if (mounted) {
+        // `ref` is unsafe once the Board has been left mid-refresh.
+        ref.read(arrivalAlertProvider.notifier).onBoardArrivals(widget.stopId, arrivals);
         setState(() {
           _arrivals = arrivals;
           _loading = false;
@@ -196,6 +201,15 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
             ]),
           );
 
+    // The "Alert set" strip leads the list while an arrival alert exists, and
+    // takes no space otherwise.
+    final strip = ref.watch(arrivalAlertProvider).value == null
+        ? null
+        : const Padding(
+            padding: EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.screen, BBSpace.xs),
+            child: AlertStrip(),
+          );
+
     return BBScaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -250,7 +264,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               if (_liveAvailable) Text(' · updated $updated', style: bb.text.caption),
             ]),
           ),
-          Expanded(child: BBRefresh(onRefresh: _refreshData, semanticLabel: 'Departures', child: _buildArrivalsList(context, alertBlock))),
+          Expanded(child: BBRefresh(onRefresh: _refreshData, semanticLabel: 'Departures', child: _buildArrivalsList(context, [?strip, ?alertBlock], stopName))),
         ],
       ),
     );
@@ -283,14 +297,14 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     };
   }
 
-  Widget _buildArrivalsList(BuildContext context, Widget? alertBlock) {
+  Widget _buildArrivalsList(BuildContext context, List<Widget> leadingItems, String stopName) {
     final bottom = BBNavBar.reservedHeight(context) + BBSpace.l;
 
     // Every state is a scrollable list so pull-to-refresh always works.
     Widget centered(Widget child) => ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.only(bottom: bottom),
-          children: [?alertBlock, const SizedBox(height: 64), Center(child: child)],
+          children: [...leadingItems, const SizedBox(height: 64), Center(child: child)],
         );
 
     if (_loading) {
@@ -298,7 +312,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.only(bottom: bottom),
         children: [
-          ?alertBlock,
+          ...leadingItems,
           const Padding(
             padding: EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.screen, 0),
             child: BBSkeleton(kind: BBSkeletonKind.arrivalRow, count: 5, label: 'Loading departures...'),
@@ -316,18 +330,20 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         message: 'There are no scheduled departures\nfrom this stop right now.',
       ));
     }
-    final leading = alertBlock == null ? 0 : 1;
+    final leading = leadingItems.length;
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.only(bottom: bottom),
       itemCount: leading + _arrivals.length,
       itemBuilder: (_, index) {
-        if (index < leading) return alertBlock;
+        if (index < leading) return leadingItems[index];
+        final arrival = _arrivals[index - leading];
         return Padding(
           padding: EdgeInsets.fromLTRB(BBSpace.screen, index == 0 ? BBSpace.s : 0, BBSpace.screen, BBSpace.s),
           child: ArrivalRowTile(
-            arrival: _arrivals[index - leading],
-            onTap: _followable(_arrivals[index - leading]),
+            arrival: arrival,
+            onTap: _followable(arrival),
+            action: AlertBell(arrival: arrival, stopId: widget.stopId, stopName: stopName),
           ),
         );
       },

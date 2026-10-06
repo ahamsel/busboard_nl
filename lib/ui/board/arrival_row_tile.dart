@@ -6,12 +6,20 @@ import '../kit/kit.dart';
 
 /// One departure on the Board: route badge · destination + status · minutes.
 class ArrivalRowTile extends StatelessWidget {
-  const ArrivalRowTile({super.key, required this.arrival, this.onTap});
+  const ArrivalRowTile({
+    super.key,
+    required this.arrival,
+    this.onTap,
+    this.action,
+  });
 
   final ArrivalRow arrival;
 
   /// Starts following this row's bus; null leaves the row inert.
   final VoidCallback? onTap;
+
+  /// A trailing control with its own semantics (the alert bell).
+  final Widget? action;
 
   /// Minutes at or below which the countdown uses the `soon` colour.
   static const int soonThresholdMinutes = 5;
@@ -71,89 +79,99 @@ class ArrivalRowTile extends StatelessWidget {
     final showSched = showPredicted && a.scheduledTime != a.predictedTime;
     final soon = a.minutesAway <= soonThresholdMinutes;
 
-    return Semantics(
-      label: semanticsLabel(a, use24h: use24h),
-      excludeSemantics: true,
-      // The row's own semantics replace the card's, so the tap is restated here.
-      button: onTap != null ? true : null,
-      onTap: onTap,
-      onTapHint: onTap == null ? null : 'follow bus ${a.vehicleNumber} on the map',
-      child: BBCard(
-        onTap: onTap,
-        child: LayoutBuilder(
-          builder: (context, box) => Row(
-            children: [
-              RouteBadge.name(a.routeShortName),
-              const SizedBox(width: BBSpace.m),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final content = LayoutBuilder(
+      builder: (context, box) => Row(
+        children: [
+          RouteBadge.name(a.routeShortName),
+          const SizedBox(width: BBSpace.m),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  a.headsign,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: bb.text.headline,
+                ),
+                const SizedBox(height: 3),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(
-                      a.headsign,
+                    BBPill(
+                      label: status,
+                      tone: tone,
+                      leadingDot: tone == BBPillTone.live,
+                    ),
+                    if (meta.isNotEmpty) Text(meta, style: bb.text.caption),
+                  ],
+                ),
+                if (a.isLive && (a.currentLocation?.isNotEmpty ?? false))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(
+                      'Near ${a.currentLocation}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: bb.text.headline,
+                      style: bb.text.caption,
                     ),
-                    const SizedBox(height: 3),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        BBPill(
-                          label: status,
-                          tone: tone,
-                          leadingDot: tone == BBPillTone.live,
-                        ),
-                        if (meta.isNotEmpty) Text(meta, style: bb.text.caption),
-                      ],
-                    ),
-                    if (a.isLive && (a.currentLocation?.isNotEmpty ?? false))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Text(
-                          'Near ${a.currentLocation}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: bb.text.caption,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: BBSpace.m),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: box.maxWidth * _maxTrailingShare,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      a.minutesAway <= 0 ? 'Now' : '${a.minutesAway}',
-                      style: bb.text.minutes.copyWith(
-                        color: soon ? bb.colors.soon : bb.colors.ink,
-                      ),
-                    ),
-                    if (a.minutesAway > 0)
-                      Text('min', style: bb.text.minutesUnit),
-                    const SizedBox(height: 2),
-                    Text(timeLine, style: bb.text.caption),
-                    if (showSched)
-                      Text(
-                        'sched ${clock(a.scheduledTime)}',
-                        style: bb.text.caption.copyWith(
-                          decoration: TextDecoration.lineThrough,
-                          decorationColor: bb.colors.muted,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(width: BBSpace.m),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: box.maxWidth * _maxTrailingShare,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  a.minutesAway <= 0 ? 'Now' : '${a.minutesAway}',
+                  style: bb.text.minutes.copyWith(
+                    color: soon ? bb.colors.soon : bb.colors.ink,
+                  ),
+                ),
+                if (a.minutesAway > 0) Text('min', style: bb.text.minutesUnit),
+                const SizedBox(height: 2),
+                Text(timeLine, style: bb.text.caption),
+                if (showSched)
+                  Text(
+                    'sched ${clock(a.scheduledTime)}',
+                    style: bb.text.caption.copyWith(
+                      decoration: TextDecoration.lineThrough,
+                      decorationColor: bb.colors.muted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    return BBCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Expanded(
+            // The content's own semantics replace the card's, so the tap is
+            // restated here; the action stays outside so it keeps its own.
+            child: Semantics(
+              label: semanticsLabel(a, use24h: use24h),
+              excludeSemantics: true,
+              button: onTap != null ? true : null,
+              onTap: onTap,
+              onTapHint: onTap == null
+                  ? null
+                  : 'follow bus ${a.vehicleNumber} on the map',
+              child: content,
+            ),
+          ),
+          ?action,
+        ],
       ),
     );
   }

@@ -20,6 +20,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../kit/kit_test_helpers.dart';
+import '../helpers/fake_alerts.dart';
 
 final _failing = MockClient((_) async => http.Response('down', 500));
 final _emptyKiosk = MockClient((_) async => http.Response('{"arrivals":[]}', 200));
@@ -144,6 +145,7 @@ Future<void> _pump(
   bool use24h = true,
 }) async {
   SharedPreferences.setMockInitialValues({});
+  useInMemoryAlertStore();
   final router = GoRouter(initialLocation: '/board/1150', routes: [
     GoRoute(path: '/', builder: (_, _) => const Text('PICKER'), routes: [
       GoRoute(path: 'board/:id', builder: (_, s) => ArrivalBoardScreen(stopId: s.pathParameters['id']!)),
@@ -153,6 +155,7 @@ Future<void> _pump(
     GoRoute(path: '/map', builder: (_, _) => const Text('MAP')),
   ]);
   final container = ProviderContainer(overrides: [
+      ...fakeAlertOverrides,
       gtfsRepositoryProvider.overrideWith((ref) async {
         if (repo == null) throw Exception('not loaded');
         return repo;
