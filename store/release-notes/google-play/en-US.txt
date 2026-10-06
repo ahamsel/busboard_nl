@@ -1,6 +1,6 @@
-New in 1.2.0:
-• A fresh look across the app, with route colours, clearer arrival boards, and light and dark themes
-• A redesigned live map with smoother, more realistic bus movement
-• Follow a bus: tap a live arrival or Follow on a bus card to see its route, the stops left to yours, and when it arrives
-• Better handling of late or missing GPS updates
-• Larger-text and screen-reader improvements
+New in 1.2.1:
+• Times now follow your phone's 12- or 24-hour clock setting everywhere in the app
+• Your stop's star stays visible on the map, even when buses are parked at it
+• Following a bus from the board finds it on the map sooner
+• With very large text, See all stops and Stop following stay on screen without dragging the card up
+• Better full-screen display on newer Android phones
