@@ -139,13 +139,15 @@ void main() {
         final surface = FakeMapSurface();
         await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const [_mun]);
         final layerOrder = [for (final c in surface.calls) if (c.startsWith('layer ')) c.substring(6)];
+        // Your stop is on top: at a terminal the buses park on it, and the
+        // star must still show (taps pick buses first by distance, not by layer).
         expect(layerOrder, [
           MapLayers.routeCasingLayer,
           MapLayers.routeLineLayer,
           MapLayers.stopsLayer,
-          MapLayers.myStopLayer,
           MapLayers.notchLayer,
           MapLayers.badgeLayer,
+          MapLayers.myStopLayer,
         ]);
         expect((surface.layers[MapLayers.notchLayer]! as SymbolLayerProperties).symbolSortKey, isNotNull,
             reason: 'stale notches sit under fresh ones');
@@ -244,9 +246,9 @@ void main() {
         final removals = surface.calls.where((c) => c.startsWith('remove ')).toList();
         final oneClear = [
           for (final l in [
+            MapLayers.myStopLayer,
             MapLayers.badgeLayer,
             MapLayers.notchLayer,
-            MapLayers.myStopLayer,
             MapLayers.stopsLayer,
             MapLayers.routeLineLayer,
             MapLayers.routeCasingLayer,
