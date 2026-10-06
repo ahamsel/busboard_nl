@@ -382,7 +382,7 @@ class AlertSetup {
   /// The stop-drop-off departure truth.
   final ({DepartureKind kind, DateTime? at}) dropOff;
 
-  /// The prediction was under lead + 1 min away: the app would not offer this lead.
+  /// The app would not offer this lead for the prediction's minutes away (`leadChoicesFor`).
   final bool tooLate;
 
   String get trip => alert.tripId;
@@ -451,7 +451,7 @@ List<AlertSetup> setupAlerts(List<ReplayPoll> polls, TripSchedule schedule) {
               seq: seq,
               setIndex: i,
               dropOff: dropOff,
-              tooLate: p.difference(now) < Duration(minutes: lead + 1),
+              tooLate: !leadChoicesFor(p.difference(now).inMinutes).contains(lead),
             ),
           );
         }
@@ -1097,7 +1097,7 @@ void main() {
       final summary = replayAlerts(polls, schedule);
 
       for (final stop in ['S1', 'S2']) {
-        expect(_rec(summary, stop, 10).outcome, Outcome.setTooLate, reason: '$stop is under 11 min away');
+        expect(_rec(summary, stop, 10).outcome, Outcome.setTooLate, reason: '$stop is under 12 min away');
         for (final lead in [3, 5]) {
           final r = _rec(summary, stop, lead);
           expect(r.outcome, Outcome.fired, reason: '$stop lead $lead');

@@ -22,15 +22,17 @@ const alertEarlyMargin = Duration(seconds: 60);
 /// that jumped ahead still shows its real, smaller minutes. The countdown keeps [predictedMinutes], as the Board does.
 int alertMinutesAway(ArrivalAlert alert, int predictedMinutes) => math.min(alert.leadMinutes, predictedMinutes);
 
-/// No bell for a bus farther than this. Nearer buses have one while a lead time is still possible (from 4 min).
+/// No bell for a bus farther than this. Nearer buses have one while a lead time is still possible (from 5 min).
 const alertMaxMinutesAway = 60;
 
 /// Whether [row] gets a bell: at least one lead time is still possible, and the bus is at most 60 min away.
 bool canAlert(ArrivalRow row) =>
     row.minutesAway <= alertMaxMinutesAway && leadChoicesFor(row.minutesAway).isNotEmpty;
 
-/// The lead times still possible for a bus [minutesAway] out: only those shorter than the wait.
-List<int> leadChoicesFor(int minutesAway) => [for (final m in alertLeadChoices) if (m < minutesAway) m];
+/// The lead times still possible for a bus [minutesAway] out: only those that leave a minute to spare after
+/// [alertEarlyMargin], so the alert does not fire the moment it is set (a 4 min bus offers none, 7 min offers 3 and 5).
+List<int> leadChoicesFor(int minutesAway) =>
+    [for (final m in alertLeadChoices) if (m + alertEarlyMargin.inMinutes < minutesAway) m];
 
 /// A service-day time as an instant near [now], counted the way the Board counts minutes (same clock
 /// day), moved by a day when that leaves it more than 12 h away: 24:10 at 23:55 is tomorrow 00:10.

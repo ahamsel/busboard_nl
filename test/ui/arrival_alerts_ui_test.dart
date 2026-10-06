@@ -91,9 +91,10 @@ Future<_Runner> _pump(WidgetTester tester, Widget child,
 void main() {
   setUpAll(loadAppFonts);
 
-  testWidgets('no bell under 4 or over 60 minutes', (tester) async {
+  testWidgets('no bell under 5 or over 60 minutes', (tester) async {
     await _pump(tester, Column(children: [
       AlertBell(arrival: _row(2), stopId: '1150', stopName: 'MUN Centre'),
+      AlertBell(arrival: _row(4), stopId: '1150', stopName: 'MUN Centre'),
       AlertBell(arrival: _row(61), stopId: '1150', stopName: 'MUN Centre'),
     ]));
     expect(find.byIcon(BBIcons.bell), findsNothing);
@@ -121,13 +122,15 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('a bus 4 minutes away offers only 3 min', (tester) async {
-    await _pump(tester, AlertBell(arrival: _row(4), stopId: '1150', stopName: 'MUN Centre'));
+  testWidgets('a bus 5 minutes away offers only 3 min', (tester) async {
+    await _pump(tester, AlertBell(arrival: _row(5), stopId: '1150', stopName: 'MUN Centre'));
     await tester.tap(find.byIcon(BBIcons.bell));
     await tester.pumpAndSettle();
     final ten = tester.widget<BBChip>(find.widgetWithText(BBChip, '10 min'));
+    final five = tester.widget<BBChip>(find.widgetWithText(BBChip, '5 min'));
     final three = tester.widget<BBChip>(find.widgetWithText(BBChip, '3 min'));
     expect(ten.onTap, isNull);
+    expect(five.onTap, isNull, reason: 'a 5 min lead on a 5 min bus would fire as it is set');
     expect(three.onTap, isNotNull);
   });
 

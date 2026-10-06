@@ -37,18 +37,22 @@ void main() {
   });
 
   group('lead rules', () {
-    test('a bell from 4 to 60 minutes away', () {
+    test('a bell from 5 to 60 minutes away', () {
       expect(canAlert(_row(minutes: 2)), isFalse);
       expect(canAlert(_row(minutes: 3)), isFalse);
+      expect(canAlert(_row(minutes: 4)), isFalse);
       expect(leadChoicesFor(3), isEmpty);
-      expect(canAlert(_row(minutes: 4)), isTrue);
+      expect(leadChoicesFor(4), isEmpty);
+      expect(canAlert(_row(minutes: 5)), isTrue);
       expect(canAlert(_row(minutes: 60)), isTrue);
       expect(canAlert(_row(minutes: 61)), isFalse);
     });
-    test('only lead times shorter than the minutes away', () {
-      expect(leadChoicesFor(4), [3]);
+    test('only lead times that leave a minute to spare after the early margin', () {
       expect(leadChoicesFor(5), [3]);
-      expect(leadChoicesFor(6), [3, 5]);
+      expect(leadChoicesFor(6), [3]);
+      expect(leadChoicesFor(7), [3, 5]);
+      expect(leadChoicesFor(11), [3, 5]);
+      expect(leadChoicesFor(12), [3, 5, 10]);
       expect(leadChoicesFor(30), [3, 5, 10]);
     });
   });
