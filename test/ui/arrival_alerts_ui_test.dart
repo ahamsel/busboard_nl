@@ -91,7 +91,7 @@ Future<_Runner> _pump(WidgetTester tester, Widget child,
 void main() {
   setUpAll(loadAppFonts);
 
-  testWidgets('no bell under 3 or over 60 minutes', (tester) async {
+  testWidgets('no bell under 4 or over 60 minutes', (tester) async {
     await _pump(tester, Column(children: [
       AlertBell(arrival: _row(2), stopId: '1150', stopName: 'MUN Centre'),
       AlertBell(arrival: _row(61), stopId: '1150', stopName: 'MUN Centre'),

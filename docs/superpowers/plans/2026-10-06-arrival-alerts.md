@@ -19,7 +19,7 @@
 - No server, no push service, no account, no API keys; the only network calls are the Metrobus requests the app already makes.
 - Free, no ads.
 - Every new control has a screen-reader label; nothing overflows at 320 pt width and 2× text.
-- One small request per 30 s while an alert runs; the watcher never runs longer than 90 minutes.
+- Two small GTFS-RT feeds (vehicle positions and trip updates, about 37 KB together) every 30 s while an alert runs, at most about 6.5 MB over the 90-minute cap; the watcher never runs longer than 90 minutes.
 - Lead times are exactly 3, 5 and 10 min. No bell under 3 min away or over 60 min away. One alert at a time.
 - Android foreground service type `specialUse`, subtype text exactly: `A live transit arrival alert the user starts; it ends when the bus arrives (90 min max)`.
 - iOS: notification permission only; no background modes; never start the foreground service on iOS.
