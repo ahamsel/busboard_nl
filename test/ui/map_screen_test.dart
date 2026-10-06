@@ -32,13 +32,13 @@ const _mun = StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 47.5700, 
 
 GtfsRepository _repo() => GtfsRepository()..stopsById['1150'] = _mun;
 
-BusTrackingState _bus() => BusTrackingState(
+BusTrackingState _bus({double lat = 47.5600, double lon = -52.7100}) => BusTrackingState(
       routeRun: 'Rt 10',
       vehicleId: '2573',
       routeNumber: 10,
       headsign: 'Downtown',
-      lat: 47.5600,
-      lon: -52.7100,
+      lat: lat,
+      lon: lon,
       heading: 90,
       speedKmh: 29,
       lastGpsTime: DateTime.now(),
@@ -244,6 +244,14 @@ void main() {
   testWidgets('tapping near a bus opens its card', (tester) async {
     await _pump(tester, buses: {'2573': _bus()});
     _config!.onTap(const LatLng(47.5601, -52.7100));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('to Downtown'), findsOneWidget);
+  });
+
+  testWidgets('a bus parked on your stop (a terminal) is still tappable under the star', (tester) async {
+    final parked = _bus(lat: _mun.stopLat, lon: _mun.stopLon);
+    await _pump(tester, prefs: {'selectedStopId': '1150'}, buses: {'2573': parked});
+    _config!.onTap(const LatLng(47.5700, -52.7300));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('to Downtown'), findsOneWidget);
   });
