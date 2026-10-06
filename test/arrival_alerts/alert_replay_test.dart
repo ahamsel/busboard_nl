@@ -556,16 +556,20 @@ RowSource smoothedRows(RowSource inner) {
 /// What ships: the adapter's per-stop time (variant C, matched by stop id).
 final production = Variant('production', (_) => productionRows);
 
+/// Undoes `alertEarlyMargin` for a live prediction: the tracker fires 60 s before expected − lead, so a prediction
+/// 60 s later fires at expected − lead, as A–E did before the margin. (A timetable or lost step is not shifted.)
+RowSource withoutMargin(RowSource inner) => shiftedRows(inner, alertEarlyMargin.inSeconds);
+
 final variants = <Variant>[
-  Variant('A schedule diff', (_) => schedDiffRows),
-  Variant('B confirm twice', (_) => schedDiffRows, confirmTwice: true),
-  Variant('C per-stop time', (s) => perStopRows(s.seq)),
-  Variant('D B+C', (s) => perStopRows(s.seq), confirmTwice: true),
-  Variant('E C, median of 3', (s) => smoothedRows(perStopRows(s.seq))),
-  // In-sample only: C and A moved 1 min earlier, about their median lateness on the 10-05 capture. Needs a second
-  // capture to confirm.
-  Variant('F C − 60 s (in-sample)', (s) => shiftedRows(perStopRows(s.seq), -60)),
-  Variant('G A − 60 s (in-sample)', (_) => shiftedRows(schedDiffRows, -60)),
+  Variant('A schedule diff', (_) => withoutMargin(schedDiffRows)),
+  Variant('B confirm twice', (_) => withoutMargin(schedDiffRows), confirmTwice: true),
+  Variant('C per-stop time', (s) => withoutMargin(perStopRows(s.seq))),
+  Variant('D B+C', (s) => withoutMargin(perStopRows(s.seq)), confirmTwice: true),
+  Variant('E C, median of 3', (s) => withoutMargin(smoothedRows(perStopRows(s.seq)))),
+  // The margin, tuned in-sample on the 10-05 capture (about C's and A's median lateness); a second capture must
+  // confirm it. F is what ships on Android, G what the iPhone's Board rows give.
+  Variant('F production (C − 60 s)', (_) => productionRows),
+  Variant('G A − 60 s (iPhone)', (_) => schedDiffRows),
 ];
 
 /// [inner]'s prediction moved by [seconds].
@@ -1045,9 +1049,10 @@ void main() {
         final r = _rec(summary, 'S1', lead);
         expect(r.outcome, Outcome.fired, reason: 'lead $lead');
         expect(r.departure, at(5));
-        // The bus was still predicted for 08:08, so the alert keeps that time: 3 min after the real target.
-        expect(r.firedAt, at(8 - lead));
-        expect(r.error, const Duration(minutes: 3));
+        // The bus was still predicted for 08:08, so the alert keeps that time: it fires at 08:08 − lead − the 1 min
+        // margin, 2 min after the real target.
+        expect(r.firedAt, at(7 - lead));
+        expect(r.error, const Duration(minutes: 2));
       }
       expect(_rec(summary, 'S1', 10).outcome, Outcome.setTooLate);
       expect(summary.count(Outcome.unfired), 0);
@@ -1112,12 +1117,14 @@ void main() {
         );
         final s2lead3 = setupAlerts(polls, schedule).singleWhere((s) => s.stopId == 'S2' && s.lead == 3);
         final fired = {for (final v in variants) v.name: runAlert(s2lead3, polls, v)};
-        expect(runAlert(s2lead3, polls, production), at(6), reason: 'production reads S2\'s own time, 08:09');
+        expect(runAlert(s2lead3, polls, production), at(5), reason: 'S2\'s own time, 08:09, − 3 − the 1 min margin');
         expect(fired['A schedule diff'], at(1), reason: 'S2 predicted at 08:01 for one poll');
         expect(fired['B confirm twice'], at(6, 30), reason: 'the dip lasted one poll; 08:06 confirmed at 08:06:30');
         expect(fired['C per-stop time'], at(6), reason: 'S2\'s own time stayed 08:09');
         expect(fired['D B+C'], at(6, 30));
         expect(fired['E C, median of 3'], at(6));
+        expect(fired['F production (C − 60 s)'], at(5));
+        expect(fired['G A − 60 s (iPhone)'], at(1));
       },
     );
 

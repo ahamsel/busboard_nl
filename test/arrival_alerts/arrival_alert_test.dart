@@ -60,7 +60,7 @@ void main() {
       expect(a.expectedAt, DateTime(2026, 10, 6, 8, 14));
       expect(a.live, isTrue);
       expect(a.lastSeenAt, now);
-      expect(a.alertAt, DateTime(2026, 10, 6, 8, 9));
+      expect(a.alertAt, DateTime(2026, 10, 6, 8, 8)); // 08:14 − 5 min − the 1 min margin
       expect(a.vehicle, '1415');
       expect(a.routeRun, '10-4');
     });

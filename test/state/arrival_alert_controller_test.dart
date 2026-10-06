@@ -267,15 +267,15 @@ void main() {
   });
 
   group('a restart after the backup alert was delivered (Android)', () {
-    // Expected 08:14, lead 5: alertAt 08:09, the backup fires at 08:11.
+    // Expected 08:14, lead 5: alertAt 08:08 (with the 1 min margin), the backup fires at 08:10.
     ArrivalAlert stored() => ArrivalAlert.fromArrival(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5, now: now);
-    final backupAt = DateTime(2026, 10, 6, 8, 11);
+    final backupAt = DateTime(2026, 10, 6, 8, 10);
 
     setUp(() => runner = FakeRunner(watchesLive: true));
 
     test('at launch the alert counts as fired, and no watcher restarts it', () async {
       await AlertStore().write(stored());
-      clock = DateTime(2026, 10, 6, 8, 12); // alertAt was 3 min ago
+      clock = DateTime(2026, 10, 6, 8, 12); // alertAt was 4 min ago
       final c = container();
       final a = await c.read(arrivalAlertProvider.future);
       await Future<void>.delayed(Duration.zero);
@@ -298,7 +298,7 @@ void main() {
 
     test('before the backup time the watcher is made sure of, as before', () async {
       await AlertStore().write(stored());
-      clock = DateTime(2026, 10, 6, 8, 10); // alertAt was 1 min ago
+      clock = DateTime(2026, 10, 6, 8, 9); // alertAt was 1 min ago
       final c = container();
       final a = await c.read(arrivalAlertProvider.future);
       await Future<void>.delayed(Duration.zero);
@@ -333,7 +333,7 @@ void main() {
       final c = container();
       await tester.runAsync(() => c.read(arrivalAlertProvider.future));
       await tester.runAsync(() => AlertStore().write(stored()));
-      clock = DateTime(2026, 10, 6, 8, 10);
+      clock = DateTime(2026, 10, 6, 8, 9);
       await resume(tester);
       expect(runner.ensured, hasLength(1));
       expect(c.read(arrivalAlertProvider).value!.firedAt, isNull);
@@ -341,14 +341,14 @@ void main() {
   });
 
   group('iPhone fires exactly once', () {
-    final alertAt = DateTime(2026, 10, 6, 8, 9); // expected 08:14, lead 5
+    final alertAt = DateTime(2026, 10, 6, 8, 8); // expected 08:14, lead 5, 1 min margin
 
     test('a Board re-time after the alert time has passed records firedAt and does not update', () async {
       final c = container();
       await c.read(arrivalAlertProvider.future);
       final ctl = c.read(arrivalAlertProvider.notifier);
       await ctl.set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
-      clock = DateTime(2026, 10, 6, 8, 10); // the OS already showed the 08:09 notification
+      clock = DateTime(2026, 10, 6, 8, 9); // the OS already showed the 08:08 notification
       ctl.onBoardArrivals('1150', [row(predicted: 8 * 3600 + 18 * 60)]);
       await Future<void>.delayed(Duration.zero);
       expect(runner.updated, isEmpty);
@@ -361,7 +361,7 @@ void main() {
       await c.read(arrivalAlertProvider.future);
       final ctl = c.read(arrivalAlertProvider.notifier);
       await ctl.set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
-      clock = DateTime(2026, 10, 6, 8, 8); // before 08:09, but the bus now looks due at 08:12 (alert 08:07)
+      clock = DateTime(2026, 10, 6, 8, 7); // before 08:08, but the bus now looks due at 08:12 (alert 08:06)
       ctl.onBoardArrivals('1150', [row(predicted: 8 * 3600 + 12 * 60)]);
       await Future<void>.delayed(Duration.zero);
       expect(runner.updated, hasLength(1));

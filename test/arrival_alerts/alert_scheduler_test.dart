@@ -49,10 +49,11 @@ void main() {
     now = DateTime(2026, 10, 6, 8, 2);
   });
 
-  test('schedules the estimate at expected − lead, dated from the last live sighting', () async {
+  test('schedules the estimate at expected − lead − margin, dated from the last live sighting', () async {
     await scheduler().scheduleFor(_alert());
     final (m, at) = notes.scheduled.single;
-    expect(at, DateTime(2026, 10, 6, 8, 9));
+    expect(at, DateTime(2026, 10, 6, 8, 8)); // 08:14 − 5 − 1 min margin
+    expect(m.title, 'Route 10 should be about 5 min away', reason: 'the lead, not the 6 min still predicted');
     expect(m.title, 'Route 10 should be about 5 min away');
     expect(m.body, 'Estimate from 8:01 AM. Open BusBoard for the latest.');
   });
@@ -61,7 +62,7 @@ void main() {
     final s = scheduler();
     await s.scheduleFor(_alert());
     await s.scheduleFor(_alert(expected: DateTime(2026, 10, 6, 8, 20)));
-    expect(notes.scheduled.last.$2, DateTime(2026, 10, 6, 8, 15));
+    expect(notes.scheduled.last.$2, DateTime(2026, 10, 6, 8, 14));
   });
 
   test('a timetable alert says so', () async {
@@ -75,6 +76,12 @@ void main() {
     expect(notes.shown.single.title, 'Route 10 is about 3 min away');
     expect(notes.scheduled, isEmpty);
     expect(notes.cancels, 1);
+  });
+
+  test('just past the alert time: notifies at once with the lead, not the minute of margin', () async {
+    now = DateTime(2026, 10, 6, 8, 8);
+    await scheduler().scheduleFor(_alert());
+    expect(notes.shown.single.title, 'Route 10 is about 5 min away');
   });
 
   test('the runner re-schedules on going to the background and cancels on stop', () async {

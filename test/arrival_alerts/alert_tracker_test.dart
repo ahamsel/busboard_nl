@@ -69,12 +69,22 @@ void main() {
     expect(s.finished, isFalse);
   });
 
-  test('fires once at expected − lead', () {
-    final first = tracker.step(alert(), res([dep(pred: sec(8, 14))]), at(9));
+  test('fires once at expected − lead − margin', () {
+    final first = tracker.step(alert(), res([dep(pred: sec(8, 14))]), at(8));
     expect(first.fire, isTrue);
-    expect(first.alert.firedAt, at(9));
-    final again = tracker.step(first.alert, res([dep(pred: sec(8, 14))]), at(9, 30));
+    expect(first.alert.firedAt, at(8));
+    final again = tracker.step(first.alert, res([dep(pred: sec(8, 14))]), at(8, 30));
     expect(again.fire, isFalse);
+  });
+
+  test('the early margin: fires at expected − lead − 60 s, not before', () {
+    expect(alertEarlyMargin, const Duration(seconds: 60));
+    // Expected 08:14, lead 5: 08:09 less the margin is 08:08.
+    final expected = DateTime(2026, 10, 6, 8, 14);
+    final before = tracker.step(alert(), res([dep(pred: sec(8, 14))]), at(7, 59));
+    expect(before.fire, isFalse);
+    expect(before.alert.alertAt, expected.subtract(const Duration(minutes: 5)).subtract(alertEarlyMargin));
+    expect(tracker.step(before.alert, res([dep(pred: sec(8, 14))]), at(8)).fire, isTrue);
   });
 
   test('a bus that jumps ahead fires at once with the real minutes', () {
@@ -86,7 +96,7 @@ void main() {
   test('a later bus waits: the alert re-times itself', () {
     final s = tracker.step(alert(), res([dep(pred: sec(8, 20))]), at(8));
     expect(s.fire, isFalse);
-    expect(s.alert.alertAt, DateTime(2026, 10, 6, 8, 15));
+    expect(s.alert.alertAt, DateTime(2026, 10, 6, 8, 14));
   });
 
   group('matching ladder', () {
@@ -152,8 +162,8 @@ void main() {
     test('a late bus lost for a while does not fire early', () {
       final live = tracker.step(alert(), res([dep(pred: sec(8, 20))]), at(0));
       final lost = tracker.step(live.alert, res([]), at(8));
-      expect(lost.fire, isFalse); // schedule − lead is 08:07; the bus was due 08:20
-      expect(lost.alert.alertAt, DateTime(2026, 10, 6, 8, 15));
+      expect(lost.fire, isFalse); // schedule − lead − margin is 08:06; the bus was due 08:20
+      expect(lost.alert.alertAt, DateTime(2026, 10, 6, 8, 14));
     });
     test('when the last live time was earlier than the schedule, the schedule wins', () {
       final live = tracker.step(alert(), res([dep(pred: sec(8, 10))]), at(0));
@@ -173,10 +183,10 @@ void main() {
   });
 
   group('timetable-only alerts', () {
-    test('use the schedule and fire at schedule − lead', () {
+    test('use the schedule and fire at schedule − lead − margin', () {
       final a = alert(live: false, lead: 3);
-      expect(tracker.step(a, res([]), at(8)).fire, isFalse);
-      final s = tracker.step(a, res([]), at(9));
+      expect(tracker.step(a, res([]), at(7, 59)).fire, isFalse);
+      final s = tracker.step(a, res([]), at(8));
       expect(s.source, AlertSource.timetable);
       expect(s.fire, isTrue);
     });
