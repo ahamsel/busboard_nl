@@ -477,9 +477,19 @@ class Variant {
   final bool confirmTwice;
 }
 
-/// A: today's production path.
+/// The production path: the adapter, which reads the trip update's own time at the alert's stop.
 MetrobusDeparturesResult productionRows(ArrivalAlert alert, ReplayPoll poll) =>
     liveResultForAlert(alert, poll.feed, poll.at);
+
+/// A: the adapter without per-stop times, so every prediction is scheduled − the vehicle's schedule difference
+/// (production before the accuracy fix, and what the iPhone's Board rows carry).
+MetrobusDeparturesResult schedDiffRows(ArrivalAlert alert, ReplayPoll poll) {
+  final feed = poll.feed;
+  final stripped = feed == null || !feed.succeeded
+      ? feed
+      : TimeTrackFetchResult.success(feed.vehicles, source: feed.source!);
+  return liveResultForAlert(alert, stripped, poll.at);
+}
 
 /// The feed's own prediction for stop [seq] of [trip] at [poll]: its `time`, else the timetable plus its `delay`.
 DateTime? feedStopTime(ReplayPoll poll, String trip, int seq, DateTime scheduledAt) {
@@ -518,9 +528,10 @@ MetrobusDeparturesResult _withPredicted(MetrobusDeparturesResult r, int predicte
   );
 }
 
-/// C: production's live row, re-timed to the feed's own prediction for the alert's stop when the poll lists it.
+/// C: A's live row, re-timed to the feed's own prediction for the alert's stop sequence when the poll lists it (the
+/// experiment's version of what production now does by stop id).
 RowSource perStopRows(int seq) => (alert, poll) {
-  final r = productionRows(alert, poll);
+  final r = schedDiffRows(alert, poll);
   if (r.departures.isEmpty || r.departures.first.scheduledDepartureSeconds == null) return r;
   final at = feedStopTime(poll, alert.tripId, seq, alert.scheduledAt);
   if (at == null) return r; // the stop has no update: A's prediction
@@ -542,16 +553,19 @@ RowSource smoothedRows(RowSource inner) {
   };
 }
 
+/// What ships: the adapter's per-stop time (variant C, matched by stop id).
+final production = Variant('production', (_) => productionRows);
+
 final variants = <Variant>[
-  Variant('A production', (_) => productionRows),
-  Variant('B confirm twice', (_) => productionRows, confirmTwice: true),
+  Variant('A schedule diff', (_) => schedDiffRows),
+  Variant('B confirm twice', (_) => schedDiffRows, confirmTwice: true),
   Variant('C per-stop time', (s) => perStopRows(s.seq)),
   Variant('D B+C', (s) => perStopRows(s.seq), confirmTwice: true),
   Variant('E C, median of 3', (s) => smoothedRows(perStopRows(s.seq))),
   // In-sample only: C and A moved 1 min earlier, about their median lateness on the 10-05 capture. Needs a second
   // capture to confirm.
   Variant('F C − 60 s (in-sample)', (s) => shiftedRows(perStopRows(s.seq), -60)),
-  Variant('G A − 60 s (in-sample)', (_) => shiftedRows(productionRows, -60)),
+  Variant('G A − 60 s (in-sample)', (_) => shiftedRows(schedDiffRows, -60)),
 ];
 
 /// [inner]'s prediction moved by [seconds].
@@ -626,7 +640,7 @@ ReplaySummary replayAlerts(List<ReplayPoll> polls, TripSchedule schedule) {
     } else if (s.dropOff.kind == DepartureKind.captureEnded) {
       records.add(record(Outcome.captureEnded));
     } else {
-      final firedAt = runAlert(s, polls, variants.first);
+      final firedAt = runAlert(s, polls, production);
       final target = s.dropOff.at!.subtract(Duration(minutes: s.lead));
       records.add(
         firedAt != null
@@ -1084,7 +1098,8 @@ void main() {
     );
 
     test(
-      'a one-poll dip in the bus\'s delay fires production early; confirming twice or the stop\'s own time does not',
+      'a one-poll dip in the bus\'s delay fires the schedule difference early; confirming twice or the stop\'s own '
+      'time (production) does not',
       () async {
         // At 08:01 the feed says the bus is 5 min early at S1, its first listed stop, but keeps S2 at 08:09.
         final polls = await loadCapture(
@@ -1097,7 +1112,8 @@ void main() {
         );
         final s2lead3 = setupAlerts(polls, schedule).singleWhere((s) => s.stopId == 'S2' && s.lead == 3);
         final fired = {for (final v in variants) v.name: runAlert(s2lead3, polls, v)};
-        expect(fired['A production'], at(1), reason: 'S2 predicted at 08:01 for one poll');
+        expect(runAlert(s2lead3, polls, production), at(6), reason: 'production reads S2\'s own time, 08:09');
+        expect(fired['A schedule diff'], at(1), reason: 'S2 predicted at 08:01 for one poll');
         expect(fired['B confirm twice'], at(6, 30), reason: 'the dip lasted one poll; 08:06 confirmed at 08:06:30');
         expect(fired['C per-stop time'], at(6), reason: 'S2\'s own time stayed 08:09');
         expect(fired['D B+C'], at(6, 30));

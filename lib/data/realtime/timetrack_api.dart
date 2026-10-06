@@ -18,6 +18,21 @@ enum LiveDataSource {
   };
 }
 
+/// One stop visit in a trip's GTFS-Realtime update: the feed's own prediction there.
+class FeedStopTime {
+  const FeedStopTime({this.time, this.delay});
+
+  /// `departure.time`, else `arrival.time`; null when the feed gave neither.
+  final DateTime? time;
+
+  /// `departure.delay`, else `arrival.delay`; null when the feed gave neither.
+  final Duration? delay;
+
+  /// The predicted time at a visit scheduled at [scheduled]: [time], else [scheduled] + [delay]; null when the
+  /// feed gave neither.
+  DateTime? predictedFor(DateTime scheduled) => time ?? (delay == null ? null : scheduled.add(delay!));
+}
+
 /// Outcome of a live vehicle request.
 ///
 /// A successful request may legitimately contain no vehicles outside service
@@ -29,17 +44,23 @@ class TimeTrackFetchResult {
   final int? statusCode;
   final LiveDataSource? source;
 
+  /// Trip id → stop id → that stop's visits on the trip, in feed order, from the trip-updates feed. Only
+  /// [TimeTrackApi.fetchLiveVehiclesResult] fills it; empty otherwise, or when trip updates failed.
+  final Map<String, Map<String, List<FeedStopTime>>> stopTimes;
+
   const TimeTrackFetchResult._({
     required this.vehicles,
     this.error,
     this.statusCode,
     this.source,
+    this.stopTimes = const {},
   });
 
   const TimeTrackFetchResult.success(
     List<TimeTrackVehicle> vehicles, {
     required LiveDataSource source,
-  }) : this._(vehicles: vehicles, source: source);
+    Map<String, Map<String, List<FeedStopTime>>> stopTimes = const {},
+  }) : this._(vehicles: vehicles, source: source, stopTimes: stopTimes);
 
   const TimeTrackFetchResult.failure({required String error, int? statusCode})
     : this._(vehicles: const [], error: error, statusCode: statusCode);
@@ -87,16 +108,20 @@ class TimeTrackApi {
   /// Fetch current positions from the two GTFS-Realtime feeds only (Vehicle Positions and Trip Updates).
   ///
   /// The lean check for the arrival-alert watcher, which needs a vehicle's trip, timestamp and schedule
-  /// difference and nothing else: no Fleet View route status, no fallbacks. Positions failing is a
-  /// failure result. The vehicles are parsed as [fetchVehiclesResult] parses them, so they carry the
-  /// same schedule difference.
+  /// difference, and each trip's per-stop times ([TimeTrackFetchResult.stopTimes], read from the same
+  /// trip-updates response): no Fleet View route status, no fallbacks. Positions failing is a failure
+  /// result. The vehicles are parsed as [fetchVehiclesResult] parses them, so they carry the same
+  /// schedule difference.
   Future<TimeTrackFetchResult> fetchLiveVehiclesResult() async {
-    final result = await _fetchGtfsRealtime(includeRouteStatus: false);
+    final result = await _fetchGtfsRealtime(includeRouteStatus: false, includeStopTimes: true);
     return result ??
         const TimeTrackFetchResult.failure(error: 'GTFS-Realtime vehicle positions unavailable');
   }
 
-  Future<TimeTrackFetchResult?> _fetchGtfsRealtime({bool includeRouteStatus = true}) async {
+  Future<TimeTrackFetchResult?> _fetchGtfsRealtime({
+    bool includeRouteStatus = true,
+    bool includeStopTimes = false,
+  }) async {
     // Start all requests together. Vehicle Positions is required; Trip Updates
     // and Fleet View route metadata are optional enrichments.
     final positionsFuture = _tryGet(_vehiclePositionsUrl);
@@ -221,6 +246,7 @@ class TimeTrackApi {
       return TimeTrackFetchResult.success(
         vehicles,
         source: LiveDataSource.gtfsRealtime,
+        stopTimes: includeStopTimes ? _stopTimesOf(tripUpdates) : const {},
       );
     } catch (error) {
       _debugLog('Could not parse GTFS-Realtime: $error');
@@ -311,6 +337,37 @@ class TimeTrackApi {
     } catch (_) {
       return const {};
     }
+  }
+
+  /// Each trip's stop visits, keyed by stop id: the feed's departure time, else its arrival time, and the delay.
+  static Map<String, Map<String, List<FeedStopTime>>> _stopTimesOf(Map<String, TripUpdate> updates) {
+    final result = <String, Map<String, List<FeedStopTime>>>{};
+    updates.forEach((tripId, update) {
+      final stops = <String, List<FeedStopTime>>{};
+      for (final s in update.stopTimeUpdate) {
+        if (s.stopId.isEmpty) continue;
+        final timed = s.hasDeparture() && s.departure.hasTime()
+            ? s.departure
+            : s.hasArrival() && s.arrival.hasTime()
+            ? s.arrival
+            : null;
+        final delayed = s.hasDeparture() && s.departure.hasDelay()
+            ? s.departure
+            : s.hasArrival() && s.arrival.hasDelay()
+            ? s.arrival
+            : null;
+        (stops[s.stopId] ??= []).add(
+          FeedStopTime(
+            time: timed == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(timed.time.toInt() * 1000),
+            delay: delayed == null ? null : Duration(seconds: delayed.delay),
+          ),
+        );
+      }
+      if (stops.isNotEmpty) result[tripId] = stops;
+    });
+    return result;
   }
 
   Map<String, Map<String, dynamic>> _parseFleetRouteStatuses(

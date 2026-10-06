@@ -322,6 +322,77 @@ void main() {
       expect(lean.vehicles.single.gtfsTripId, 'trip-20');
       expect(lean.vehicles.single.gtfsStopSequenceDeviation, full.vehicles.single.gtfsStopSequenceDeviation);
     });
+
+    test('carries each trip\'s per-stop times from the trip-updates feed', () async {
+      Int64 epoch(DateTime t) => Int64(t.millisecondsSinceEpoch ~/ 1000);
+      final at = DateTime.utc(2026, 7, 28, 18, 10);
+      final perStop = FeedMessage(
+        header: FeedHeader(gtfsRealtimeVersion: '2.0'),
+        entity: [
+          FeedEntity(
+            id: 'trip-20',
+            tripUpdate: TripUpdate(
+              trip: TripDescriptor(tripId: 'trip-20', routeId: '20'),
+              stopTimeUpdate: [
+                // Departure time beats arrival time.
+                TripUpdate_StopTimeUpdate(
+                  stopSequence: 1,
+                  stopId: '1000',
+                  arrival: TripUpdate_StopTimeEvent(delay: 120, time: epoch(at)),
+                  departure: TripUpdate_StopTimeEvent(delay: 180, time: epoch(at.add(const Duration(minutes: 1)))),
+                ),
+                // Arrival only.
+                TripUpdate_StopTimeUpdate(
+                  stopSequence: 2,
+                  stopId: '1001',
+                  arrival: TripUpdate_StopTimeEvent(time: epoch(at.add(const Duration(minutes: 4)))),
+                ),
+                // A delay and no time.
+                TripUpdate_StopTimeUpdate(
+                  stopSequence: 3,
+                  stopId: '1002',
+                  departure: TripUpdate_StopTimeEvent(delay: 240),
+                ),
+                // The same stop again, later on the trip (a loop).
+                TripUpdate_StopTimeUpdate(
+                  stopSequence: 9,
+                  stopId: '1000',
+                  departure: TripUpdate_StopTimeEvent(delay: 60, time: epoch(at.add(const Duration(minutes: 30)))),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+      final client = MockClient((request) async {
+        if (request.url.path.endsWith('/vehiclepositions')) return http.Response.bytes(positions.writeToBuffer(), 200);
+        if (request.url.path.endsWith('/tripupdates')) return http.Response.bytes(perStop.writeToBuffer(), 200);
+        return http.Response('', 403);
+      });
+
+      final result = await TimeTrackApi(client: client).fetchLiveVehiclesResult();
+
+      final trip = result.stopTimes['trip-20']!;
+      expect(trip.keys, unorderedEquals(['1000', '1001', '1002']));
+      final first = trip['1000']!;
+      expect(first, hasLength(2), reason: 'both visits, in feed order');
+      expect(first[0].time, at.add(const Duration(minutes: 1)).toLocal());
+      expect(first[0].delay, const Duration(seconds: 180));
+      expect(first[1].time, at.add(const Duration(minutes: 30)).toLocal());
+      expect(trip['1001']!.single.time, at.add(const Duration(minutes: 4)).toLocal());
+      expect(trip['1001']!.single.delay, isNull);
+      expect(trip['1002']!.single.time, isNull);
+      expect(trip['1002']!.single.delay, const Duration(seconds: 240));
+      final scheduled = DateTime(2026, 7, 28, 15, 0);
+      expect(trip['1002']!.single.predictedFor(scheduled), scheduled.add(const Duration(minutes: 4)));
+      expect(first[0].predictedFor(scheduled), first[0].time, reason: 'a time wins over the delay');
+    });
+
+    test('the Board\'s full call carries no per-stop times, as before', () async {
+      final full = await TimeTrackApi(client: recording([])).fetchVehiclesResult();
+      expect(full.stopTimes, isEmpty);
+      expect(const TimeTrackFetchResult.failure(error: 'down').stopTimes, isEmpty);
+    });
   });
 
   group('trip index (the Board links each trip to one bus)', () {
