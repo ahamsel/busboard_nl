@@ -227,6 +227,8 @@ final nearestStopServiceProvider = Provider<NearestStopService>((ref) {
   return NearestStopService();
 });
 
+// Never retried on its own: every attempt can put a system location dialog in
+// front of the user, so asking again is left to the Try again button.
 final nearestStopsProvider = FutureProvider.autoDispose<List<NearbyStop>>((
   ref,
 ) async {
@@ -254,7 +256,7 @@ final nearestStopsProvider = FutureProvider.autoDispose<List<NearbyStop>>((
     longitude: position.longitude,
     allStops: repo.stopsById.values,
   );
-});
+}, retry: (_, _) => null);
 
 // ─── Bus motion (spec §3.4) ───────────────────────────────
 
