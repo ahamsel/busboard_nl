@@ -1,11 +1,13 @@
 // test/arrival_alerts/alert_replay_test.dart
 //
-// Replays recorded GTFS-RT through the Android watcher's path (spec §5) and scores the alerts against spec §1:
-// within ±1 min of "real departure − lead" in at least 90% of cases, never more than 3 min late, and an alert that
-// never fires is a failure. Record a capture with tool/capture_gtfsrt_alerts.dart, then:
+// Replays recorded GTFS-RT through the Android watcher's path (spec §5) and scores the alerts against spec §1, with
+// the bus's GPS passage at the stop as the real departure: at least 70% of attempted alerts within ±2 min of
+// "passage − lead", at most 20% more than 2 min late, an alert that never fires is a failure, and at least 50 alerts
+// scored. The stop-drop-off truth is printed for reference only. Record a capture with
+// tool/capture_gtfsrt_alerts.dart, then:
 //
-//   ALERT_CAPTURE=test/fixtures/timetrack/raw_gtfsrt_2026-10-05.jsonl ALERT_GTFS=build/gtfs_current \
-//     flutter test test/arrival_alerts/alert_replay_test.dart
+//   TZ=America/St_Johns ALERT_CAPTURE=test/fixtures/timetrack/raw_gtfsrt_2026-10-05.jsonl \
+//     ALERT_GTFS=build/gtfs_current flutter test test/arrival_alerts/alert_replay_test.dart
 //
 // GTFS service-day times are St. John's wall-clock times, and the app reads the feed's timestamps in the phone's
 // local zone, so the capture test runs in America/St_Johns (the machine's zone, or `TZ=America/St_Johns`).
@@ -718,7 +720,7 @@ DateTime? gpsPassage(List<Fix> fixes, double lat, double lon, DateTime from, {Da
   return before.isEmpty ? null : before.last;
 }
 
-// ── Experiment scoring ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── Scoring against the GPS passage ─────────────────────────────────────────────────────────────────────────────────
 
 /// One alert under one variant, against one truth. [error] is null when it never fired (a failure).
 class Trial {
@@ -726,6 +728,62 @@ class Trial {
 
   final AlertSetup setup;
   final Duration? error;
+}
+
+/// The stop-drop-off departure, when the capture has one.
+DateTime? dropOffTruth(AlertSetup s) =>
+    s.dropOff.kind == DepartureKind.passed || s.dropOff.kind == DepartureKind.vanished ? s.dropOff.at : null;
+
+/// Each alert's GPS passage ([gpsPassage], anchored on the drop-off when there is one), with the alerts left out:
+/// no fix within 60 m, or the bus had already passed when the alert was set.
+({Map<AlertSetup, DateTime> at, int noFix, int passedBefore}) gpsTruths(
+  List<AlertSetup> setups,
+  TripSchedule schedule,
+  Map<String, List<Fix>> fixes,
+) {
+  final at = <AlertSetup, DateTime>{};
+  var noFix = 0, passedBefore = 0;
+  for (final s in setups) {
+    final stop = schedule.stopOf(s.stopId);
+    final g = stop == null
+        ? null
+        : gpsPassage(fixes[s.trip] ?? const [], stop.stopLat, stop.stopLon, s.setAt, until: dropOffTruth(s));
+    if (g == null) {
+      noFix++;
+    } else if (!g.isAfter(s.setAt)) {
+      passedBefore++;
+    } else {
+      at[s] = g;
+    }
+  }
+  return (at: at, noFix: noFix, passedBefore: passedBefore);
+}
+
+/// Spec §1's score: [trials] are the attempted alerts, and one that never fired is a failure.
+class GpsScore {
+  GpsScore(this.trials);
+
+  final List<Trial> trials;
+
+  int get attempted => trials.length;
+  int get unfired => trials.where((t) => t.error == null).length;
+
+  /// Fired within ±2 min of passage − lead.
+  int get within => trials.where((t) => t.error != null && t.error!.inSeconds.abs() <= 120).length;
+
+  /// Fired more than 2 min after passage − lead.
+  int get late => trials.where((t) => t.error != null && t.error!.inSeconds > 120).length;
+
+  double get withinShare => attempted == 0 ? 0 : within / attempted;
+  double get lateShare => attempted == 0 ? 0 : late / attempted;
+
+  /// At least 50 scored, at least 70% within ±2 min, at most 20% more than 2 min late.
+  bool get meetsCriterion => attempted >= 50 && withinShare >= 0.7 && lateShare <= 0.2;
+
+  String format() =>
+      'attempted $attempted, unfired $unfired, within ±2 min $within (${(withinShare * 100).toStringAsFixed(1)}%), '
+      'late > 2 min $late (${(lateShare * 100).toStringAsFixed(1)}%): '
+      '${meetsCriterion ? 'meets' : 'does not meet'} §1 (≥ 50 scored, ≥ 70% within, ≤ 20% late)';
 }
 
 /// The accuracy columns for a set of trials.
@@ -763,23 +821,7 @@ const accuracyHeader = 'variant / lead             n  unf  ±60s  ±120s  med|e|
 /// The experiment: every variant on the same alerts, scored against the GPS passage and the stop-drop-off truth.
 String accuracyExperiment(List<ReplayPoll> polls, TripSchedule schedule, Map<String, List<Fix>> fixes) {
   final setups = setupAlerts(polls, schedule).where((s) => !s.tooLate).toList();
-  DateTime? dropOffTruth(AlertSetup s) =>
-      s.dropOff.kind == DepartureKind.passed || s.dropOff.kind == DepartureKind.vanished ? s.dropOff.at : null;
-  final gps = <AlertSetup, DateTime?>{};
-  var noGps = 0, passedBefore = 0;
-  for (final s in setups) {
-    final stop = schedule.stopOf(s.stopId);
-    final g = stop == null
-        ? null
-        : gpsPassage(fixes[s.trip] ?? const [], stop.stopLat, stop.stopLon, s.setAt, until: dropOffTruth(s));
-    if (g == null) {
-      noGps++;
-    } else if (!g.isAfter(s.setAt)) {
-      passedBefore++;
-    } else {
-      gps[s] = g;
-    }
-  }
+  final (at: gps, noFix: noGps, :passedBefore) = gpsTruths(setups, schedule, fixes);
   final fired = {
     for (final v in variants) v: {for (final s in setups) s: runAlert(s, polls, v)},
   };
@@ -950,7 +992,7 @@ void main() {
       : false;
 
   test(
-    'replayed GTFS-RT alerts fire within ±1 min of real departure − lead (spec §1)',
+    'replayed GTFS-RT alerts: ≥ 70% within ±2 min of the GPS passage − lead, ≤ 20% over 2 min late (spec §1)',
     () async {
       final (:polls, :fixes, :schedule, :trips) = await _capture(capturePath!, gtfsDir!);
       expect(polls, isNotEmpty);
@@ -960,10 +1002,11 @@ void main() {
         reason: 'GTFS times are St. John\'s wall clock: run with TZ=America/St_Johns',
       );
 
-      final summary = replayAlerts(polls, schedule);
+      // For reference only: the stop-drop-off truth (the stop leaving the trip's predictions).
+      final dropOff = replayAlerts(polls, schedule);
 
       // The clock is right: a live prediction lands near its timetable time, not 2.5 h off.
-      final first = summary.records.first;
+      final first = dropOff.records.first;
       expect(
         first.expectedAt.difference(first.scheduledAt).abs(),
         lessThanOrEqualTo(const Duration(minutes: 30)),
@@ -974,22 +1017,50 @@ void main() {
       final date = polls.first.at.toIso8601String().substring(0, 10);
       final csv = File('build/alert_replay_$date.csv');
       csv.parent.createSync(recursive: true);
-      csv.writeAsStringSync('${summary.csv()}\n');
+      csv.writeAsStringSync('${dropOff.csv()}\n');
+
+      // The criterion: the production path, scored against the bus's GPS passage.
+      final setups = setupAlerts(polls, schedule).where((s) => !s.tooLate).toList();
+      final gps = gpsTruths(setups, schedule, fixes);
+      final fired = {for (final s in gps.at.keys) s: runAlert(s, polls, production)};
+      Trial trial(AlertSetup s) => Trial(s, fired[s]?.difference(gps.at[s]!.subtract(Duration(minutes: s.lead))));
+      final trialsAll = [for (final s in gps.at.keys) trial(s)];
+      final score = GpsScore(trialsAll);
+      String hms(DateTime? t) => t == null ? '-' : t.toIso8601String().substring(11, 19);
+      final worst = [...trialsAll]
+        ..sort((a, b) => (b.error?.inSeconds.abs() ?? 1 << 30).compareTo(a.error?.inSeconds.abs() ?? 1 << 30));
 
       // ignore: avoid_print
       print(
         'polls ${polls.length} (${polls.where((p) => p.replayed).length} replayed), '
         '${polls.first.at} .. ${polls.last.at}; trips in trip updates $trips; CSV ${csv.path}\n'
-        '${summary.format()}\n'
-        'worst 10 by |error| (unfired first):\n'
-        '${summary.worst(10).map((r) => '  trip ${r.trip} rt ${r.route} stop ${r.stopId} (seq ${r.seq}) lead ${r.lead}: '
-            'set ${r.setAt}, expected ${r.expectedAt}, departure ${r.departure}, target ${r.target}, '
-            'fired ${r.firedAt ?? '-'}, error ${r.error?.inSeconds ?? '-'} s, ${r.outcome.name}').join('\n')}',
+        '${setups.length} alerts set; GPS truth ${gps.at.length}, no GPS fix within 60 m ${gps.noFix}, '
+        'bus passed before the alert was set ${gps.passedBefore}\n'
+        'production against the GPS passage (spec §1): ${score.format()}\n'
+        '${[
+          for (final lead in alertLeadChoices) '  lead $lead min: ${GpsScore([for (final t in trialsAll)
+              if (t.setup.lead == lead) t]).format()}',
+        ].join('\n')}\n'
+        '$accuracyHeader\n'
+        '${accuracyRow('production', trialsAll)}\n'
+        '${[
+          for (final lead in alertLeadChoices) accuracyRow('  lead $lead', [for (final t in trialsAll)
+              if (t.setup.lead == lead) t]),
+        ].join('\n')}\n'
+        'worst 10 against the GPS passage (unfired first):\n'
+        '${worst.take(10).map((t) {
+          final s = t.setup;
+          return '  trip ${s.trip} rt ${s.route} stop ${s.stopId} (seq ${s.seq}) lead ${s.lead}: set ${hms(s.setAt)}, '
+              'predicted at set ${hms(s.alert.expectedAt)}, GPS ${hms(gps.at[s])}, drop-off ${hms(dropOffTruth(s))}, '
+              'fired ${hms(fired[s])}, error ${t.error?.inSeconds ?? 'unfired'} s';
+        }).join('\n')}\n'
+        'for reference, against the stop drop-off (±60 s):\n'
+        '${dropOff.format()}',
       );
 
-      expect(summary.attempted(), greaterThanOrEqualTo(50), reason: 'too few alerts for the score to mean anything');
-      expect(summary.withinShare(), greaterThanOrEqualTo(0.9));
-      expect(summary.worstLate() ?? 0, lessThanOrEqualTo(180));
+      expect(score.attempted, greaterThanOrEqualTo(50), reason: 'too few alerts for the score to mean anything');
+      expect(score.withinShare, greaterThanOrEqualTo(0.7), reason: score.format());
+      expect(score.lateShare, lessThanOrEqualTo(0.2), reason: score.format());
     },
     timeout: const Timeout(Duration(minutes: 20)),
     skip: captureSkip,
@@ -1102,31 +1173,28 @@ void main() {
       },
     );
 
-    test(
-      'a one-poll dip in the bus\'s delay fires the schedule difference early; confirming twice or the stop\'s own '
-      'time (production) does not',
-      () async {
-        // At 08:01 the feed says the bus is 5 min early at S1, its first listed stop, but keeps S2 at 08:09.
-        final polls = await loadCapture(
-          _polls(
-            start,
-            at(12),
-            (t) => t.isBefore(at(8)) ? [s1, s2] : (t.isBefore(at(9)) ? [s2] : null),
-            delayAt: (t, seq) => seq == 2 && !t.isBefore(at(1)) && t.isBefore(at(1, 30)) ? -300 : 180,
-          ),
-        );
-        final s2lead3 = setupAlerts(polls, schedule).singleWhere((s) => s.stopId == 'S2' && s.lead == 3);
-        final fired = {for (final v in variants) v.name: runAlert(s2lead3, polls, v)};
-        expect(runAlert(s2lead3, polls, production), at(5), reason: 'S2\'s own time, 08:09, − 3 − the 1 min margin');
-        expect(fired['A schedule diff'], at(1), reason: 'S2 predicted at 08:01 for one poll');
-        expect(fired['B confirm twice'], at(6, 30), reason: 'the dip lasted one poll; 08:06 confirmed at 08:06:30');
-        expect(fired['C per-stop time'], at(6), reason: 'S2\'s own time stayed 08:09');
-        expect(fired['D B+C'], at(6, 30));
-        expect(fired['E C, median of 3'], at(6));
-        expect(fired['F production (C − 60 s)'], at(5));
-        expect(fired['G A − 60 s (iPhone)'], at(1));
-      },
-    );
+    test('a one-poll dip in the bus\'s delay fires the schedule difference early; confirming twice or the stop\'s own '
+        'time (production) does not', () async {
+      // At 08:01 the feed says the bus is 5 min early at S1, its first listed stop, but keeps S2 at 08:09.
+      final polls = await loadCapture(
+        _polls(
+          start,
+          at(12),
+          (t) => t.isBefore(at(8)) ? [s1, s2] : (t.isBefore(at(9)) ? [s2] : null),
+          delayAt: (t, seq) => seq == 2 && !t.isBefore(at(1)) && t.isBefore(at(1, 30)) ? -300 : 180,
+        ),
+      );
+      final s2lead3 = setupAlerts(polls, schedule).singleWhere((s) => s.stopId == 'S2' && s.lead == 3);
+      final fired = {for (final v in variants) v.name: runAlert(s2lead3, polls, v)};
+      expect(runAlert(s2lead3, polls, production), at(5), reason: 'S2\'s own time, 08:09, − 3 − the 1 min margin');
+      expect(fired['A schedule diff'], at(1), reason: 'S2 predicted at 08:01 for one poll');
+      expect(fired['B confirm twice'], at(6, 30), reason: 'the dip lasted one poll; 08:06 confirmed at 08:06:30');
+      expect(fired['C per-stop time'], at(6), reason: 'S2\'s own time stayed 08:09');
+      expect(fired['D B+C'], at(6, 30));
+      expect(fired['E C, median of 3'], at(6));
+      expect(fired['F production (C − 60 s)'], at(5));
+      expect(fired['G A − 60 s (iPhone)'], at(1));
+    });
 
     test('the GPS passage is the first visit\'s closest point to the stop, between fixes', () {
       const lat = 47.5, lon = -52.7;
@@ -1154,6 +1222,44 @@ void main() {
         gpsPassage(twice, lat, lon, t0, until: t0.subtract(const Duration(minutes: 2))),
         isNull,
         reason: 'no visit before the drop-off',
+      );
+    });
+
+    test('the §1 score: ±2 min inclusive, over 2 min late, an unfired alert fails', () {
+      // The score reads only the errors; every trial shares one alert.
+      AlertSetup any() => AlertSetup(
+        alert: ArrivalAlert(
+          stopId: 'S1',
+          stopName: 'Stop S1',
+          routeShortName: '10',
+          headsign: 'MUN',
+          tripId: 't1',
+          scheduledAt: at(5),
+          expectedAt: at(5),
+          live: true,
+          leadMinutes: 3,
+          setAt: start,
+        ),
+        route: '10',
+        seq: 2,
+        setIndex: 0,
+        dropOff: (kind: DepartureKind.captureEnded, at: null),
+        tooLate: false,
+      );
+      Trial t(int? seconds) => Trial(any(), seconds == null ? null : Duration(seconds: seconds));
+      final score = GpsScore([t(0), t(120), t(-120), t(121), t(-121), t(null), t(30), t(-30), t(60), t(90)]);
+      expect(score.attempted, 10);
+      expect(score.unfired, 1);
+      expect(score.within, 7);
+      expect(score.late, 1);
+      expect(score.withinShare, 0.7);
+      expect(score.lateShare, 0.1);
+      expect(score.meetsCriterion, isFalse, reason: 'fewer than 50 scored');
+      expect(GpsScore([for (var i = 0; i < 5; i++) ...score.trials]).meetsCriterion, isTrue);
+      expect(
+        GpsScore([for (var i = 0; i < 5; i++) ...score.trials, t(200), t(200)]).meetsCriterion,
+        isFalse,
+        reason: 'under 70% within',
       );
     });
 
