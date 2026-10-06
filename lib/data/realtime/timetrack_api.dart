@@ -84,12 +84,26 @@ class TimeTrackApi {
     return _fetchLegacyTimeTrack();
   }
 
-  Future<TimeTrackFetchResult?> _fetchGtfsRealtime() async {
+  /// Fetch current positions from the two GTFS-Realtime feeds only (Vehicle Positions and Trip Updates).
+  ///
+  /// The lean check for the arrival-alert watcher, which needs a vehicle's trip, timestamp and schedule
+  /// difference and nothing else: no Fleet View route status, no fallbacks. Positions failing is a
+  /// failure result. The vehicles are parsed as [fetchVehiclesResult] parses them, so they carry the
+  /// same schedule difference.
+  Future<TimeTrackFetchResult> fetchLiveVehiclesResult() async {
+    final result = await _fetchGtfsRealtime(includeRouteStatus: false);
+    return result ??
+        const TimeTrackFetchResult.failure(error: 'GTFS-Realtime vehicle positions unavailable');
+  }
+
+  Future<TimeTrackFetchResult?> _fetchGtfsRealtime({bool includeRouteStatus = true}) async {
     // Start all requests together. Vehicle Positions is required; Trip Updates
     // and Fleet View route metadata are optional enrichments.
     final positionsFuture = _tryGet(_vehiclePositionsUrl);
     final updatesFuture = _tryGet(_tripUpdatesUrl);
-    final routeStatusFuture = _tryGet(_fleetRouteStatusUrl);
+    final routeStatusFuture = includeRouteStatus
+        ? _tryGet(_fleetRouteStatusUrl)
+        : Future<http.Response?>.value(null);
     final responses = await Future.wait([
       positionsFuture,
       updatesFuture,

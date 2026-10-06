@@ -236,6 +236,94 @@ void main() {
     expect(result.vehicles, isEmpty);
   });
 
+  group('fetchLiveVehiclesResult (the alert watcher\'s lean check)', () {
+    final measuredAt = DateTime.utc(2026, 7, 28, 18);
+    final positions = FeedMessage(
+      header: FeedHeader(gtfsRealtimeVersion: '2.0'),
+      entity: [
+        FeedEntity(
+          id: 'vehicle-0859',
+          vehicle: VehiclePosition(
+            trip: TripDescriptor(tripId: 'trip-20', routeId: '20'),
+            position: Position(latitude: 47.53, longitude: -52.75),
+            currentStopSequence: 1,
+            timestamp: Int64(measuredAt.millisecondsSinceEpoch ~/ 1000),
+            vehicle: VehicleDescriptor(id: '0859'),
+          ),
+        ),
+      ],
+    );
+    final updates = FeedMessage(
+      header: FeedHeader(gtfsRealtimeVersion: '2.0'),
+      entity: [
+        FeedEntity(
+          id: 'trip-20',
+          tripUpdate: TripUpdate(
+            trip: TripDescriptor(tripId: 'trip-20', routeId: '20'),
+            vehicle: VehicleDescriptor(id: '0859'),
+            stopTimeUpdate: [
+              TripUpdate_StopTimeUpdate(
+                stopSequence: 1,
+                stopId: '1000',
+                departure: TripUpdate_StopTimeEvent(delay: 180),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    MockClient recording(List<String> requested, {int positionsStatus = 200}) => MockClient((request) async {
+          requested.add(request.url.toString());
+          if (request.url.path.endsWith('/vehiclepositions')) {
+            return positionsStatus == 200
+                ? http.Response.bytes(positions.writeToBuffer(), 200)
+                : http.Response('', positionsStatus);
+          }
+          if (request.url.path.endsWith('/tripupdates')) {
+            return http.Response.bytes(updates.writeToBuffer(), 200);
+          }
+          return http.Response('', 403);
+        });
+
+    test('requests exactly the two GTFS-RT feeds', () async {
+      final requested = <String>[];
+      final api = TimeTrackApi(client: recording(requested));
+
+      final result = await api.fetchLiveVehiclesResult();
+
+      expect(result.succeeded, isTrue);
+      expect(result.source, LiveDataSource.gtfsRealtime);
+      expect(requested, unorderedEquals([
+        'https://www.mbusapi.ca/gtfsrt/vehiclepositions',
+        'https://www.mbusapi.ca/gtfsrt/tripupdates',
+      ]));
+    });
+
+    test('fails when positions fail, without falling back to any other feed', () async {
+      final requested = <String>[];
+      final api = TimeTrackApi(client: recording(requested, positionsStatus: 503));
+
+      final result = await api.fetchLiveVehiclesResult();
+
+      expect(result.succeeded, isFalse);
+      expect(result.vehicles, isEmpty);
+      expect(requested.where((u) => u.contains('metrobus')), isEmpty);
+      expect(requested.where((u) => !u.contains('/gtfsrt/')), isEmpty);
+    });
+
+    test('a vehicle carries the same schedule difference as the full call', () async {
+      final lean = await TimeTrackApi(client: recording([])).fetchLiveVehiclesResult();
+      final full = await TimeTrackApi(client: recording([])).fetchVehiclesResult();
+
+      expect(lean.vehicles.single.gtfsStopSequenceSchedDifferenceMins, -3);
+      expect(lean.vehicles.single.gtfsStopSequenceSchedDifferenceMins,
+          full.vehicles.single.gtfsStopSequenceSchedDifferenceMins);
+      expect(lean.vehicles.single.gtfsTripId, 'trip-20');
+      expect(lean.vehicles.single.gtfsStopSequenceDeviation, full.vehicles.single.gtfsStopSequenceDeviation);
+    });
+  });
+
   group('trip index (the Board links each trip to one bus)', () {
     TimeTrackVehicle vehicle(String id, {required String positionTime, required int seconds, String trip = '262921'}) =>
         TimeTrackVehicle.fromJson({
