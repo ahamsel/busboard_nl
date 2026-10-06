@@ -10,6 +10,7 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/copy/legal_copy.dart';
+import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_screen.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
@@ -1101,9 +1102,7 @@ void main() {
       expect(surface.moves.where((m) => m.$2 == 15.0), isEmpty, reason: 'no recentre on the stop at zoom 15');
     });
 
-    // Beyond x1.6 at 320 pt the live minutes alone already crowd the title row
-    // (with or without the bell); that is not this test's to settle.
-    for (final scale in [1.0, 1.3, 1.6]) {
+    for (final scale in [1.0, 1.3, 1.6, 2.0]) {
       testWidgets('the alert bell sits in the follow card and nothing overflows at 320 pt, text x$scale', (tester) async {
         final arrival = ArrivalRow(
           routeShortName: '10',
@@ -1131,6 +1130,27 @@ void main() {
         expect(tester.takeException(), isNull);
       });
     }
+
+    testWidgets("the bell is for the followed bus's arrival, even when another is listed first", (tester) async {
+      ArrivalRow arrival(String trip, String vehicle, int minutes) => ArrivalRow(
+            routeShortName: '10',
+            headsign: 'Downtown',
+            scheduledTime: GtfsTime.parse('09:52:00'),
+            predictedTime: GtfsTime.parse('09:55:00'),
+            minutesAway: minutes,
+            liveStatus: LiveStatus.behind,
+            isLive: true,
+            tripId: trip,
+            vehicleNumber: vehicle,
+            isEnhanced: false,
+            routeRun: '10-1',
+          );
+      await pumpFollow(tester, arrivals: [arrival('t99', '9999', 6), arrival('t12', '2573', 12)]);
+      await startFollowing(tester);
+      final bell = tester.widget<AlertBell>(find.byType(AlertBell));
+      expect(bell.arrival.tripId, 't12');
+      expect(bell.arrival.vehicleNumber, '2573');
+    });
 
     testWidgets('no overflow at 320 pt and text x2.0 while following', (tester) async {
       await pumpFollow(tester, size: const Size(320, 640), textScale: 2);
