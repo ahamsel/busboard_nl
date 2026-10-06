@@ -6,7 +6,8 @@ import '../domain/arrival_alerts/alert_tracker.dart';
 import '../domain/arrival_alerts/arrival_alert.dart';
 import 'alert_runner.dart';
 
-/// iPhone: one notification at "expected − lead", re-timed whenever the app learns more (spec §3.1).
+/// iPhone: one notification at the alert time ("expected − lead", less [alertEarlyMargin]), re-timed whenever the
+/// app learns more (spec §3.1). It says the lead, as the Android watcher's alert does.
 class AlertScheduler {
   AlertScheduler({required this.notifications, required this.clock, required this.use24h});
 
@@ -19,7 +20,9 @@ class AlertScheduler {
     final source = alert.live ? AlertSource.live : AlertSource.timetable;
     if (!now.isBefore(alert.alertAt)) {
       final minutes = math.max(0, alert.expectedAt.difference(now).inSeconds ~/ 60);
-      await notifications.show(alertMessage(alert, source: source, minutesAway: minutes, use24h: use24h()));
+      await notifications.show(
+        alertMessage(alert, source: source, minutesAway: alertMinutesAway(alert, minutes), use24h: use24h()),
+      );
       await notifications.cancelScheduled();
       return;
     }

@@ -125,8 +125,8 @@ void main() {
       expect((await store.read())!.expectedAt, DateTime(2026, 10, 6, 8, 14));
       expect(
         notes.scheduled.single.$2,
-        DateTime(2026, 10, 6, 8, 11),
-      ); // 8:14 − 5 + 2 min grace
+        DateTime(2026, 10, 6, 8, 10),
+      ); // 8:14 − 5 − 1 min margin + 2 min grace
       expect(notes.shown, isEmpty);
     },
   );
@@ -145,7 +145,7 @@ void main() {
     test('a live alert: the estimate wording, from the last live sighting', () async {
       await core((_) async => _live(8, 14)).check();
       final (m, at) = notes.scheduled.single;
-      expect(at, DateTime(2026, 10, 6, 8, 11));
+      expect(at, DateTime(2026, 10, 6, 8, 10));
       expect(m.title, 'Route 10 should be about 3 min away');
       expect(m.body, 'Estimate from ${BBTime.of(now, use24h: true)}. Open BusBoard for the latest.');
       expect(m.route, '/board/1150');
@@ -157,7 +157,7 @@ void main() {
         ..['lastSeenAt'] = null)!);
       await core((_) async => _live(8, 14).copyWithNoRows()).check();
       final (m, at) = notes.scheduled.single;
-      expect(at, DateTime(2026, 10, 6, 8, 9));
+      expect(at, DateTime(2026, 10, 6, 8, 8));
       expect(m.title, 'Route 10 is scheduled in about 3 min');
       expect(m.body, 'MUN Centre (stop 1150) · no live tracking for this trip');
     });
@@ -169,10 +169,12 @@ void main() {
   });
 
   test('fires once, cancels the backup, keeps counting until due', () async {
-    now = DateTime(2026, 10, 6, 8, 9);
+    // 08:08 is 08:14 − 5 − the 1 min margin: the prediction says 6 min, the alert says the lead.
+    now = DateTime(2026, 10, 6, 8, 8);
     final c = core((_) async => _live(8, 14));
     expect(await c.check(), WatchOutcome.keepGoing);
     expect(notes.shown.single.title, 'Route 10 is about 5 min away');
+    expect(ongoing.single.$2, 'About 6 min · live', reason: 'the countdown keeps the raw prediction, as the Board');
     expect(notes.cancels, 1);
     now = DateTime(2026, 10, 6, 8, 10);
     expect(await c.check(), WatchOutcome.keepGoing);
@@ -180,6 +182,12 @@ void main() {
     now = DateTime(2026, 10, 6, 8, 14);
     expect(await c.check(), WatchOutcome.finished);
     expect(await store.read(), isNull);
+  });
+
+  test('a bus that jumps ahead fires at once and says its real, smaller minutes', () async {
+    now = DateTime(2026, 10, 6, 8, 1);
+    expect(await core((_) async => _live(8, 4)).check(), WatchOutcome.keepGoing);
+    expect(notes.shown.single.title, 'Route 10 is about 3 min away');
   });
 
   test(
@@ -282,11 +290,11 @@ void main() {
     test('a future backup time is alertAt + grace', () {
       expect(
         backupTimeFor(_alert, DateTime(2026, 10, 6, 8, 1)),
-        DateTime(2026, 10, 6, 8, 9),
+        DateTime(2026, 10, 6, 8, 8), // 08:12 − 5 − 1 min margin + 2 min grace
       );
     });
     test('at or after now: none', () {
-      expect(backupTimeFor(_alert, DateTime(2026, 10, 6, 8, 9)), isNull);
+      expect(backupTimeFor(_alert, DateTime(2026, 10, 6, 8, 8)), isNull);
       expect(backupTimeFor(_alert, DateTime(2026, 10, 6, 8, 30)), isNull);
     });
     test('already fired: none', () {

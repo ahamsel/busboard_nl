@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../../data/gtfs/gtfs_time.dart';
 import '../arrival/arrival_models.dart';
@@ -8,6 +9,18 @@ const alertLeadChoices = <int>[3, 5, 10];
 
 /// The Android backup alert comes this long after the live one would, so a live watcher always fires first (spec §3.3).
 const backupGrace = Duration(minutes: 2);
+
+/// Every alert fires this much before "expected − lead", on both platforms (spec §2.4).
+///
+/// Live predictions run about a minute late against the bus's GPS passage: on the 10-05 capture's replay the
+/// per-stop prediction's median error was +81 s, and firing 60 s earlier brought 72.5% of alerts within ±2 min.
+/// It was tuned on that one capture, so it must be re-checked on a second capture before release.
+const alertEarlyMargin = Duration(seconds: 60);
+
+/// The minutes an alert says when it fires: the chosen lead, or fewer when the prediction is nearer. At the fire
+/// time the prediction is about lead + 1 min away ([alertEarlyMargin]) but the real wait is about the lead; a bus
+/// that jumped ahead still shows its real, smaller minutes. The countdown keeps [predictedMinutes], as the Board does.
+int alertMinutesAway(ArrivalAlert alert, int predictedMinutes) => math.min(alert.leadMinutes, predictedMinutes);
 
 /// No bell for a bus farther than this. Nearer buses have one while a lead time is still possible (from 4 min).
 const alertMaxMinutesAway = 60;
@@ -112,8 +125,8 @@ class ArrivalAlert {
   /// The app route of this stop's Board, which the alert's notifications open (spec §2.2).
   String get boardRoute => '/board/${Uri.encodeComponent(stopId)}';
 
-  /// When the rider wants the heads-up.
-  DateTime get alertAt => expectedAt.subtract(Duration(minutes: leadMinutes));
+  /// When the alert fires: [leadMinutes] before [expectedAt], and [alertEarlyMargin] earlier still.
+  DateTime get alertAt => expectedAt.subtract(Duration(minutes: leadMinutes)).subtract(alertEarlyMargin);
 
   /// The same alert (not a replacement), whatever its timing.
   bool isSameAlert(ArrivalAlert other) =>

@@ -41,7 +41,8 @@ DateTime? backupTimeFor(ArrivalAlert alert, DateTime now) {
 }
 
 /// The backup alert's text. It fires [backupGrace] after the alert time, so the bus is then about
-/// lead − 2 min away; a live alert says it is an estimate from the last live sighting.
+/// lead − 2 min away (the prediction says lead − 1, but runs about [alertEarlyMargin] late); a live alert
+/// says it is an estimate from the last live sighting.
 AlertMessage backupMessage(ArrivalAlert alert, {required DateTime now, required bool use24h}) {
   final minutes = math.max(1, alert.leadMinutes - backupGrace.inMinutes);
   return alert.live
@@ -90,7 +91,7 @@ class WatcherCore {
         ? alertMessage(
             step.alert,
             source: step.source,
-            minutesAway: step.minutesAway,
+            minutesAway: alertMinutesAway(step.alert, step.minutesAway),
             use24h: use24h,
           )
         : null;
