@@ -13,7 +13,7 @@ Version 1.2 is out, and it answers exactly that.
 
 🚌 Follow your bus. Tap any live arrival and the map follows that bus to your stop: its route, how many stops are left, and the minutes until it gets there.
 
-🗺️ A rebuilt live map. I recorded two hours of real rush-hour data and replayed it again and again to retune how every bus moves. No more dots jumping around or sliding backward.
+🗺️ A rebuilt live map. I recorded two hours of real rush-hour data and replayed it again and again to retune how every bus moves. No more jumps of 100 m or more, and no more dots sliding back along their route.
 
 🎨 A full redesign. Route colours, clearer arrival boards, dark mode, and better support for larger text and screen readers.
 
