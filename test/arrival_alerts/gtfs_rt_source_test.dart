@@ -168,6 +168,33 @@ void main() {
       expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 15));
     });
 
+    test('only a visit far from the schedule listed (a loop\'s other end): fallback, not a loop later', () {
+      // Visit 1 (08:12) has left the feed; visit 2 is scheduled 08:45, 33 min off.
+      final feed = _feed([fresh()], stopTimes: {
+        't1': {'1150': [_at(8, 47, delayMins: 2)]},
+      });
+      expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 18));
+    });
+
+    test('a visit within 15 min of the schedule still counts', () {
+      // Scheduled 08:26 (30 − 4): 14 min off.
+      final feed = _feed([fresh()], stopTimes: {
+        't1': {'1150': [_at(8, 30, delayMins: 4)]},
+      });
+      expect(AlertTracker.sameRunWindow, const Duration(minutes: 15));
+      expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 30));
+    });
+
+    test('an absurd feed time (epoch 0) falls back', () {
+      final epoch0 = DateTime.fromMillisecondsSinceEpoch(0);
+      for (final v in [FeedStopTime(time: epoch0, delay: Duration.zero), FeedStopTime(time: epoch0)]) {
+        final feed = _feed([fresh()], stopTimes: {
+          't1': {'1150': [v]},
+        });
+        expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 18));
+      }
+    });
+
     test('a delay and no time: scheduled + delay', () {
       final feed = _feed([fresh()], stopTimes: {
         't1': {'1150': [const FeedStopTime(delay: Duration(minutes: 4))]},

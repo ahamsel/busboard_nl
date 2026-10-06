@@ -2,6 +2,7 @@ import '../../data/gtfs/gtfs_time.dart';
 import '../../data/realtime/metrobus_mobile_api.dart';
 import '../../data/realtime/timetrack_api.dart';
 import '../../data/realtime/timetrack_models.dart';
+import 'alert_tracker.dart';
 import 'arrival_alert.dart';
 
 /// A vehicle fix older than this is a feed ghost, not a live bus.
@@ -10,8 +11,9 @@ const liveFixMaxAge = Duration(minutes: 5);
 /// The alert's live departure from the GTFS-RT feeds, in the shape [AlertTracker] reads (spec §3.1, §3.2).
 ///
 /// The time is the trip update's own time at the alert's stop ([TimeTrackFetchResult.stopTimes], matched by stop
-/// id; a trip that visits the stop twice uses the visit nearest the alert's scheduled time). When the update does
-/// not list the stop, it falls back to the Board's time: the alert's scheduled time shifted by the vehicle's
+/// id; a trip that visits the stop twice uses the visit nearest the alert's scheduled time, and only a visit whose
+/// own timetable time is within [AlertTracker.sameRunWindow] of it counts). When the update has no such visit, it
+/// falls back to the Board's time: the alert's scheduled time shifted by the vehicle's
 /// schedule difference. Either way the trip needs a fresh vehicle with a known delay to count as live. A failed feed
 /// is a failed result; a succeeded feed without such a vehicle is a succeeded result with no rows.
 MetrobusDeparturesResult liveResultForAlert(ArrivalAlert alert, TimeTrackFetchResult? feed, DateTime now) {
@@ -37,7 +39,9 @@ bool _fresh(TimeTrackVehicle v, DateTime now) {
 /// The feed reports no delay as 0 with an empty deviation; that is not "on time" (see `BusTrackStore`).
 bool _delayKnown(TimeTrackVehicle v) => v.gtfsStopSequenceDeviation.isNotEmpty;
 
-/// The trip update's prediction at the alert's stop, or null when it does not list the stop with a time or delay.
+/// The trip update's prediction at the alert's stop, or null when it lists no visit there with a time or delay
+/// within [AlertTracker.sameRunWindow] of the alert's scheduled time. A loop trip's later visit (once the alert's has
+/// left the feed) or an absurd feed time is not this visit.
 DateTime? _feedTimeAtStop(ArrivalAlert alert, TimeTrackFetchResult feed) {
   final visits = feed.stopTimes[alert.tripId]?[alert.stopId];
   if (visits == null) return null;
@@ -49,6 +53,7 @@ DateTime? _feedTimeAtStop(ArrivalAlert alert, TimeTrackFetchResult feed) {
     // A visit's own timetable time is its time less its delay; without both, its prediction stands in.
     final scheduled = v.time != null && v.delay != null ? v.time!.subtract(v.delay!) : predicted;
     final off = scheduled.difference(alert.scheduledAt).abs();
+    if (off > AlertTracker.sameRunWindow) continue;
     if (bestOff == null || off < bestOff) {
       best = predicted;
       bestOff = off;

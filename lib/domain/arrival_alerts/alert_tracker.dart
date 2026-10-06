@@ -39,7 +39,10 @@ class AlertTracker {
   static const maxRun = Duration(minutes: 90);
 
   static const _sameTime = Duration(minutes: 2);
-  static const _sameRunWindow = Duration(minutes: 15);
+
+  /// How far from the alert's scheduled time a row may be and still be the alert's visit: the same run, or (in the
+  /// GTFS-RT source) the trip's per-stop update for the stop. A loop trip's other visit is further off.
+  static const sameRunWindow = Duration(minutes: 15);
 
   AlertStep step(ArrivalAlert alert, MetrobusDeparturesResult? result, DateTime now) {
     final rows = result != null && result.succeeded ? result.departures : const <MetrobusDeparture>[];
@@ -110,13 +113,13 @@ class AlertTracker {
     final run = alert.routeRun;
     if (run != null && run.isNotEmpty) {
       for (final d in candidates) {
-        if (d.routeRun == run && near(d, _sameRunWindow)) return d;
+        if (d.routeRun == run && near(d, sameRunWindow)) return d;
       }
     }
     final bus = alert.vehicle;
     if (bus != null && bus.isNotEmpty) {
       for (final d in candidates) {
-        if (d.vehicle == bus && near(d, _sameRunWindow)) return d;
+        if (d.vehicle == bus && near(d, sameRunWindow)) return d;
       }
     }
     MetrobusDeparture? best;

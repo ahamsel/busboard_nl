@@ -353,6 +353,13 @@ void main() {
                   stopId: '1002',
                   departure: TripUpdate_StopTimeEvent(delay: 240),
                 ),
+                // Time and delay come from the same event: the departure has a time and no delay.
+                TripUpdate_StopTimeUpdate(
+                  stopSequence: 4,
+                  stopId: '1003',
+                  arrival: TripUpdate_StopTimeEvent(delay: 60, time: epoch(at.add(const Duration(minutes: 6)))),
+                  departure: TripUpdate_StopTimeEvent(time: epoch(at.add(const Duration(minutes: 7)))),
+                ),
                 // The same stop again, later on the trip (a loop).
                 TripUpdate_StopTimeUpdate(
                   stopSequence: 9,
@@ -373,7 +380,9 @@ void main() {
       final result = await TimeTrackApi(client: client).fetchLiveVehiclesResult();
 
       final trip = result.stopTimes['trip-20']!;
-      expect(trip.keys, unorderedEquals(['1000', '1001', '1002']));
+      expect(trip.keys, unorderedEquals(['1000', '1001', '1002', '1003']));
+      expect(trip['1003']!.single.time, at.add(const Duration(minutes: 7)).toLocal());
+      expect(trip['1003']!.single.delay, isNull, reason: 'not the arrival\'s delay');
       final first = trip['1000']!;
       expect(first, hasLength(2), reason: 'both visits, in feed order');
       expect(first[0].time, at.add(const Duration(minutes: 1)).toLocal());
