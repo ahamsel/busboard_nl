@@ -53,8 +53,16 @@ TimeTrackVehicle _vehicle({String trip = 't1', String id = '1415', int? diff = -
       departureTimeAtClosestStop: 0,
     );
 
-TimeTrackFetchResult _feed(List<TimeTrackVehicle> v) =>
-    TimeTrackFetchResult.success(v, source: LiveDataSource.gtfsRealtime);
+TimeTrackFetchResult _feed(List<TimeTrackVehicle> v, {Map<String, Map<String, List<FeedStopTime>>>? stopTimes}) =>
+    TimeTrackFetchResult.success(v, source: LiveDataSource.gtfsRealtime, stopTimes: stopTimes ?? const {});
+
+/// The feed's own time at [h]:[m]:[s] on 2026-10-06, with its delay.
+FeedStopTime _at(int h, int m, {int s = 0, int? delayMins}) => FeedStopTime(
+      time: DateTime(2026, 10, 6, h, m, s),
+      delay: delayMins == null ? null : Duration(minutes: delayMins),
+    );
+
+int _secs(int h, int m, [int s = 0]) => h * 3600 + m * 60 + s;
 
 void main() {
   final now = t0.add(const Duration(minutes: 1));
@@ -122,6 +130,81 @@ void main() {
   test('a vehicle without schedule-difference data does not count as live', () {
     final r = liveResultForAlert(_alert(), _feed([_vehicle(diff: null, fix: now)]), now);
     expect(r.departures, isEmpty);
+  });
+
+  group('the feed\'s own time at the alert\'s stop', () {
+    // The vehicle says 6 min behind (08:18); the trip update has its own time for each stop.
+    TimeTrackVehicle fresh() => _vehicle(fix: now.subtract(const Duration(seconds: 20)));
+
+    test('a per-stop time for the alert\'s stop is the prediction', () {
+      final feed = _feed([fresh()], stopTimes: {
+        't1': {
+          '1100': [_at(8, 5, delayMins: 1)],
+          '1150': [_at(8, 16, s: 30, delayMins: 4)],
+        },
+      });
+      final d = liveResultForAlert(_alert(), feed, now).departures.single;
+      expect(d.scheduledDepartureSeconds, _secs(8, 12));
+      expect(d.predictedDepartureSeconds, _secs(8, 16, 30));
+      expect(tracker.step(_alert(), liveResultForAlert(_alert(), feed, now), now).alert.expectedAt,
+          DateTime(2026, 10, 6, 8, 16, 30));
+    });
+
+    test('no update for the stop falls back to scheduled − schedule difference', () {
+      final feed = _feed([fresh()], stopTimes: {
+        't1': {'1100': [_at(8, 5, delayMins: 1)]},
+        't2': {'1150': [_at(8, 30, delayMins: 0)]},
+      });
+      expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 18));
+    });
+
+    test('a stop listed twice uses the visit nearest the alert\'s scheduled time', () {
+      final feed = _feed([fresh()], stopTimes: {
+        't1': {
+          // Scheduled 08:45 (47 − 2) and 08:12 (15 − 3): the second is the alert's visit.
+          '1150': [_at(8, 47, delayMins: 2), _at(8, 15, delayMins: 3)],
+        },
+      });
+      expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 15));
+    });
+
+    test('a delay and no time: scheduled + delay', () {
+      final feed = _feed([fresh()], stopTimes: {
+        't1': {'1150': [const FeedStopTime(delay: Duration(minutes: 4))]},
+      });
+      expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 16));
+    });
+
+    test('an update with neither time nor delay falls back', () {
+      final feed = _feed([fresh()], stopTimes: {
+        't1': {'1150': [const FeedStopTime()]},
+      });
+      expect(liveResultForAlert(_alert(), feed, now).departures.single.predictedDepartureSeconds, _secs(8, 18));
+    });
+
+    test('a stale fix or a vehicle with no delay data is still not live, whatever the stop\'s time', () {
+      final stopTimes = {
+        't1': {'1150': [_at(8, 16, delayMins: 4)]},
+      };
+      final stale = _vehicle(fix: now.subtract(const Duration(minutes: 5, seconds: 1)));
+      expect(liveResultForAlert(_alert(), _feed([stale], stopTimes: stopTimes), now).departures, isEmpty);
+      final noDelay = _vehicle(diff: null, fix: now);
+      expect(liveResultForAlert(_alert(), _feed([noDelay], stopTimes: stopTimes), now).departures, isEmpty);
+      expect(liveResultForAlert(_alert(), _feed([], stopTimes: stopTimes), now).departures, isEmpty,
+          reason: 'a trip update without a vehicle is not live');
+    });
+
+    test('after midnight the stop\'s time counts past 24:00, as the schedule does', () {
+      final late = DateTime(2026, 10, 6, 23, 55);
+      final a = _alert(scheduled: DateTime(2026, 10, 7, 0, 10), setAt: DateTime(2026, 10, 6, 23, 50));
+      final feed = _feed([_vehicle(diff: -3, fix: late)], stopTimes: {
+        't1': {'1150': [FeedStopTime(time: DateTime(2026, 10, 7, 0, 14), delay: const Duration(minutes: 4))]},
+      });
+      final d = liveResultForAlert(a, feed, late).departures.single;
+      expect(d.scheduledDepartureSeconds, _secs(24, 10));
+      expect(d.predictedDepartureSeconds, _secs(24, 14));
+      expect(tracker.step(a, liveResultForAlert(a, feed, late), late).alert.expectedAt, DateTime(2026, 10, 7, 0, 14));
+    });
   });
 
   test('a trip after midnight maps to tomorrow', () {
