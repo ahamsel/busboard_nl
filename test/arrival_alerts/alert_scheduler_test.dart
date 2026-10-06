@@ -54,7 +54,6 @@ void main() {
     final (m, at) = notes.scheduled.single;
     expect(at, DateTime(2026, 10, 6, 8, 8)); // 08:14 − 5 − 1 min margin
     expect(m.title, 'Route 10 should be about 5 min away', reason: 'the lead, not the 6 min still predicted');
-    expect(m.title, 'Route 10 should be about 5 min away');
     expect(m.body, 'Estimate from 8:01 AM. Open BusBoard for the latest.');
   });
 
