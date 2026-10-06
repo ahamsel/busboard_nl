@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../data/gtfs/gtfs_time.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../kit/kit.dart';
 
@@ -39,7 +40,7 @@ class ArrivalRowTile extends StatelessWidget {
 
   /// One sentence for screen readers, e.g. "Route 29 Signal Hill Rd, live, 4 minutes,
   /// expected 09:55" (the expected time is spoken only for live rows with a prediction).
-  static String semanticsLabel(ArrivalRow a) {
+  static String semanticsLabel(ArrivalRow a, {required bool use24h}) {
     final (status, _) = statusOf(a);
     final when = a.minutesAway <= 0
         ? 'now'
@@ -47,7 +48,7 @@ class ArrivalRowTile extends StatelessWidget {
         ? '1 minute'
         : '${a.minutesAway} minutes';
     final expected = a.isLive && a.predictedTime != null
-        ? ', expected ${a.displayTime.toDisplayString()}'
+        ? ', expected ${BBTime.clock(a.displayTime.totalSeconds, use24h: use24h)}'
         : '';
     return 'Route ${a.routeShortName} ${a.headsign}, ${status.toLowerCase()}, $when$expected';
   }
@@ -56,6 +57,8 @@ class ArrivalRowTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bb = context.bb;
     final a = arrival;
+    final use24h = BBTime.use24h(context);
+    String clock(GtfsTime t) => BBTime.clock(t.totalSeconds, use24h: use24h);
     final (status, tone) = statusOf(a);
     final meta = [
       if (a.routeRun != null) a.routeRun!,
@@ -63,13 +66,13 @@ class ArrivalRowTile extends StatelessWidget {
     ].join(' · ');
     final showPredicted = a.isLive && a.predictedTime != null;
     final timeLine = showPredicted
-        ? 'exp ${a.displayTime.toDisplayString()}'
-        : a.scheduledDisplay;
+        ? 'exp ${clock(a.displayTime)}'
+        : clock(a.scheduledTime);
     final showSched = showPredicted && a.scheduledTime != a.predictedTime;
     final soon = a.minutesAway <= soonThresholdMinutes;
 
     return Semantics(
-      label: semanticsLabel(a),
+      label: semanticsLabel(a, use24h: use24h),
       excludeSemantics: true,
       // The row's own semantics replace the card's, so the tap is restated here.
       button: onTap != null ? true : null,
@@ -139,7 +142,7 @@ class ArrivalRowTile extends StatelessWidget {
                     Text(timeLine, style: bb.text.caption),
                     if (showSched)
                       Text(
-                        'sched ${a.scheduledDisplay}',
+                        'sched ${clock(a.scheduledTime)}',
                         style: bb.text.caption.copyWith(
                           decoration: TextDecoration.lineThrough,
                           decorationColor: bb.colors.muted,

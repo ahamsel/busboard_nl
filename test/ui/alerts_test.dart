@@ -34,7 +34,7 @@ ServiceAlert _alert(
 
 final _now = DateTime.now();
 
-Future<void> _pumpScreen(WidgetTester tester, List<ServiceAlert> alerts) async {
+Future<void> _pumpScreen(WidgetTester tester, List<ServiceAlert> alerts, {DateTime? fetchedAt, bool? use24h}) async {
   final repo = GtfsRepository()
     ..stopsById['3080'] = const StopInfo(stopId: '3080', stopName: 'Freshwater Rd', stopLat: 0, stopLon: 0);
   await tester.pumpWidget(ProviderScope(
@@ -44,11 +44,20 @@ Future<void> _pumpScreen(WidgetTester tester, List<ServiceAlert> alerts) async {
             alerts: alerts,
             serviceStatus: const MetrobusServiceStatus(
               serviceOperating: true, serviceId: '1', day: 'Weekday', message: 'Weekday service operating'),
-            fetchedAt: _now,
+            fetchedAt: fetchedAt ?? _now,
             feedTimestamp: null,
           ))),
     ],
-    child: MaterialApp(theme: BBTheme.light(), home: const AlertsScreen()),
+    child: MaterialApp(
+      theme: BBTheme.light(),
+      home: const AlertsScreen(),
+      builder: use24h == null
+          ? null
+          : (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: use24h),
+                child: child!,
+              ),
+    ),
   ));
   await tester.pumpAndSettle();
 }
@@ -70,12 +79,15 @@ void main() {
 
   test('period label: starts / until / active now / none', () {
     final now = DateTime(2026, 10, 4, 12);
-    expect(ServiceAlertCard.periodLabel(_alert('a'), now), isNull);
-    expect(ServiceAlertCard.periodLabel(_alert('a', periods: [ServiceAlertPeriod(start: DateTime(2026, 10, 5, 7, 10))]), now),
+    expect(ServiceAlertCard.periodLabel(_alert('a'), now, use24h: false), isNull);
+    expect(ServiceAlertCard.periodLabel(_alert('a', periods: [ServiceAlertPeriod(start: DateTime(2026, 10, 5, 7, 10))]), now, use24h: false),
         'Starts Oct 5, 7:10 AM');
-    expect(ServiceAlertCard.periodLabel(_alert('a', periods: [ServiceAlertPeriod(end: DateTime(2026, 11, 1, 12, 44))]), now),
+    expect(
+        ServiceAlertCard.periodLabel(_alert('a', periods: [ServiceAlertPeriod(start: DateTime(2026, 10, 5, 7, 10))]), now, use24h: true),
+        'Starts Oct 5, 07:10');
+    expect(ServiceAlertCard.periodLabel(_alert('a', periods: [ServiceAlertPeriod(end: DateTime(2026, 11, 1, 12, 44))]), now, use24h: false),
         'Until Nov 1, 12:44 PM');
-    expect(ServiceAlertCard.periodLabel(_alert('a', periods: [ServiceAlertPeriod(start: DateTime(2026, 1, 1))]), now),
+    expect(ServiceAlertCard.periodLabel(_alert('a', periods: [ServiceAlertPeriod(start: DateTime(2026, 1, 1))]), now, use24h: false),
         'Active now');
   });
 
@@ -96,6 +108,17 @@ void main() {
     expect(find.text('Routes 3 and 10 use Harbour Drive.'), findsOneWidget);
     await tester.scrollUntilVisible(find.text(LegalCopy.footer), 200);
     expect(find.text(LegalCopy.footer), findsOneWidget);
+  });
+
+  testWidgets("times follow the device's 24-hour setting, like the Board", (tester) async {
+    final until = DateTime(2099, 11, 1, 12, 44);
+    final alerts = [_alert('Detour', periods: [ServiceAlertPeriod(end: until)])];
+    await _pumpScreen(tester, alerts, fetchedAt: DateTime(2026, 10, 4, 16, 14, 21), use24h: true);
+    expect(find.text('Updated 16:14:21'), findsOneWidget);
+    expect(find.text('Until Nov 1, 12:44'), findsOneWidget);
+    await _pumpScreen(tester, alerts, fetchedAt: DateTime(2026, 10, 4, 16, 14, 21), use24h: false);
+    expect(find.text('Updated 4:14:21 PM'), findsOneWidget);
+    expect(find.text('Until Nov 1, 12:44 PM'), findsOneWidget);
   });
 
   testWidgets('no active alerts card; ended alerts are not "Upcoming"', (tester) async {

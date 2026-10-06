@@ -26,6 +26,7 @@ export 'bb_skeleton.dart';
 export 'bb_stepper.dart';
 export 'bb_switch.dart';
 export 'bb_text_field.dart';
+export 'bb_time.dart';
 export 'bb_theme.dart';
 export 'bb_toast.dart';
 export 'bb_top_bar.dart';

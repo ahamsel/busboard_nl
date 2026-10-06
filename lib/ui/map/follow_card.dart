@@ -29,13 +29,10 @@ String stopsToGoText(int? stopsTo, String? yourStopName) {
 /// Scheduled departure shifted by the current delay (a positive diff is
 /// early, so a late bus pushes the time later); "sched" when the delay is
 /// unknown. Empty when the timetable has no time for the stop.
-String etaText(TripStop stop, int? schedDiffMins) {
+String etaText(TripStop stop, int? schedDiffMins, {required bool use24h}) {
   final s = stop.departureSeconds;
   if (s == null) return '';
-  final shifted = (s - (schedDiffMins ?? 0) * 60) % 86400;
-  final h = shifted ~/ 3600;
-  final m = (shifted % 3600) ~/ 60;
-  final clock = '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
+  final clock = BBTime.clock(s - (schedDiffMins ?? 0) * 60, use24h: use24h);
   return schedDiffMins == null ? '$clock sched' : clock;
 }
 
@@ -260,7 +257,7 @@ class FollowCardBody extends StatelessWidget {
           for (var k = 0; k < shown.length; k++)
             _TimelineRow(
               stop: shown[k],
-              eta: etaText(shown[k], diff),
+              eta: etaText(shown[k], diff, use24h: BBTime.use24h(context)),
               yours: start + k == idx.yours,
             ),
           if (shown.isEmpty) Text('No more stops on this trip', style: bb.text.caption),
