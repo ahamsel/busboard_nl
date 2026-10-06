@@ -59,6 +59,8 @@ class FollowCardHeader extends StatelessWidget {
     this.routeLabel,
     required this.onStop,
     required this.onSeeAll,
+    this.actionsFirst = false,
+    this.actionsKey,
   });
 
   final FollowSnapshot snapshot;
@@ -75,6 +77,15 @@ class FollowCardHeader extends StatelessWidget {
   final VoidCallback onStop;
   final VoidCallback onSeeAll;
 
+  /// Puts the two actions right under the title row, before the stops-to-go
+  /// line and the strip. The map sets it when the whole header is taller than
+  /// the peek can be (large text, small screens), so both actions stay in the
+  /// peek. The header is just as tall either way, so measuring it is stable.
+  final bool actionsFirst;
+
+  /// On the column holding the actions, so the map can keep them in the peek.
+  final Key? actionsKey;
+
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
@@ -88,7 +99,10 @@ class FollowCardHeader extends StatelessWidget {
           children: [
             Text('Finding bus $id…', style: bb.text.headline),
             const SizedBox(height: BBSpace.m),
-            BBButton(label: 'Stop following', kind: BBButtonKind.quiet, expand: true, onPressed: onStop),
+            KeyedSubtree(
+              key: actionsKey,
+              child: BBButton(label: 'Stop following', kind: BBButtonKind.quiet, expand: true, onPressed: onStop),
+            ),
           ],
         ),
       );
@@ -108,6 +122,15 @@ class FollowCardHeader extends StatelessWidget {
     final arrivedName = arrivedAt == null ? yourStopName : snapshot.stops[arrivedAt].name;
     final line = arrived ? 'Arrived at ${arrivedName ?? 'your stop'}' : stopsToGoText(snapshot.stopsToYourStop, yourStopName);
     final minutes = minutesToYourStop;
+    final actions = Column(
+      key: actionsKey,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        BBButton(label: 'See all stops', expand: true, onPressed: onSeeAll),
+        const SizedBox(height: BBSpace.s),
+        BBButton(label: 'Stop following', kind: BBButtonKind.quiet, expand: true, onPressed: onStop),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),
       child: Column(
@@ -148,16 +171,14 @@ class FollowCardHeader extends StatelessWidget {
               ],
             ],
           ),
+          if (actionsFirst) ...[const SizedBox(height: BBSpace.m), actions],
           const SizedBox(height: BBSpace.s),
           // Its text changes only with the stop count, so a screen reader
           // announces it at most once per stop.
           Semantics(liveRegion: true, label: line, excludeSemantics: true, child: Text(line, style: bb.text.body)),
           const SizedBox(height: BBSpace.s),
           ExcludeSemantics(child: _StopStrip(snapshot: snapshot, routeLabel: route)),
-          const SizedBox(height: BBSpace.m),
-          BBButton(label: 'See all stops', expand: true, onPressed: onSeeAll),
-          const SizedBox(height: BBSpace.s),
-          BBButton(label: 'Stop following', kind: BBButtonKind.quiet, expand: true, onPressed: onStop),
+          if (!actionsFirst) ...[const SizedBox(height: BBSpace.m), actions],
         ],
       ),
     );

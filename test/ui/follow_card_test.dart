@@ -69,6 +69,7 @@ Future<void> _host(
   double textScale = 1,
   double width = 390,
   bool use24h = true,
+  bool actionsFirst = false,
 }) async {
   tester.view.physicalSize = Size(width * 3, 2400);
   tester.view.devicePixelRatio = 3;
@@ -90,6 +91,7 @@ Future<void> _host(
             routeLabel: routeLabel,
             onStop: onStop ?? () {},
             onSeeAll: onSeeAll ?? () {},
+            actionsFirst: actionsFirst,
           ),
         ),
         SliverToBoxAdapter(child: FollowCardBody(snapshot: snapshot)),
@@ -116,6 +118,15 @@ void main() {
     // The device's 12-hour setting, as everywhere else in the app.
     expect(etaText(stop, -1, use24h: false), '12:03 PM');
     expect(etaText(_stop('z', 'Z', 1, 9 * 3600 + 5 * 60), null, use24h: false), '9:05 AM sched');
+  });
+
+  testWidgets('actionsFirst puts both actions between the title row and the stops line', (tester) async {
+    await _host(tester, _snap());
+    expect(tester.getTopLeft(find.text('Stop following')).dy, greaterThan(tester.getTopLeft(find.byKey(const ValueKey('strip-bus'))).dy));
+    await _host(tester, _snap(), actionsFirst: true);
+    final line = tester.getTopLeft(find.text('2 stops to MUN Centre')).dy;
+    expect(tester.getTopLeft(find.text('See all stops')).dy, greaterThan(tester.getTopLeft(find.text('to Downtown')).dy));
+    expect(tester.getBottomLeft(find.text('Stop following')).dy, lessThan(line));
   });
 
   testWidgets("body ETAs follow the device's 12-hour setting", (tester) async {

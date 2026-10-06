@@ -84,6 +84,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   /// Follow-camera air at the screen edges: 16 plus half a followed (1.35×)
   /// marker, so a fitted bus or stop badge is never cut by an edge.
   static const double _fitMargin = 64;
+
+  /// Tallest peek for a header, as a share of the sheet area: below the half
+  /// detent. Only the follow card's actions may stretch it, up to
+  /// [_maxActionsPeek], lifting the half detent above it.
+  static const double _maxPeek = 0.45;
+  static const double _maxActionsPeek = 0.8;
   static const _panPauseDistance = 18.0;
   static const _routeInterval = Duration(seconds: 1);
   static const _routeMoveMeters = 20.0;
@@ -106,6 +112,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   // outgoing header is still mounted while the incoming one is built).
   var _headerKey = GlobalKey();
   double? _headerHeight;
+  // The follow card's actions and how far down the header they end: the peek
+  // always shows them.
+  var _actionsKey = GlobalKey();
+  double? _actionsBottom;
   bool _headerMeasureScheduled = false;
   double _controlsHeight = 44 + BBSpace.m + 44;
   bool _measureScheduled = false;
@@ -582,6 +592,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       _sheetKey = key;
       _headerKey = GlobalKey();
       _headerHeight = null;
+      _actionsKey = GlobalKey();
+      _actionsBottom = null;
       _retiredSheets.add(_sheet);
       _sheet = BBSheetController();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -659,7 +671,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final navInset = BBNavBar.reservedHeight(context);
     final Object? sheetKey = follow == null ? selection : 'follow:${follow.vehicleId}';
     _scheduleControlsMeasure();
-    if (_headerHeight == null) _scheduleHeaderMeasure();
+    // While following, the actions move without the header changing size.
+    if (_headerHeight == null || follow != null) _scheduleHeaderMeasure();
 
     // The credit link: one line, text size capped, measured so MapLibre's own
     // attribution button can sit right after it.
@@ -682,7 +695,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       // under it. Until the header has been measured, an estimate.
       final measured = _headerHeight;
       final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
-      final peek = (peekPx / sheetArea).clamp(0.12, 0.45);
+      // Too tall to peek in full: the follow card moves its actions up, and the
+      // peek grows (if it must) to keep them in it.
+      final headerOverflows = peekPx > _maxPeek * sheetArea;
+      final actionsPx = follow == null || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
+      final peek = math.max((peekPx / sheetArea).clamp(0.12, _maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
       // Just above the card, but below the chips and the my-location pill. With
       // no room, stay on screen and overlap the card's top edge instead.
@@ -820,10 +837,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 key: ValueKey(sheetKey),
                 controller: _sheetFor(sheetKey),
                 peekFraction: peek,
+                halfFraction: math.max(0.5, peek + 0.05),
                 bottomInset: navInset,
                 semanticLabel: 'Map sheet',
                 header: _measuredHeader(follow != null
-                    ? _followHeader(follow, repo, myStop, yourStopArrivals)
+                    ? _followHeader(follow, repo, myStop, yourStopArrivals, actionsFirst: headerOverflows)
                     : switch (selection) {
                         null => MyStopCard.header(),
                         StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),
@@ -875,7 +893,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
 
   /// The follow card at peek. Its destination, route and delay come from the
   /// followed trip: after an arrival the bus may already be on its next one.
-  Widget _followHeader(_Follow f, GtfsRepository repo, StopInfo? myStop, List<ArrivalRow> yourStopArrivals) {
+  Widget _followHeader(_Follow f, GtfsRepository repo, StopInfo? myStop, List<ArrivalRow> yourStopArrivals,
+      {required bool actionsFirst}) {
     final snap = f.snapshot;
     final bus = snap.bus;
     final busOnTrip = bus != null && (bus.currentTripId == null || bus.currentTripId == snap.tripId);
@@ -891,6 +910,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       routeLabel: _routeLabel(repo, snap),
       onStop: () => ref.read(followProvider.notifier).stop(),
       onSeeAll: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)),
+      actionsFirst: actionsFirst,
+      actionsKey: _actionsKey,
     );
   }
 
@@ -911,9 +932,20 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       _headerMeasureScheduled = false;
       if (!mounted) return;
       final height = _headerKey.currentContext?.size?.height;
+      final header = _headerKey.currentContext?.findRenderObject();
+      final actions = _actionsKey.currentContext?.findRenderObject();
+      final actionsBottom = header is RenderBox && actions is RenderBox && actions.attached
+          ? actions.localToGlobal(Offset(0, actions.size.height), ancestor: header).dy
+          : null;
       final previous = _headerHeight;
-      if (height != null && (previous == null || (height - previous).abs() > 0.5)) {
-        setState(() => _headerHeight = height);
+      final heightChanged = height != null && (previous == null || (height - previous).abs() > 0.5);
+      final actionsChanged = (actionsBottom == null) != (_actionsBottom == null) ||
+          (actionsBottom != null && (actionsBottom - _actionsBottom!).abs() > 0.5);
+      if (heightChanged || actionsChanged) {
+        setState(() {
+          if (heightChanged) _headerHeight = height;
+          _actionsBottom = actionsBottom;
+        });
       }
     });
   }
