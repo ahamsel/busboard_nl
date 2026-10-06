@@ -59,7 +59,9 @@ class AlertTracker {
     } else if (a.lastSeenAt != null && now.difference(a.lastSeenAt!) < lostAfter) {
       source = AlertSource.live;
     } else if (a.lastSeenAt != null) {
-      a = a.copyWith(expectedAt: a.scheduledAt, live: false);
+      // Buses rarely get earlier: a gap in a late bus's tracking must not fire early and end the watch.
+      final later = a.expectedAt.isAfter(a.scheduledAt) ? a.expectedAt : a.scheduledAt;
+      a = a.copyWith(expectedAt: later, live: false);
       source = AlertSource.lost;
     } else {
       a = a.copyWith(expectedAt: a.scheduledAt, live: false);

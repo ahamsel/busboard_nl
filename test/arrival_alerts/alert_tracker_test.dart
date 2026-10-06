@@ -132,8 +132,22 @@ void main() {
       expect(gap.source, AlertSource.live);
       expect(gap.alert.expectedAt, DateTime(2026, 10, 6, 8, 15));
     });
-    test('after 2 minutes it falls back to the timetable', () {
+    test('after 2 minutes it falls back to the timetable, but never earlier than the last live time', () {
       final live = tracker.step(alert(), res([dep(pred: sec(8, 15))]), at(0));
+      final lost = tracker.step(live.alert, res([]), at(2, 30));
+      expect(lost.source, AlertSource.lost);
+      expect(lost.alert.live, isFalse);
+      expect(lost.alert.expectedAt, DateTime(2026, 10, 6, 8, 15));
+      expect(tracker.step(lost.alert, res([]), at(3)).alert.expectedAt, DateTime(2026, 10, 6, 8, 15));
+    });
+    test('a late bus lost for a while does not fire early', () {
+      final live = tracker.step(alert(), res([dep(pred: sec(8, 20))]), at(0));
+      final lost = tracker.step(live.alert, res([]), at(8));
+      expect(lost.fire, isFalse); // schedule − lead is 08:07; the bus was due 08:20
+      expect(lost.alert.alertAt, DateTime(2026, 10, 6, 8, 15));
+    });
+    test('when the last live time was earlier than the schedule, the schedule wins', () {
+      final live = tracker.step(alert(), res([dep(pred: sec(8, 10))]), at(0));
       final lost = tracker.step(live.alert, res([]), at(2, 30));
       expect(lost.source, AlertSource.lost);
       expect(lost.alert.expectedAt, DateTime(2026, 10, 6, 8, 12));
