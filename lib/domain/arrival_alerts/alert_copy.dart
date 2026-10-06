@@ -4,9 +4,12 @@ import 'arrival_alert.dart';
 
 /// One notification's text.
 class AlertMessage {
-  const AlertMessage(this.title, this.body);
+  const AlertMessage(this.title, this.body, {this.route});
   final String title;
   final String body;
+
+  /// The app route a tap opens, if any.
+  final String? route;
 }
 
 String _mins(int m) => m == 1 ? '1 min' : '$m min';
@@ -40,7 +43,7 @@ AlertMessage alertMessage(
   } else {
     body = place;
   }
-  return AlertMessage(title, body);
+  return AlertMessage(title, body, route: a.boardRoute);
 }
 
 /// The Android countdown's title (spec §2.2).

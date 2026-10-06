@@ -203,8 +203,17 @@ class _ArrivalAlertTaskHandler extends TaskHandler {
     }());
   }
 
+  /// Opens the alert's Board (spec §2.2). The notification's own route covers a cold start; a running app
+  /// ignores it, so the route also goes to the app.
   @override
-  void onNotificationPressed() => FlutterForegroundTask.launchApp();
+  void onNotificationPressed() => unawaited(() async {
+        String? route;
+        try {
+          route = (await _store.read())?.boardRoute;
+        } catch (_) {}
+        FlutterForegroundTask.launchApp(route);
+        if (route != null) FlutterForegroundTask.sendDataToMain(route);
+      }());
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
@@ -212,15 +221,22 @@ class _ArrivalAlertTaskHandler extends TaskHandler {
 
 /// Android: a `specialUse` foreground service that checks the live feed every 30 s (spec §3.1).
 class AndroidAlertRunner implements AlertRunner {
-  AndroidAlertRunner(this._notifications) {
+  AndroidAlertRunner(this._notifications, {this.onOpen}) {
     FlutterForegroundTask.addTaskDataCallback(_onTaskData);
   }
 
   final AlertNotifications _notifications;
+
+  /// Called with the route of a tapped countdown notification while the app runs.
+  final void Function(String route)? onOpen;
   final _finished = StreamController<void>.broadcast();
 
   void _onTaskData(Object data) {
-    if (data == _finishedEvent) _finished.add(null);
+    if (data == _finishedEvent) {
+      _finished.add(null);
+    } else if (data is String && data.startsWith('/')) {
+      onOpen?.call(data);
+    }
   }
 
   @override
@@ -265,6 +281,12 @@ class AndroidAlertRunner implements AlertRunner {
       );
     }
     if (await FlutterForegroundTask.isRunningService) {
+      // A replaced alert may be for another stop: the notification opens the new one.
+      await FlutterForegroundTask.updateService(
+        notificationTitle: ongoingTitle(alert),
+        notificationText: 'Checking the live feed…',
+        notificationInitialRoute: alert.boardRoute,
+      );
       await FlutterForegroundTask.restartService();
       return;
     }
@@ -279,8 +301,16 @@ class AndroidAlertRunner implements AlertRunner {
       notificationButtons: const [
         NotificationButton(id: _cancelButton, text: 'Cancel alert'),
       ],
+      notificationInitialRoute: alert.boardRoute,
       callback: arrivalAlertWatcherStart,
     );
+  }
+
+  /// A reboot, force-stop or battery saver ends the service but leaves the alert stored.
+  @override
+  Future<void> ensureRunning(ArrivalAlert alert) async {
+    if (await FlutterForegroundTask.isRunningService) return;
+    await start(alert);
   }
 
   @override

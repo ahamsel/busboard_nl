@@ -19,15 +19,21 @@ abstract class AlertNotifications {
   /// A time at or before now shows the alert at once.
   Future<void> schedule(AlertMessage m, DateTime at);
   Future<void> cancelScheduled();
+
+  /// The route of the alert notification that launched the app, or null.
+  Future<String?> launchRoute();
 }
 
 /// [AlertNotifications] on `flutter_local_notifications`. Android posts to the high-importance
 /// "Arrival alerts" channel; the silent "Live tracking" channel belongs to the foreground service.
 class LocalAlertNotifications implements AlertNotifications {
-  LocalAlertNotifications([FlutterLocalNotificationsPlugin? plugin])
+  LocalAlertNotifications({FlutterLocalNotificationsPlugin? plugin, this.onOpen})
       : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   final FlutterLocalNotificationsPlugin _plugin;
+
+  /// Called with a tapped alert's route while the app runs (spec §2.2); [launchRoute] covers a cold start.
+  final void Function(String? route)? onOpen;
   static const shownId = 4101;
   static const scheduledId = 4102;
 
@@ -58,6 +64,7 @@ class LocalAlertNotifications implements AlertNotifications {
           requestSoundPermission: false,
         ),
       ),
+      onDidReceiveNotificationResponse: (r) => onOpen?.call(r.payload),
     );
     _ready = true;
   }
@@ -95,7 +102,7 @@ class LocalAlertNotifications implements AlertNotifications {
   @override
   Future<void> show(AlertMessage m) async {
     await init();
-    await _plugin.show(id: shownId, title: m.title, body: m.body, notificationDetails: _details);
+    await _plugin.show(id: shownId, title: m.title, body: m.body, notificationDetails: _details, payload: m.route);
   }
 
   @override
@@ -114,6 +121,7 @@ class LocalAlertNotifications implements AlertNotifications {
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       title: m.title,
       body: m.body,
+      payload: m.route,
     );
   }
 
@@ -121,5 +129,12 @@ class LocalAlertNotifications implements AlertNotifications {
   Future<void> cancelScheduled() async {
     await init();
     await _plugin.cancel(id: scheduledId);
+  }
+
+  @override
+  Future<String?> launchRoute() async {
+    await init();
+    final d = await _plugin.getNotificationAppLaunchDetails();
+    return d != null && d.didNotificationLaunchApp ? d.notificationResponse?.payload : null;
   }
 }

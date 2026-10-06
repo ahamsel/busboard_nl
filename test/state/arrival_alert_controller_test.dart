@@ -9,6 +9,7 @@ import 'package:busboard_nl/domain/arrival_alerts/alert_copy.dart';
 import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
 import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/state/arrival_alert_providers.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -29,6 +30,8 @@ class FakeNotifications implements AlertNotifications {
   Future<void> schedule(AlertMessage m, DateTime at) async {}
   @override
   Future<void> cancelScheduled() async {}
+  @override
+  Future<String?> launchRoute() async => null;
 }
 
 class FakeRunner implements AlertRunner {
@@ -38,6 +41,7 @@ class FakeRunner implements AlertRunner {
   final started = <ArrivalAlert>[];
   final updated = <ArrivalAlert>[];
   final backgrounded = <ArrivalAlert>[];
+  final ensured = <ArrivalAlert>[];
   int stops = 0;
   final finishedController = StreamController<void>.broadcast();
   @override
@@ -48,6 +52,8 @@ class FakeRunner implements AlertRunner {
   Future<void> update(ArrivalAlert alert) async => updated.add(alert);
   @override
   Future<void> onBackground(ArrivalAlert alert) async => backgrounded.add(alert);
+  @override
+  Future<void> ensureRunning(ArrivalAlert alert) async => ensured.add(alert);
   @override
   Future<void> stop() async => stops++;
 }
@@ -161,6 +167,68 @@ void main() {
     c.read(arrivalAlertProvider.notifier).onBoardArrivals('1150', [row(predicted: 8 * 3600 + 18 * 60)]);
     await Future<void>.delayed(Duration.zero);
     expect(runner.updated, isEmpty);
+  });
+
+  group('a watcher the phone ended (reboot, force-stop, battery saver)', () {
+    ArrivalAlert stored({DateTime? at}) =>
+        ArrivalAlert.fromArrival(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5, now: at ?? now);
+
+    setUp(() => runner = FakeRunner(watchesLive: true));
+
+    test('is made sure of when the app finds a stored live alert', () async {
+      await AlertStore().write(stored());
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured.single.tripId, 't1');
+    });
+
+    test('not with no alert', () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured, isEmpty);
+    });
+
+    test('not for a stale alert', () async {
+      await AlertStore().write(stored(at: now.subtract(const Duration(hours: 3))));
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured, isEmpty);
+    });
+
+    test('not for an alert that has fired', () async {
+      await AlertStore().write(stored().copyWith(firedAt: DateTime(2026, 10, 6, 8, 9)));
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured, isEmpty);
+    });
+
+    test('not on iPhone, where the controller already delivers the alert once', () async {
+      runner = FakeRunner();
+      await AlertStore().write(stored());
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured, isEmpty);
+    });
+
+    testWidgets('again when the app comes back to the foreground', (tester) async {
+      final c = container();
+      await tester.runAsync(() => c.read(arrivalAlertProvider.future));
+      await AlertStore().write(stored());
+      final binding = tester.binding;
+      for (final s in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused]) {
+        binding.handleAppLifecycleStateChanged(s);
+      }
+      for (final s in [AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+        binding.handleAppLifecycleStateChanged(s);
+      }
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      expect(runner.ensured.single.tripId, 't1');
+    });
   });
 
   group('iPhone fires exactly once', () {

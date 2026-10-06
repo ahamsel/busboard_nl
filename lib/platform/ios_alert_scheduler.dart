@@ -53,6 +53,11 @@ class IosAlertRunner implements AlertRunner {
   @override
   Future<void> onBackground(ArrivalAlert alert) => _scheduler.scheduleFor(alert);
 
+  /// The scheduled notification survives a reboot, and re-scheduling here could show a passed alert twice:
+  /// the controller's fire-once bookkeeping owns that, so nothing to do.
+  @override
+  Future<void> ensureRunning(ArrivalAlert alert) async {}
+
   @override
   Future<void> stop() => _scheduler.cancel();
 }
