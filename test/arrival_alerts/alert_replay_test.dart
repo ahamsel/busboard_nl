@@ -1,4 +1,5 @@
 // test/arrival_alerts/alert_replay_test.dart
+// NOTE: targets Metrobus's stop endpoint, which answers 403 Forbidden since 2026-10-05; pending a GTFS-RT rework.
 // ALERT_CAPTURE=test/fixtures/arrival_alerts/stop_1150_<date>.jsonl flutter test test/arrival_alerts/alert_replay_test.dart
 import 'dart:convert';
 import 'dart:io';

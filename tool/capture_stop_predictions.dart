@@ -1,4 +1,5 @@
 // tool/capture_stop_predictions.dart
+// NOTE: targets Metrobus's stop endpoint, which answers 403 Forbidden since 2026-10-05; pending a GTFS-RT rework.
 // Records one stop's Metrobus stop predictions every 30 s, as JSON lines, for the alert replay test.
 //   dart run tool/capture_stop_predictions.dart 1150 120 > test/fixtures/arrival_alerts/stop_1150_<date>.jsonl
 import 'dart:async';

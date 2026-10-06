@@ -7,9 +7,11 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../data/arrival_alerts/alert_notifications.dart';
 import '../data/arrival_alerts/alert_store.dart';
 import '../data/realtime/metrobus_mobile_api.dart';
+import '../data/realtime/timetrack_api.dart';
 import '../domain/arrival_alerts/alert_copy.dart';
 import '../domain/arrival_alerts/alert_tracker.dart';
 import '../domain/arrival_alerts/arrival_alert.dart';
+import '../domain/arrival_alerts/gtfs_rt_source.dart';
 import 'alert_runner.dart';
 
 /// The backup alert comes this long after the live one would, so a live watcher always fires first (spec §3.3).
@@ -52,7 +54,8 @@ class WatcherCore {
   });
 
   final AlertStore store;
-  final Future<MetrobusDeparturesResult> Function(String stopId) fetch;
+  /// The latest live data for the alert; a throw counts as a failed fetch.
+  final Future<MetrobusDeparturesResult> Function(ArrivalAlert alert) fetch;
   final AlertNotifications notifications;
   final Future<void> Function(String title, String text) updateOngoing;
   final DateTime Function() clock;
@@ -64,7 +67,7 @@ class WatcherCore {
     if (alert == null) return WatchOutcome.finished;
     MetrobusDeparturesResult? result;
     try {
-      result = await fetch(alert.stopId);
+      result = await fetch(alert);
     } catch (_) {
       result = null;
     }
@@ -128,10 +131,11 @@ void arrivalAlertWatcherStart() =>
 class _ArrivalAlertTaskHandler extends TaskHandler {
   final _store = AlertStore();
   final _notifications = LocalAlertNotifications();
-  final _api = MetrobusMobileApi();
+  // The open GTFS-RT feeds; Metrobus's stop endpoint answers 403 Forbidden (2026-10-05).
+  final _api = TimeTrackApi();
   late final WatcherCore _core = WatcherCore(
     store: _store,
-    fetch: (stopId) => _api.fetchDeparturesResult(stopId, forceRefresh: true),
+    fetch: (alert) async => liveResultForAlert(alert, await _api.fetchVehiclesResult(), DateTime.now()),
     notifications: _notifications,
     updateOngoing: (title, text) => FlutterForegroundTask.updateService(
       notificationTitle: title,
@@ -206,7 +210,7 @@ class _ArrivalAlertTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
 }
 
-/// Android: a `specialUse` foreground service that checks the stop every 30 s (spec §3.1).
+/// Android: a `specialUse` foreground service that checks the live feed every 30 s (spec §3.1).
 class AndroidAlertRunner implements AlertRunner {
   AndroidAlertRunner(this._notifications) {
     FlutterForegroundTask.addTaskDataCallback(_onTaskData);

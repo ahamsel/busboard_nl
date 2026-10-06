@@ -77,7 +77,7 @@ void main() {
   late List<(String, String)> ongoing;
   late DateTime now;
 
-  WatcherCore core(Future<MetrobusDeparturesResult> Function(String) fetch) =>
+  WatcherCore core(Future<MetrobusDeparturesResult> Function(ArrivalAlert) fetch) =>
       WatcherCore(
         store: store,
         fetch: fetch,
@@ -113,6 +113,16 @@ void main() {
       expect(notes.shown, isEmpty);
     },
   );
+
+  test('the fetch is handed the stored alert', () async {
+    ArrivalAlert? asked;
+    await core((a) async {
+      asked = a;
+      return _live(8, 14);
+    }).check();
+    expect(asked!.isSameAlert(_alert), isTrue);
+    expect(asked!.tripId, 't1');
+  });
 
   test('fires once, cancels the backup, keeps counting until due', () async {
     now = DateTime(2026, 10, 6, 8, 9);
