@@ -8,7 +8,7 @@ import '../../state/arrival_alert_providers.dart';
 import '../kit/kit.dart';
 import 'lead_time_sheet.dart';
 
-/// The bell on an arrival (spec §2.1). Nothing for a bus under 3 or over 60 minutes away.
+/// The bell on an arrival (spec §2.1). Nothing for a bus under 4 or over 60 minutes away.
 class AlertBell extends ConsumerWidget {
   const AlertBell({super.key, required this.arrival, required this.stopId, required this.stopName});
 
@@ -63,6 +63,15 @@ class AlertBell extends ConsumerWidget {
     final lead = await showLeadTimeSheet(context, arrival: arrival, initialLead: initial, explainPermission: explain);
     if (lead == null) return;
     final result = await controller.set(arrival, stopId: stopId, stopName: stopName, leadMinutes: lead);
+    if (result == SetAlertResult.failed && context.mounted) {
+      await BBDialog.show<bool>(
+        context,
+        title: "Couldn't set the alert",
+        message: 'Please try again.',
+        actions: const [BBDialogAction(label: 'OK', value: true, primary: true)],
+      );
+      return;
+    }
     if (result == SetAlertResult.permissionDenied && context.mounted) {
       final open = await BBDialog.show<bool>(
         context,

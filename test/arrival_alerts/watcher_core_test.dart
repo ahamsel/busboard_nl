@@ -15,6 +15,7 @@ class FakeNotifications implements AlertNotifications {
   final scheduled = <(AlertMessage, DateTime)>[];
   int cancels = 0;
   bool throwOnShow = false;
+  bool throwOnCancel = false;
   @override
   Future<void> init() async {}
   @override
@@ -31,7 +32,10 @@ class FakeNotifications implements AlertNotifications {
   Future<void> schedule(AlertMessage m, DateTime at) async =>
       scheduled.add((m, at));
   @override
-  Future<void> cancelScheduled() async => cancels++;
+  Future<void> cancelScheduled() async {
+    if (throwOnCancel) throw Exception('cancel failed');
+    cancels++;
+  }
   @override
   Future<String?> launchRoute() async => null;
 }
@@ -242,6 +246,14 @@ void main() {
       expect(await store.read(), isNull);
     },
   );
+
+  test('a failing backup cancel cannot block the final alert', () async {
+    notes.throwOnCancel = true;
+    now = DateTime(2026, 10, 6, 8, 14);
+    expect(await core((_) async => _live(8, 14)).check(), WatchOutcome.finished);
+    expect(notes.shown, hasLength(1));
+    expect(await store.read(), isNull);
+  });
 
   test('a failing notification cannot block finishing', () async {
     notes.throwOnShow = true;

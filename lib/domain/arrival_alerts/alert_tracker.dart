@@ -78,17 +78,28 @@ class AlertTracker {
   /// The alert's departure among one stop's predictions (spec §3.2), or null.
   MetrobusDeparture? find(ArrivalAlert alert, List<MetrobusDeparture> rows, {DateTime? now}) {
     final when = now ?? alert.setAt;
-    if (alert.tripId.isNotEmpty) {
-      for (final d in rows) {
-        if (d.tripId == alert.tripId) return d;
-      }
-    }
-    // A row with its own, different trip id is another bus, whatever else it shares.
-    bool otherTrip(MetrobusDeparture d) => alert.tripId.isNotEmpty && d.tripId.isNotEmpty && d.tripId != alert.tripId;
     Duration? offSchedule(MetrobusDeparture d) {
       final s = d.scheduledGtfsTime;
       return s == null ? null : instantOfServiceTime(s, when).difference(alert.scheduledAt).abs();
     }
+
+    if (alert.tripId.isNotEmpty) {
+      // The trip may be listed twice: a realtime row beats a timetable one, then the visit nearest the alert's
+      // scheduled time (a loop trip passes the stop twice).
+      MetrobusDeparture? best;
+      for (final d in rows) {
+        if (d.tripId != alert.tripId) continue;
+        if (best == null || (d.isRealtime && !best.isRealtime)) {
+          best = d;
+        } else if (d.isRealtime == best.isRealtime) {
+          final off = offSchedule(d), bestOff = offSchedule(best);
+          if (off != null && (bestOff == null || off < bestOff)) best = d;
+        }
+      }
+      if (best != null) return best;
+    }
+    // A row with its own, different trip id is another bus, whatever else it shares.
+    bool otherTrip(MetrobusDeparture d) => alert.tripId.isNotEmpty && d.tripId.isNotEmpty && d.tripId != alert.tripId;
 
     final candidates = rows.where((d) => d.routeShortName == alert.routeShortName && !otherTrip(d)).toList();
     bool near(MetrobusDeparture d, Duration window) {

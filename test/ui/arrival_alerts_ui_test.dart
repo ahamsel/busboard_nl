@@ -42,12 +42,16 @@ class _Notes implements AlertNotifications {
 
 class _Runner implements AlertRunner {
   final started = <ArrivalAlert>[];
+  bool throwOnStart = false;
   @override
   bool get watchesLive => true;
   @override
   Stream<void> get finished => const Stream.empty();
   @override
-  Future<void> start(ArrivalAlert alert) async => started.add(alert);
+  Future<void> start(ArrivalAlert alert) async {
+    if (throwOnStart) throw Exception('service failed to start');
+    started.add(alert);
+  }
   @override
   Future<void> update(ArrivalAlert alert) async {}
   @override
@@ -69,9 +73,10 @@ ArrivalRow _row(int minutes, {String trip = 't1', String route = '10'}) => Arriv
       vehicleNumber: '1415',
     );
 
-Future<_Runner> _pump(WidgetTester tester, Widget child, {bool grant = true, double textScale = 1, double width = 390}) async {
+Future<_Runner> _pump(WidgetTester tester, Widget child,
+    {bool grant = true, double textScale = 1, double width = 390, bool failStart = false}) async {
   SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
-  final runner = _Runner();
+  final runner = _Runner()..throwOnStart = failStart;
   await tester.pumpWidget(ProviderScope(
     overrides: [
       alertRunnerProvider.overrideWithValue(runner),
@@ -136,6 +141,34 @@ void main() {
     expect(runner.started, isEmpty);
     expect(find.text('Alerts need notifications'), findsOneWidget);
     expect(find.text('Open settings'), findsOneWidget);
+  });
+
+  testWidgets('the alert failing to start says so, and nothing is set', (tester) async {
+    await _pump(tester, AlertBell(arrival: _row(20), stopId: '1150', stopName: 'MUN Centre'), failStart: true);
+    await tester.tap(find.byIcon(BBIcons.bell));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Set alert'));
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't set the alert"), findsOneWidget);
+    expect(find.text('Please try again.'), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't set the alert"), findsNothing);
+    expect(find.byIcon(BBIcons.bellFill), findsNothing);
+    expect(find.byIcon(BBIcons.bell), findsOneWidget);
+  });
+
+  testWidgets('the strip with an alert set does not overflow at 320 pt and 2× text', (tester) async {
+    await _pump(tester, Column(children: [
+      const AlertStrip(),
+      AlertBell(arrival: _row(20), stopId: '1150', stopName: 'MUN Centre'),
+    ]), textScale: 2, width: 320);
+    await tester.tap(find.byIcon(BBIcons.bell));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Set alert'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alert set · Route 10 · 5 min before'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a second bell asks before replacing', (tester) async {

@@ -43,11 +43,16 @@ class FakeRunner implements AlertRunner {
   final backgrounded = <ArrivalAlert>[];
   final ensured = <ArrivalAlert>[];
   int stops = 0;
+  Completer<void>? stopGate;
+  bool throwOnStart = false;
   final finishedController = StreamController<void>.broadcast();
   @override
   Stream<void> get finished => finishedController.stream;
   @override
-  Future<void> start(ArrivalAlert alert) async => started.add(alert);
+  Future<void> start(ArrivalAlert alert) async {
+    if (throwOnStart) throw Exception('service failed to start');
+    started.add(alert);
+  }
   @override
   Future<void> update(ArrivalAlert alert) async => updated.add(alert);
   @override
@@ -55,7 +60,10 @@ class FakeRunner implements AlertRunner {
   @override
   Future<void> ensureRunning(ArrivalAlert alert) async => ensured.add(alert);
   @override
-  Future<void> stop() async => stops++;
+  Future<void> stop() async {
+    stops++;
+    await stopGate?.future;
+  }
 }
 
 final now = DateTime(2026, 10, 6, 8, 0);
@@ -124,6 +132,33 @@ void main() {
     expect(runner.stops, 1);
     expect(c.read(arrivalAlertProvider).value, isNull);
     expect(await AlertStore().read(), isNull);
+  });
+
+  test('a Board refresh while cancelling does not re-time the cancelled alert', () async {
+    final c = container();
+    await c.read(arrivalAlertProvider.future);
+    final ctl = c.read(arrivalAlertProvider.notifier);
+    await ctl.set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+    final gate = runner.stopGate = Completer<void>();
+    final cancelling = ctl.cancel();
+    expect(c.read(arrivalAlertProvider).value, isNull);
+    ctl.onBoardArrivals('1150', [row(predicted: 8 * 3600 + 18 * 60)]);
+    gate.complete();
+    await cancelling;
+    await Future<void>.delayed(Duration.zero);
+    expect(runner.updated, isEmpty);
+    expect(await AlertStore().read(), isNull);
+  });
+
+  test('the runner failing to start: nothing stored, no alert, and the caller is told', () async {
+    runner.throwOnStart = true;
+    final c = container();
+    await c.read(arrivalAlertProvider.future);
+    final result = await c.read(arrivalAlertProvider.notifier).set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+    expect(result, SetAlertResult.failed);
+    expect(c.read(arrivalAlertProvider).value, isNull);
+    expect(await AlertStore().read(), isNull);
+    expect(runner.stops, 1, reason: 'a backup armed before the failure is cancelled');
   });
 
   test('a stored alert comes back after an app restart', () async {
