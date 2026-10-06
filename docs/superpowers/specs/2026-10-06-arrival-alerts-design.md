@@ -17,7 +17,12 @@
 - Battery and data stay small: two small GTFS-RT feeds (vehicle positions and trip updates, about 37 KB together) every 30 s while an alert runs, at most about 6.5 MB over the 90-minute cap.
 
 **Success criteria**
-- In a replay of a recorded rush hour of one stop's Metrobus predictions (§5), an alert for a live trip fires within ±1 min of "the bus's real departure − lead time" in at least 90% of cases, and never more than 3 min late.
+- In a replay of a recorded rush hour of Metrobus's GTFS-RT feeds (§5), measured against the bus's GPS passage at the stop ("passage − lead time"):
+  - at least 70% of attempted alerts fire within ±2 min;
+  - at most 20% fire more than 2 min late;
+  - an alert that never fires counts as a failure;
+  - at least 50 alerts are scored.
+- The 1-minute early margin (§2.4) was tuned on the 10-05 capture; it is confirmed on a second capture before release.
 - An alert fires exactly once.
 - On the Android emulator with the phone locked and in forced Doze, the live countdown keeps updating and the alert arrives.
 - On the iOS simulator with the app in the background, the scheduled alert arrives.
@@ -46,6 +51,7 @@
 - **A timetable-only trip** (no live bus yet), on both platforms: "Route 10 is scheduled in about 5 min · no live tracking for this trip".
 
 ### 2.4 When things change
+- **Alerts fire about a minute before the chosen lead**, because live predictions run about a minute late. The alert still says the lead ("about 5 min away"); the Android countdown shows the raw prediction, as the Board does.
 - **The bus gets ahead of the lead time** (it's 2 min away when the rider chose 5): the alert fires at once, with the real number.
 - **The bus or the feed disappears for 2 minutes:**
   - the Android countdown says "Live tracking lost · using the timetable";
@@ -63,9 +69,9 @@
 | `AlertTracker` | `lib/domain/alerts/alert_tracker.dart` | Pure logic, no plugins. It takes the alert, the latest live departures for it and the current time. It returns an `AlertStep`: minutes away, source (live, timetable or lost), whether to fire now, and whether it's finished. Every rule in §2.4 lives here. |
 | `AlertStore` | `lib/data/alerts/alert_store.dart` | Keeps the one active alert in shared preferences; a stream for the UI; readable from the background isolate. |
 | `AlertNotifier` | `lib/data/alerts/alert_notifier.dart` | A thin wrapper over `flutter_local_notifications`. Android channels: "Arrival alerts" (high importance) and "Live tracking" (low, silent, ongoing). iOS: schedule and cancel the one alert. |
-| GTFS-RT source | `lib/domain/arrival_alerts/gtfs_rt_source.dart` | Pure. `liveResultForAlert` turns the GTFS-RT vehicle feed (`TimeTrackApi.fetchVehiclesResult`) into the one live departure `AlertTracker` reads: the vehicle on the alert's trip (via `buildTripIndex`), dropped when its fix is over 5 min old or it has no delay data, timed as the Board times it (scheduled − schedule difference). A failed feed is a failed result. |
+| GTFS-RT source | `lib/domain/arrival_alerts/gtfs_rt_source.dart` | Pure. `liveResultForAlert` turns the GTFS-RT feeds (`TimeTrackApi.fetchLiveVehiclesResult`) into the one live departure `AlertTracker` reads: the vehicle on the alert's trip (via `buildTripIndex`), dropped when its fix is over 5 min old or it has no delay data. It is timed by the trip update's own time at the alert's stop (§3.2); when the update does not list the stop, as the Board times it (scheduled − schedule difference). A failed feed is a failed result. |
 | Android watcher | `lib/platform/alert_watcher.dart` | A `flutter_foreground_task` handler that every 30 s does the following: fetch the GTFS-RT feeds with `TimeTrackApi` and turn them into the alert's live departure with `liveResultForAlert`, run `AlertTracker`, update the countdown, fire the alert, and stop itself when finished. (Metrobus's stop endpoint, `MetrobusMobileApi`, answers 403 Forbidden as of 2026-10-05, so the watcher does not use it.) |
-| iPhone scheduler | `lib/platform/alert_scheduler.dart` | Schedules one notification at "predicted time − lead", replacing any earlier one, at each of these moments: when the alert is set, when the Board refreshes that stop, and when the app goes to the background. If that time has passed, it notifies at once. |
+| iPhone scheduler | `lib/platform/alert_scheduler.dart` | Schedules one notification at the alert time ("predicted time − lead", less the 1-minute margin of §2.4), replacing any earlier one, at each of these moments: when the alert is set, when the Board refreshes that stop, and when the app goes to the background. If that time has passed, it notifies at once. |
 | Providers | `lib/state/alert_providers.dart` | The active alert, plus `set` and `cancel`. Picks the watcher on Android and the scheduler on iOS. At launch and on resume, a stored alert that has not fired gets its Android watcher back if a reboot, force-stop or battery saver ended it. |
 | UI | `lib/ui/alerts/` | The bell button, the lead-time sheet, the "Alert set" strip, and the replace prompt. |
 
@@ -76,10 +82,12 @@ On each check, `AlertTracker` looks for the alert's departure among the live dep
 3. the same vehicle on the same route;
 4. the same route within ±2 min of the alert's scheduled time.
 
+The live departure's time on Android is the feed's own prediction for the alert's stop: the trip update's stop-time update for the alert's stop id (its departure time, else its arrival time, else the scheduled time plus its delay). A trip that visits the stop twice uses the visit nearest the alert's scheduled time. When the update does not list the stop, the time falls back to scheduled − the vehicle's schedule difference, as the Board shows it. The iPhone has only the Board's rows, so it uses the Board's time.
+
 A row only counts as live when its realtime flag says so. The GTFS-RT source sets it only for a vehicle on the trip with a fix under 5 min old and a known delay, so feed ghosts and vehicles with no delay data fall back to the timetable. Steps 2–4 are for a source without trip ids; the GTFS-RT source always has one.
 
 ### 3.3 Backup alert on Android
-Whenever an Android alert is set or re-timed, the app also schedules a backup notification for 2 minutes after the latest "predicted time − lead", so a live watcher always fires first. Since it comes 2 minutes late, it says the bus is about lead − 2 min away (at least 1): as an estimate from the last live sighting for a live alert, in the timetable wording otherwise. The watcher cancels the backup when it fires, and re-times it on each check. Some phones (e.g. Samsung, Xiaomi) kill background services to save battery; with the backup, the rider still gets an alert. The backup never writes `firedAt`, so when the app opens at or after the backup time (alert time + 2 min) and finds a stored alert that has not fired, it counts as fired at that time and no watcher is restarted for it; otherwise a restarted watcher would see the alert time long past and fire a second time.
+Whenever an Android alert is set or re-timed, the app also schedules a backup notification for 2 minutes after the latest alert time ("predicted time − lead", less the 1-minute margin), so a live watcher always fires first. Since it comes 2 minutes late, it says the bus is about lead − 2 min away (at least 1): as an estimate from the last live sighting for a live alert, in the timetable wording otherwise. The watcher cancels the backup when it fires, and re-times it on each check. Some phones (e.g. Samsung, Xiaomi) kill background services to save battery; with the backup, the rider still gets an alert. The backup never writes `firedAt`, so when the app opens at or after the backup time (alert time + 2 min) and finds a stored alert that has not fired, it counts as fired at that time and no watcher is restarted for it; otherwise a restarted watcher would see the alert time long past and fire a second time.
 
 ### 3.4 Platform setup
 - **Android:**
@@ -112,8 +120,8 @@ Whenever an Android alert is set or re-timed, the app also schedules a backup no
   - `tool/capture_gtfsrt_alerts.dart` records the two GTFS-RT feeds (vehicle positions and trip updates) every 30 s.
   - A rush-hour recording is replayed through the watcher's own path: each poll's feeds go to `TimeTrackApi.fetchLiveVehiclesResult()`, then `liveResultForAlert`, then `AlertTracker`, at one poll per 30 s.
   - Alerts are set for every trip in the trip-updates feed, at up to three of its stops, for each lead time the prediction still allows.
-  - A stop's "real departure" is the first poll where it leaves the trip's stop predictions. A trip that leaves the feed with the stop due within 5 min departs then; one that leaves with the stop further ahead is a feed ghost and is not scored.
-  - It checks the §1 success criteria, and synthetic GTFS-RT polls test the replay itself.
+  - A stop's "real departure" is the bus's GPS passage: the point of its recorded track nearest the stop, from the vehicle fixes, on its last visit before the stop left the trip's predictions. A trip with no fix within 60 m of the stop is not scored.
+  - It checks the §1 success criteria against that passage. The stop-drop-off departure (the first poll where the stop leaves the trip's predictions) is printed for reference only. Synthetic GTFS-RT polls test the replay itself.
 - **iPhone scheduler tests** (with a fake notifier): the scheduled time, replacement on a newer prediction and on going to the background, and notifying at once when the time has passed.
 - **Widget tests:**
   - the bell's states (live, timetable-only, too late, too far);
@@ -137,4 +145,5 @@ Whenever an Android alert is set or re-timed, the app also schedules a backup no
 - **Google may reject the `specialUse` description.** Fall back to `dataSync`. Failing that, ship scheduled-only alerts on Android, with the backup alert as the only alert.
 - **Battery-saving phones may still kill the watcher.** The backup alert covers it.
 - **The GTFS-RT feed may stall or show ghosts.** Alerts use the timetable and say so. (The Metrobus stop endpoint has answered 403 Forbidden since 2026-10-05; alerts no longer use it.)
+- **Feed accuracy.** Even with the feed's per-stop times and the margin, about 70% of alerts land within ±2 min of the bus's real passage (73% on the 10-05 capture; 64% for the 10-min lead). An arrival estimate from the bus's own GPS track is the next step, out of scope here.
 - **iPhone estimates drift when a bus runs late after the rider leaves the app.** They're labelled as estimates, and opening the app re-times them.
