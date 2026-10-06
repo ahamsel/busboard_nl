@@ -136,11 +136,11 @@ void arrivalAlertWatcherStart() =>
 class _ArrivalAlertTaskHandler extends TaskHandler {
   final _store = AlertStore();
   final _notifications = LocalAlertNotifications();
-  // The open GTFS-RT feeds; Metrobus's stop endpoint answers 403 Forbidden (2026-10-05).
+  // The open GTFS-RT feeds (positions and trip updates only); Metrobus's stop endpoint answers 403 Forbidden (2026-10-05).
   final _api = TimeTrackApi();
   late final WatcherCore _core = WatcherCore(
     store: _store,
-    fetch: (alert) async => liveResultForAlert(alert, await _api.fetchVehiclesResult(), DateTime.now()),
+    fetch: (alert) async => liveResultForAlert(alert, await _api.fetchLiveVehiclesResult(), DateTime.now()),
     notifications: _notifications,
     updateOngoing: (title, text) => FlutterForegroundTask.updateService(
       notificationTitle: title,
