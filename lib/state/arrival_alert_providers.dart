@@ -60,9 +60,7 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
       unawaited(sub.cancel());
       lifecycle.dispose();
     });
-    final a = await _loadFresh();
-    _ensureRunning(a);
-    return a;
+    return _settle(await _loadFresh());
   }
 
   Future<ArrivalAlert?> _loadFresh() async {
@@ -77,15 +75,23 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
   }
 
   Future<void> _reload() async {
-    final a = await _loadFresh();
-    state = AsyncData(a);
-    _ensureRunning(a);
+    state = AsyncData(await _settle(await _loadFresh()));
   }
 
-  /// A stored alert that has not fired needs its Android watcher: a reboot, force-stop or battery saver ends it.
-  void _ensureRunning(ArrivalAlert? a) {
-    if (a == null || a.firedAt != null || !_runner.watchesLive) return;
+  /// A stored Android alert that has not fired needs its watcher: a reboot, force-stop or battery saver
+  /// ends it. Not once the OS has delivered the backup notification, though: the backup never writes
+  /// `firedAt`, and a watcher restarted then would see the alert time long past and fire a second time.
+  /// So from the backup time on, the alert counts as fired, at that time. Returns the alert to show.
+  Future<ArrivalAlert?> _settle(ArrivalAlert? a) async {
+    if (a == null || a.firedAt != null || !_runner.watchesLive) return a;
+    final backupAt = a.alertAt.add(backupGrace);
+    if (!_now().isBefore(backupAt)) {
+      final fired = a.copyWith(firedAt: backupAt);
+      await _store.write(fired);
+      return fired;
+    }
     unawaited(_runner.ensureRunning(a).catchError((Object _) {}));
+    return a;
   }
 
   Future<int> lastLead() => _store.lastLead();

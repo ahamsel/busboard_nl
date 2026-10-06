@@ -266,6 +266,80 @@ void main() {
     });
   });
 
+  group('a restart after the backup alert was delivered (Android)', () {
+    // Expected 08:14, lead 5: alertAt 08:09, the backup fires at 08:11.
+    ArrivalAlert stored() => ArrivalAlert.fromArrival(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5, now: now);
+    final backupAt = DateTime(2026, 10, 6, 8, 11);
+
+    setUp(() => runner = FakeRunner(watchesLive: true));
+
+    test('at launch the alert counts as fired, and no watcher restarts it', () async {
+      await AlertStore().write(stored());
+      clock = DateTime(2026, 10, 6, 8, 12); // alertAt was 3 min ago
+      final c = container();
+      final a = await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured, isEmpty);
+      expect(runner.started, isEmpty);
+      expect(a!.firedAt, backupAt);
+      expect(c.read(arrivalAlertProvider).value!.firedAt, backupAt);
+      expect((await AlertStore().read())!.firedAt, backupAt);
+    });
+
+    test('exactly at the backup time it counts as fired', () async {
+      await AlertStore().write(stored());
+      clock = backupAt;
+      final c = container();
+      final a = await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured, isEmpty);
+      expect(a!.firedAt, backupAt);
+    });
+
+    test('before the backup time the watcher is made sure of, as before', () async {
+      await AlertStore().write(stored());
+      clock = DateTime(2026, 10, 6, 8, 10); // alertAt was 1 min ago
+      final c = container();
+      final a = await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.ensured, hasLength(1));
+      expect(a!.firedAt, isNull);
+      expect((await AlertStore().read())!.firedAt, isNull);
+    });
+
+    Future<void> resume(WidgetTester tester) async {
+      final binding = tester.binding;
+      for (final s in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused]) {
+        binding.handleAppLifecycleStateChanged(s);
+      }
+      for (final s in [AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+        binding.handleAppLifecycleStateChanged(s);
+      }
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    }
+
+    testWidgets('on resume the alert counts as fired, and no watcher restarts it', (tester) async {
+      final c = container();
+      await tester.runAsync(() => c.read(arrivalAlertProvider.future));
+      await tester.runAsync(() => AlertStore().write(stored()));
+      clock = DateTime(2026, 10, 6, 8, 12);
+      await resume(tester);
+      expect(runner.ensured, isEmpty);
+      expect(c.read(arrivalAlertProvider).value!.firedAt, backupAt);
+      expect((await tester.runAsync(() => AlertStore().read()))!.firedAt, backupAt);
+    });
+
+    testWidgets('on resume before the backup time the watcher is made sure of', (tester) async {
+      final c = container();
+      await tester.runAsync(() => c.read(arrivalAlertProvider.future));
+      await tester.runAsync(() => AlertStore().write(stored()));
+      clock = DateTime(2026, 10, 6, 8, 10);
+      await resume(tester);
+      expect(runner.ensured, hasLength(1));
+      expect(c.read(arrivalAlertProvider).value!.firedAt, isNull);
+    });
+  });
+
   group('iPhone fires exactly once', () {
     final alertAt = DateTime(2026, 10, 6, 8, 9); // expected 08:14, lead 5
 
