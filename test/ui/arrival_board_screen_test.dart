@@ -141,6 +141,7 @@ Future<void> _pump(
   double textScale = 1.0,
   bool preloadRepo = false,
   bool settle = true,
+  bool use24h = true,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final router = GoRouter(initialLocation: '/board/1150', routes: [
@@ -175,7 +176,7 @@ Future<void> _pump(
       theme: BBTheme.light(),
       routerConfig: router,
       builder: (context, app) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale), alwaysUse24HourFormat: use24h),
         child: app!,
       ),
     ),
@@ -222,6 +223,12 @@ void main() {
     expect(liveNodes, isNotEmpty);
     expect(liveNodes.where((n) => n.label.contains('updated')), isEmpty);
     handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets("the updated time follows the device's 12-hour setting", (tester) async {
+    await _pump(tester, repo: _repo(), timeTrackClient: _liveFeed, use24h: false);
+    expect(find.textContaining(RegExp(r'^ · updated \d{1,2}:\d\d:\d\d [AP]M$')), findsOneWidget);
     await _unmount(tester);
   });
 

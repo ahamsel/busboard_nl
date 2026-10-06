@@ -44,20 +44,24 @@ void main() {
   });
 
   test('screen-reader sentence', () {
-    expect(ArrivalRowTile.semanticsLabel(_row(isEnhanced: true, isLive: true, minutes: 4)),
+    expect(ArrivalRowTile.semanticsLabel(_row(isEnhanced: true, isLive: true, minutes: 4), use24h: true),
         'Route 29 Signal Hill Rd, live, 4 minutes');
-    expect(ArrivalRowTile.semanticsLabel(_row(minutes: 1)), 'Route 29 Signal Hill Rd, scheduled, 1 minute');
-    expect(ArrivalRowTile.semanticsLabel(_row(minutes: 0)), 'Route 29 Signal Hill Rd, scheduled, now');
+    expect(ArrivalRowTile.semanticsLabel(_row(minutes: 1), use24h: true), 'Route 29 Signal Hill Rd, scheduled, 1 minute');
+    expect(ArrivalRowTile.semanticsLabel(_row(minutes: 0), use24h: true), 'Route 29 Signal Hill Rd, scheduled, now');
   });
 
   test('screen-reader sentence includes the expected time for live rows', () {
     expect(
-      ArrivalRowTile.semanticsLabel(_row(isLive: true, status: LiveStatus.behind, minutes: 15, predicted: GtfsTime.parse('09:55:00'))),
+      ArrivalRowTile.semanticsLabel(_row(isLive: true, status: LiveStatus.behind, minutes: 15, predicted: GtfsTime.parse('09:55:00')), use24h: true),
       'Route 29 Signal Hill Rd, late, 15 minutes, expected 09:55',
     );
+    expect(
+      ArrivalRowTile.semanticsLabel(_row(isLive: true, status: LiveStatus.behind, minutes: 15, predicted: GtfsTime.parse('09:55:00')), use24h: false),
+      'Route 29 Signal Hill Rd, late, 15 minutes, expected 9:55 AM',
+    );
     // Scheduled rows (no prediction) and live rows without a predicted time stay as before.
-    expect(ArrivalRowTile.semanticsLabel(_row(isLive: true, minutes: 4)), 'Route 29 Signal Hill Rd, live, 4 minutes');
-    expect(ArrivalRowTile.semanticsLabel(_row(predicted: GtfsTime.parse('09:55:00'))), 'Route 29 Signal Hill Rd, scheduled, 4 minutes');
+    expect(ArrivalRowTile.semanticsLabel(_row(isLive: true, minutes: 4), use24h: true), 'Route 29 Signal Hill Rd, live, 4 minutes');
+    expect(ArrivalRowTile.semanticsLabel(_row(predicted: GtfsTime.parse('09:55:00')), use24h: true), 'Route 29 Signal Hill Rd, scheduled, 4 minutes');
   });
 
   testWidgets('live row shows run/bus, near, exp and struck-through sched', (tester) async {
@@ -71,6 +75,20 @@ void main() {
     expect(find.text('exp 09:55'), findsOneWidget);
     final sched = tester.widget<Text>(find.text('sched 09:52'));
     expect(sched.style!.decoration, TextDecoration.lineThrough);
+  });
+
+  testWidgets("times follow the device's 12-hour setting", (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(kitHost(
+      ArrivalRowTile(arrival: _row(isLive: true, status: LiveStatus.behind, predicted: GtfsTime.parse('09:55:00'))),
+      use24h: false,
+    ));
+    expect(find.text('exp 9:55 AM'), findsOneWidget);
+    expect(find.text('sched 9:52 AM'), findsOneWidget);
+    expect(find.bySemanticsLabel('Route 29 Signal Hill Rd, late, 4 minutes, expected 9:55 AM'), findsOneWidget);
+    await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: _row()), use24h: false));
+    expect(find.text('9:52 AM'), findsOneWidget);
+    handle.dispose();
   });
 
   testWidgets('schedule-only row shows just the scheduled time', (tester) async {

@@ -1,0 +1,141 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:Figtree;font-weight:800;src:url(../../../assets/fonts/Figtree-ExtraBold.ttf)}
+@font-face{font-family:Figtree;font-weight:700;src:url(../../../assets/fonts/Figtree-Bold.ttf)}
+@font-face{font-family:Figtree;font-weight:500;src:url(../../../assets/fonts/Figtree-Medium.ttf)}
+:root{--blue:#3E7CB1;--navy:#1C2A3A;--cream:#F7F2EA;--ink:#1C2A3A}
+html,body{margin:0;width:1080px;height:1350px;overflow:hidden}
+body{font-family:Figtree;color:var(--cream);background:var(--blue);position:relative}
+body.navy{background:var(--navy)} body.cream{background:var(--cream);color:var(--ink)}
+.slide{position:absolute;inset:0;display:none}
+.slide.on{display:block}
+.glow{position:absolute;border-radius:50%;pointer-events:none}
+.g1{width:1500px;height:1500px;left:-500px;top:-760px;background:radial-gradient(circle,rgba(247,242,234,.17) 0,rgba(247,242,234,0) 60%)}
+.g2{width:1400px;height:1400px;right:-620px;bottom:-640px;background:radial-gradient(circle,rgba(28,42,58,.30) 0,rgba(28,42,58,0) 60%)}
+body.navy .g1{background:radial-gradient(circle,rgba(62,124,177,.40) 0,rgba(62,124,177,0) 60%)}
+.pad{position:absolute;left:84px;right:84px}
+.kicker{font-weight:700;font-size:30px;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
+h1{margin:18px 0 0;font-weight:800;font-size:92px;letter-spacing:-2.5px;line-height:1.02}
+h2{margin:18px 0 0;font-weight:800;font-size:76px;letter-spacing:-2px;line-height:1.04}
+p{margin:26px 0 0;font-weight:500;font-size:34px;line-height:1.35;opacity:.92}
+.foot{position:absolute;z-index:5;background:linear-gradient(transparent,rgba(0,0,0,0));left:84px;right:84px;bottom:56px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:26px;opacity:.85}
+.foot img{width:54px;height:54px;border-radius:13px;vertical-align:middle;margin-right:16px}
+.dots span{display:inline-block;width:14px;height:14px;border-radius:50%;margin-left:10px;background:rgba(247,242,234,.35)}
+.dots span.on{background:var(--cream)}
+body.cream .dots span{background:rgba(28,42,58,.25)} body.cream .dots span.on{background:var(--ink)}
+.phone{position:absolute;background:#121A24;border-radius:76px;padding:15px;box-sizing:border-box;box-shadow:0 40px 90px rgba(10,18,28,.45),inset 0 0 0 4px rgba(255,255,255,.08)}
+.phone img{width:100%;height:100%;border-radius:62px;object-fit:cover;object-position:top;display:block}
+.phone .isl{position:absolute;width:150px;height:44px;border-radius:24px;background:#000;left:50%;margin-left:-75px;top:34px}
+.chips{display:flex;flex-wrap:wrap;gap:14px;margin-top:34px}
+.chip{background:rgba(247,242,234,.16);border-radius:999px;padding:14px 26px;font-weight:700;font-size:28px}
+.list{margin-top:46px}
+.item{display:flex;gap:26px;align-items:flex-start;margin-bottom:36px}
+.ic{flex:none;width:76px;height:76px;border-radius:22px;background:rgba(247,242,234,.16);display:flex;align-items:center;justify-content:center;font-size:40px}
+.item b{display:block;font-weight:800;font-size:40px;letter-spacing:-.5px}
+.item span{display:block;font-weight:500;font-size:29px;opacity:.85;margin-top:6px;line-height:1.3}
+.stat{display:flex;gap:28px;margin-top:44px}
+.card{flex:1;background:rgba(247,242,234,.13);border-radius:34px;padding:34px 30px}
+.card .big{font-weight:800;font-size:78px;letter-spacing:-2px;line-height:1}
+.card .was{font-weight:700;font-size:28px;opacity:.7;margin-top:10px;text-decoration:line-through}
+.card .lbl{font-weight:500;font-size:27px;opacity:.9;margin-top:14px;line-height:1.3}
+.ba{position:absolute;top:470px;left:84px;right:84px;display:flex;gap:40px;justify-content:center}
+.ba .col{text-align:center}
+.ba .tag{display:inline-block;font-weight:800;font-size:28px;letter-spacing:.12em;text-transform:uppercase;padding:10px 22px;border-radius:999px;margin-bottom:24px}
+.ba .old .tag{background:rgba(247,242,234,.18)} .ba .new .tag{background:var(--cream);color:var(--blue)}
+.ba .shot{width:420px;height:790px;border-radius:44px;overflow:hidden;box-shadow:0 30px 70px rgba(10,18,28,.4);background:#fff}
+.ba .shot img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.ba .old .shot{opacity:.85;filter:saturate(.7)}
+.cta{display:inline-block;margin-top:44px;background:var(--cream);color:var(--blue);font-weight:800;font-size:40px;padding:26px 44px;border-radius:999px}
+.qr{position:absolute;right:84px;bottom:170px;width:250px;height:250px;background:var(--cream);border-radius:30px;padding:22px;box-sizing:border-box}
+.qr img{width:100%;height:100%}
+.badge{display:inline-block;background:var(--cream);color:var(--blue);font-weight:800;font-size:28px;padding:10px 22px;border-radius:999px}
+</style></head><body>
+<div class="glow g1"></div><div class="glow g2"></div>
+
+<!-- 1 cover -->
+<div class="slide" id="s1">
+  <div class="pad" style="top:110px"><span class="badge">New · Version 1.2</span>
+    <h1>Follow your bus<br>to your stop.</h1>
+    <p>BusBoard NL got a full redesign, a smoother live map and a feature I've wanted since day one.</p></div>
+  <div class="phone" style="width:520px;height:1130px;left:280px;top:690px"><img src="../../app-store/screenshots/APP_IPHONE_69/03-follow-a-bus.png"><div class="isl"></div></div>
+</div>
+
+<!-- 2 before / after -->
+<div class="slide" id="s2">
+  <div class="pad" style="top:110px"><div class="kicker">A whole new look</div>
+    <h2>Same data.<br>Much clearer.</h2>
+    <p style="font-size:31px">Route colours, calmer layouts, light and dark themes.</p></div>
+  <div class="ba">
+    <div class="col old"><span class="tag">Before</span><div class="shot"><img src="src/old-01-mun-centre-1150.png"></div></div>
+    <div class="col new"><span class="tag">Now</span><div class="shot"><img src="../../app-store/screenshots/APP_IPHONE_69/01-mun-centre-1150.png"></div></div>
+  </div>
+</div>
+
+<!-- 3 follow -->
+<div class="slide" id="s3">
+  <div class="pad" style="top:110px;right:560px"><div class="kicker">New</div>
+    <h2>Tap a bus.<br>Follow it.</h2>
+    <p style="font-size:31px">Tap any live arrival and the map follows that bus to your stop.</p>
+    <div class="list" style="margin-top:40px">
+      <div class="item"><div class="ic">🛣️</div><div><b>Its route</b><span>Driven part faded, the rest ahead</span></div></div>
+      <div class="item"><div class="ic">📍</div><div><b>Stops left</b><span>"4 stops to MUN Centre"</span></div></div>
+      <div class="item"><div class="ic">⏱️</div><div><b>Minutes away</b><span>Live, until it arrives</span></div></div>
+    </div></div>
+  <div class="phone" style="width:470px;height:1020px;left:560px;top:190px"><img src="../../app-store/screenshots/APP_IPHONE_69/03-follow-a-bus.png"><div class="isl"></div></div>
+</div>
+
+<!-- 4 motion -->
+<div class="slide" id="s4">
+  <div class="pad" style="top:110px"><div class="kicker">Rebuilt live map</div>
+    <h2>Buses move<br>like buses.</h2>
+    <p style="font-size:31px">I recorded two hours of real rush-hour data and replayed it to retune how every bus moves.</p>
+    <div class="stat">
+      <div class="card"><div class="big">0</div><div class="was">14</div><div class="lbl">jumps over 100 m</div></div>
+      <div class="card"><div class="big">3×</div><div class="lbl" style="margin-top:22px">less time with a dot stuck while its bus is moving</div></div>
+    </div>
+    <div class="stat" style="margin-top:28px">
+      <div class="card"><div class="big">28 m</div><div class="was">1.1 km</div><div class="lbl">worst drift on route 14's loop</div></div>
+      <div class="card"><div class="big">0</div><div class="was">5</div><div class="lbl">buses sliding backward</div></div>
+    </div></div>
+</div>
+
+<!-- 5 everything else -->
+<div class="slide" id="s5">
+  <div class="pad" style="top:110px"><div class="kicker">Still the basics, done better</div>
+    <h2>Everything you<br>check at the stop.</h2>
+    <div class="list">
+      <div class="item"><div class="ic">🚌</div><div><b>Live arrivals</b><span>Predictions next to the schedule, early or late at a glance</span></div></div>
+      <div class="item"><div class="ic">🗺️</div><div><b>Every bus on the map</b><span>In its route colour, updated live</span></div></div>
+      <div class="item"><div class="ic">📍</div><div><b>Stops near you</b><span>Or type the number on any stop pole</span></div></div>
+      <div class="item"><div class="ic">⚠️</div><div><b>Detours and alerts</b><span>Official Metrobus alerts, matched to your stop</span></div></div>
+      <div class="item"><div class="ic">🌙</div><div><b>Dark mode and larger text</b><span>Plus screen-reader support</span></div></div>
+    </div></div>
+</div>
+
+<!-- 6 next -->
+<div class="slide" id="s6">
+  <div class="pad" style="top:110px"><div class="kicker">Coming next</div>
+    <h2>Arrival alerts.</h2>
+    <p>A heads-up when your bus is a few minutes away, so you can stay inside until it's time to go.</p>
+    <div class="chips" style="margin-top:40px"><span class="chip">Worked out on your phone</span><span class="chip">No account</span><span class="chip">No tracking</span></div>
+    <p style="font-size:31px;margin-top:44px">What should come after that? Tell me in the comments.</p></div>
+  <div class="phone" style="width:470px;height:1020px;left:305px;top:830px"><img src="../../app-store/screenshots/APP_IPHONE_69/01-mun-centre-1150.png"><div class="isl"></div></div>
+</div>
+
+<!-- 7 cta -->
+<div class="slide" id="s7">
+  <div class="pad" style="top:110px"><div class="kicker">Free on iOS and Android</div>
+    <h1>Free.<br>No ads.<br>No account.</h1>
+    <p>Built in St. John's for Metrobus riders, on Metrobus open data.</p>
+    <div class="cta">ahamsel.com/busboard</div>
+    <p style="font-size:29px;margin-top:30px;opacity:.8">Search "BusBoard NL" on the App Store or Google Play.</p></div>
+  <div class="qr"><img src="src/qr.svg"></div>
+</div>
+
+<div class="foot"><div><img src="../../../assets/icon/app_icon.png">BusBoard NL</div><div class="dots" id="dots"></div></div>
+<script>
+const n = +new URLSearchParams(location.search).get('s') || 1, total = 7;
+document.getElementById('s' + n).classList.add('on');
+const bg = {4:'navy', 6:'navy'}[n]; if (bg) document.body.classList.add(bg);
+const d = document.getElementById('dots'); for (let i = 1; i <= total; i++) { const s = document.createElement('span'); if (i === n) s.className = 'on'; d.appendChild(s); }
+</script>
+</body></html>

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 
 import '../../state/providers.dart';
 import '../copy/legal_copy.dart';
@@ -122,7 +121,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     TextSpan(text: 'Last updated: ', style: bb.text.caption),
                     TextSpan(
                       text: settings.lastGtfsUpdate != null
-                          ? DateFormat('MMM d, yyyy HH:mm').format(settings.lastGtfsUpdate!)
+                          ? BBTime.dated(settings.lastGtfsUpdate!, use24h: BBTime.use24h(context), year: true)
                           : 'Never',
                       style: bb.text.label,
                     ),
