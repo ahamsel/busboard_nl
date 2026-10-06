@@ -58,7 +58,7 @@
 | `lib/ui/arrival_alerts/alert_bell.dart` | The bell button for a row or the follow card |
 | `lib/ui/arrival_alerts/lead_time_sheet.dart` | The 3 / 5 / 10 sheet, permission line, denied state |
 | `lib/ui/arrival_alerts/alert_strip.dart` | "Alert set · Route 10 · 5 min before · Cancel" |
-| `tool/capture_stop_predictions.dart` | Records one stop's Metrobus JSON every 30 s |
+| `tool/capture_gtfsrt_alerts.dart` | Records the two GTFS-RT feeds every 30 s |
 | Modified | `lib/ui/board/arrival_row_tile.dart`, `lib/ui/board/arrival_board_screen.dart`, `lib/ui/map/follow_card.dart`, `lib/ui/map/map_screen.dart`, `lib/ui/kit/bb_icons.dart`, `lib/main.dart`, `pubspec.yaml`, Android manifest + gradle + res, `ios/Runner/AppDelegate.swift` |
 
 ---
@@ -2951,185 +2951,54 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
-### Task 10: Recording a stop and the replay test
+### Task 10: Recording GTFS-RT and the replay test
+
+Reworked on 2026-10-06: Metrobus's stop endpoint answers 403 since 2026-10-05, and the watcher reads only the two GTFS-RT feeds, so the recording and the replay are GTFS-RT end to end.
 
 **Files:**
-- Create: `tool/capture_stop_predictions.dart`, `test/arrival_alerts/alert_replay_test.dart`
+- Create: `tool/capture_gtfsrt_alerts.dart`, `test/arrival_alerts/alert_replay_test.dart`
 
 **Interfaces:**
 - Consumes:
-  - `MetrobusMobileApi(client:)` and `fetchDeparturesResult(stopId, forceRefresh: true)`;
-  - `package:http/testing.dart` `MockClient`;
-  - Task 2's `AlertTracker`; Task 1's `ArrivalAlert`, `instantOfServiceTime`, `alertLeadChoices`.
+  - `TimeTrackApi(client:)` and `fetchLiveVehiclesResult()`, served each poll's feeds as protobuf bytes by a `package:http/testing.dart` `MockClient`;
+  - `liveResultForAlert` (the watcher's adapter);
+  - Task 2's `AlertTracker`; Task 1's `ArrivalAlert`, `instantOfServiceTime`, `alertLeadChoices`;
+  - `GtfsRepository.loadFromDirectory` for the static schedule.
 - Produces:
-  - **Capture tool:** `dart run tool/capture_stop_predictions.dart <stopId> <minutes>` prints one JSON line per 30 s, `{"t":"<ISO local time>","body":"<raw response>"}`.
-  - **Replay test:** reads the file named by the environment variable `ALERT_CAPTURE` and skips when it's unset.
+  - **Capture tool:** `dart run tool/capture_gtfsrt_alerts.dart --minutes 120 --out <path>` polls both feeds every 30 s and appends one JSON line per poll, `{"fetch_time": "<ISO UTC>", "vehicle_positions": <FeedMessage>, "trip_updates": <FeedMessage>}` (proto3 JSON; a failed feed is `null`). Pure Dart.
+  - **Replay test:** reads the capture named by `ALERT_CAPTURE` and the GTFS directory named by `ALERT_GTFS`; skips when either is unset. Synthetic GTFS-RT cases always run.
 
 Replay method:
-- **Samples:** each capture line becomes one result, via a `MockClient` that returns that line's body.
-- **Real departure** of a trip: the predicted departure in the last sample where the trip appeared as realtime.
-- **Alert setup:** for every trip seen live, and every lead `L` in 3/5/10, set an alert at the first sample where the trip is live and at least `L + 1` min away. Build it from that sample's row (`expectedAt` = its prediction, `lastSeenAt` = sample time, `scheduledAt` = its schedule).
-- **Run:** step the tracker through every later sample until it fires.
-- **Error:** `firedAt − (realDeparture − L)`.
+- **Polls:** each line's two FeedMessages are rebuilt from proto3 JSON and served to the production fetch. One poll per 30 s is replayed (every 3rd of a 10 s capture); every poll keeps its trip listings for the departure truth.
+- **Clock:** a poll's time is its `fetch_time` on the local clock. GTFS times are St. John's wall clock, so the capture test runs in `America/St_Johns` and asserts it.
+- **Alert setup:** for each trip in the trip-updates feed, at the first replayed poll where the adapter gives it a live row, up to three of its listed stops (the first at least 11 min ahead, the last, and one between). For each stop and each lead `L` in 3/5/10, an alert is set only if the app's prediction is at least `L + 1` min away, built as `ArrivalAlert.fromArrival` would build it from the live row (`scheduledAt` from GTFS stop_times, `expectedAt` the prediction, `lastSeenAt` the poll time).
+- **Real departure:** the first poll where the trip is listed but the stop is not. A trip that leaves the feed with the stop due within 5 min departs at the first poll without it; with the stop more than 5 min ahead it is a feed ghost and is not scored. A stop still listed when the capture ends is not scored.
+- **Run:** step the tracker from the set poll on, at each replayed poll, until it fires or finishes.
+- **Error:** `fireTime − (realDeparture − L)`; an alert that never fires is a failure.
 - **Assertions (spec §1):**
-  - at least 90% of errors are within ±60 s;
-  - none is later than +180 s;
-  - print a summary line (count, share within ±60 s, worst late) for the release notes.
+  - at least 50 alerts attempted;
+  - at least 90% of them within ±60 s;
+  - none later than +180 s;
+  - print totals and a by-lead breakdown, and write a per-alert CSV to `build/alert_replay_<date>.csv`.
 
-- [ ] **Step 1: Write the capture tool**
-
-```dart
-// tool/capture_stop_predictions.dart
-// Records one stop's Metrobus stop predictions every 30 s, as JSON lines, for the alert replay test.
-//   dart run tool/capture_stop_predictions.dart 1150 120 > test/fixtures/arrival_alerts/stop_1150_<date>.jsonl
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:http/http.dart' as http;
-
-Future<void> main(List<String> args) async {
-  if (args.length != 2) {
-    stderr.writeln('usage: dart run tool/capture_stop_predictions.dart <stopId> <minutes>');
-    exit(64);
-  }
-  final stopId = args[0];
-  final end = DateTime.now().add(Duration(minutes: int.parse(args[1])));
-  final url = Uri.parse('https://www.metrobusmobile.com/NextBus/fleetview.asp').replace(queryParameters: {
-    'type': 'timetrackjson',
-    'stopid': stopId,
-    'lookaheadMinutes': '120',
-  });
-  final client = http.Client();
-  while (DateTime.now().isBefore(end)) {
-    final t = DateTime.now();
-    try {
-      final r = await client.get(url).timeout(const Duration(seconds: 10));
-      stdout.writeln(jsonEncode({'t': t.toIso8601String(), 'status': r.statusCode, 'body': r.body}));
-    } catch (e) {
-      stdout.writeln(jsonEncode({'t': t.toIso8601String(), 'status': 0, 'body': ''}));
-      stderr.writeln('$t $e');
-    }
-    await Future<void>.delayed(const Duration(seconds: 30) - DateTime.now().difference(t));
-  }
-  client.close();
-}
-```
-
-- [ ] **Step 2: Write the replay test**
-
-```dart
-// test/arrival_alerts/alert_replay_test.dart
-// ALERT_CAPTURE=test/fixtures/arrival_alerts/stop_1150_<date>.jsonl flutter test test/arrival_alerts/alert_replay_test.dart
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
-import 'package:busboard_nl/domain/arrival_alerts/alert_tracker.dart';
-import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-
-void main() {
-  final path = Platform.environment['ALERT_CAPTURE'];
-
-  test('replayed alerts fire within ±1 min of real departure − lead (spec §1)', () async {
-    final samples = <(DateTime, MetrobusDeparturesResult)>[];
-    for (final line in File(path!).readAsLinesSync().where((l) => l.trim().isNotEmpty)) {
-      final j = jsonDecode(line) as Map<String, dynamic>;
-      final body = j['body'] as String;
-      final status = j['status'] as int? ?? 200;
-      final api = MetrobusMobileApi(client: MockClient((_) async => http.Response(body, status == 0 ? 500 : status)));
-      samples.add((DateTime.parse(j['t'] as String), await api.fetchDeparturesResult('1150', forceRefresh: true)));
-    }
-
-    DateTime? predictedAt(MetrobusDeparture d, DateTime t) {
-      final g = d.predictedGtfsTime ?? d.scheduledGtfsTime;
-      return g == null ? null : instantOfServiceTime(g, t);
-    }
-
-    // Real departure: the last realtime prediction for each trip.
-    final real = <String, DateTime>{};
-    for (final (t, r) in samples) {
-      for (final d in r.departures.where((d) => d.isRealtime && d.tripId.isNotEmpty)) {
-        final p = predictedAt(d, t);
-        if (p != null) real[d.tripId] = p;
-      }
-    }
-
-    const tracker = AlertTracker();
-    final errors = <Duration>[];
-    for (final trip in real.keys) {
-      for (final lead in alertLeadChoices) {
-        final start = samples.indexWhere((s) => s.$2.departures.any((d) {
-              final p = d.tripId == trip && d.isRealtime ? predictedAt(d, s.$1) : null;
-              return p != null && p.difference(s.$1) >= Duration(minutes: lead + 1);
-            }));
-        if (start < 0) continue;
-        final (t0, r0) = samples[start];
-        final d0 = r0.departures.firstWhere((d) => d.tripId == trip);
-        var alert = ArrivalAlert(
-          stopId: '1150',
-          stopName: 'Stop',
-          routeShortName: d0.routeShortName,
-          headsign: d0.headsign,
-          tripId: trip,
-          routeRun: d0.routeRun,
-          vehicle: d0.vehicle,
-          scheduledAt: instantOfServiceTime(d0.scheduledGtfsTime!, t0),
-          expectedAt: predictedAt(d0, t0)!,
-          live: true,
-          leadMinutes: lead,
-          setAt: t0,
-          lastSeenAt: t0,
-        );
-        for (final (t, r) in samples.skip(start + 1)) {
-          final s = tracker.step(alert, r, t);
-          alert = s.alert;
-          if (s.fire) {
-            errors.add(t.difference(real[trip]!.subtract(Duration(minutes: lead))));
-            break;
-          }
-          if (s.finished) break;
-        }
-      }
-    }
-
-    expect(errors, isNotEmpty);
-    final within = errors.where((e) => e.inSeconds.abs() <= 60).length / errors.length;
-    final worstLate = errors.map((e) => e.inSeconds).reduce((a, b) => a > b ? a : b);
-    // ignore: avoid_print
-    print('alerts: ${errors.length}, within ±60 s: ${(within * 100).toStringAsFixed(1)}%, worst late: $worstLate s');
-    expect(within, greaterThanOrEqualTo(0.9));
-    expect(worstLate, lessThanOrEqualTo(180));
-  }, skip: path == null ? 'set ALERT_CAPTURE to a capture made with tool/capture_stop_predictions.dart' : false);
-}
-```
-
-- [ ] **Step 3: Check the test skips cleanly**
+- [ ] **Step 1: Write the capture tool** — `tool/capture_gtfsrt_alerts.dart`.
+- [ ] **Step 2: Write the replay test** — `test/arrival_alerts/alert_replay_test.dart`, synthetic cases first.
+- [ ] **Step 3: Check it runs without a capture**
 
 Run: `flutter test test/arrival_alerts/alert_replay_test.dart`
-Expected: 1 test skipped, no failures.
+Expected: the capture test skipped, the synthetic tests pass.
 
 - [ ] **Step 4: Commit**
-
-```bash
-git add tool/capture_stop_predictions.dart test/arrival_alerts/alert_replay_test.dart
-git commit -m "test(alerts): stop capture tool and alert replay test
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-```
 
 - [ ] **Step 5 (controller, at the next weekday rush hour): record and replay**
 
 ```bash
-mkdir -p test/fixtures/arrival_alerts
-dart run tool/capture_stop_predictions.dart 1150 120 > test/fixtures/arrival_alerts/stop_1150_$(date +%F).jsonl
-ALERT_CAPTURE=test/fixtures/arrival_alerts/stop_1150_$(date +%F).jsonl flutter test test/arrival_alerts/alert_replay_test.dart
+dart run tool/capture_gtfsrt_alerts.dart --minutes 120 --out test/fixtures/timetrack/raw_gtfsrt_$(date +%F).jsonl
+ALERT_CAPTURE=test/fixtures/timetrack/raw_gtfsrt_$(date +%F).jsonl ALERT_GTFS=build/gtfs_current \
+  flutter test test/arrival_alerts/alert_replay_test.dart
 ```
 
-Expected: PASS, and the printed summary line goes in the ledger. If it fails, the failure is a tracker finding to fix in `alert_tracker.dart` with a new unit test, before release. Commit the fixture with the test's result in the message.
+Expected: PASS, and the printed summary goes in the ledger. If it fails, the failure is a finding for the controller; the tracker, the adapter and the thresholds are not changed to make it pass.
 
 ---
 
