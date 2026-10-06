@@ -689,6 +689,22 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    for (final scale in [1.0, 1.3, 1.6, 2.0, 2.5, 3.0]) {
+      testWidgets('at 320x640 text x$scale both follow actions are inside the peeking card', (tester) async {
+        await pumpFollow(tester, size: const Size(320, 640), textScale: scale);
+        await startFollowing(tester);
+        final card = tester.getRect(find.byKey(BBSheet.cardKey));
+        for (final label in ['See all stops', 'Stop following']) {
+          final button = find.ancestor(of: find.text(label), matching: find.byType(BBButton));
+          expect(button, findsOneWidget, reason: label);
+          final r = tester.getRect(button);
+          expect(r.top, greaterThanOrEqualTo(card.top), reason: '$label starts inside the card');
+          expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$label ends inside the peeking card');
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
+
     testWidgets('a follow already set when the map first builds is followed', (tester) async {
       await pumpFollow(tester, overrides: [followProvider.overrideWith(() => _PresetFollow('2573'))]);
       await _frames(tester, 3);
