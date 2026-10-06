@@ -1,5 +1,6 @@
 // lib/platform/android_alert_watcher.dart
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -40,6 +41,16 @@ DateTime? backupTimeFor(ArrivalAlert alert, DateTime now) {
   if (alert.firedAt != null) return null;
   final at = alert.alertAt.add(backupGrace);
   return at.isAfter(now) ? at : null;
+}
+
+/// The backup alert's text. It fires [backupGrace] after the alert time, so the bus is then about
+/// lead − 2 min away; a live alert says it is an estimate from the last live sighting.
+AlertMessage backupMessage(ArrivalAlert alert, {required DateTime now, required bool use24h}) {
+  final minutes = math.max(1, alert.leadMinutes - backupGrace.inMinutes);
+  return alert.live
+      ? alertMessage(alert,
+          source: AlertSource.live, minutesAway: minutes, estimateFrom: alert.lastSeenAt ?? now, use24h: use24h)
+      : alertMessage(alert, source: AlertSource.timetable, minutesAway: minutes, use24h: use24h);
 }
 
 /// One watcher check, with every outside effect passed in so tests can run it.
@@ -109,15 +120,7 @@ class WatcherCore {
     }
     final backupAt = backupTimeFor(step.alert, now);
     if (backupAt != null) {
-      await notifications.schedule(
-        alertMessage(
-          step.alert,
-          source: AlertSource.timetable,
-          minutesAway: step.alert.leadMinutes,
-          use24h: use24h,
-        ),
-        backupAt,
-      );
+      await notifications.schedule(backupMessage(step.alert, now: now, use24h: use24h), backupAt);
     }
     await updateOngoing(ongoingTitle(step.alert), ongoingText(step));
     return WatchOutcome.keepGoing;
@@ -268,15 +271,11 @@ class AndroidAlertRunner implements AlertRunner {
   @override
   Future<void> start(ArrivalAlert alert) async {
     _init();
-    final backupAt = backupTimeFor(alert, DateTime.now());
+    final now = DateTime.now();
+    final backupAt = backupTimeFor(alert, now);
     if (backupAt != null) {
       await _notifications.schedule(
-        alertMessage(
-          alert,
-          source: AlertSource.timetable,
-          minutesAway: alert.leadMinutes,
-          use24h: PlatformDispatcher.instance.alwaysUse24HourFormat,
-        ),
+        backupMessage(alert, now: now, use24h: PlatformDispatcher.instance.alwaysUse24HourFormat),
         backupAt,
       );
     }

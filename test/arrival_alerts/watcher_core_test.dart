@@ -5,6 +5,7 @@ import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/domain/arrival_alerts/alert_copy.dart';
 import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
 import 'package:busboard_nl/platform/android_alert_watcher.dart';
+import 'package:busboard_nl/ui/kit/bb_time.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -73,6 +74,16 @@ MetrobusDeparturesResult _live(int h, int m) => MetrobusDeparturesResult(
   fetchedAt: t0,
 );
 
+extension on MetrobusDeparturesResult {
+  MetrobusDeparturesResult copyWithNoRows() => MetrobusDeparturesResult(
+        departures: const [],
+        succeeded: succeeded,
+        realtimeAvailable: false,
+        serviceOperating: serviceOperating,
+        fetchedAt: fetchedAt,
+      );
+}
+
 void main() {
   late AlertStore store;
   late FakeNotifications notes;
@@ -124,6 +135,33 @@ void main() {
     }).check();
     expect(asked!.isSameAlert(_alert), isTrue);
     expect(asked!.tripId, 't1');
+  });
+
+  group('the backup alert (it fires 2 min after the alert time: the bus is lead − 2 min away)', () {
+    test('a live alert: the estimate wording, from the last live sighting', () async {
+      await core((_) async => _live(8, 14)).check();
+      final (m, at) = notes.scheduled.single;
+      expect(at, DateTime(2026, 10, 6, 8, 11));
+      expect(m.title, 'Route 10 should be about 3 min away');
+      expect(m.body, 'Estimate from ${BBTime.of(now, use24h: true)}. Open BusBoard for the latest.');
+      expect(m.route, '/board/1150');
+    });
+
+    test('a timetable alert: the timetable wording, same minutes', () async {
+      await store.write(ArrivalAlert.fromJson(_alert.toJson()
+        ..['live'] = false
+        ..['lastSeenAt'] = null)!);
+      await core((_) async => _live(8, 14).copyWithNoRows()).check();
+      final (m, at) = notes.scheduled.single;
+      expect(at, DateTime(2026, 10, 6, 8, 9));
+      expect(m.title, 'Route 10 is scheduled in about 3 min');
+      expect(m.body, 'MUN Centre (stop 1150) · no live tracking for this trip');
+    });
+
+    test('a 3-minute lead still says at least 1 min', () {
+      final a = ArrivalAlert.fromJson(_alert.toJson()..['leadMinutes'] = 3)!;
+      expect(backupMessage(a, now: now, use24h: true).title, 'Route 10 should be about 1 min away');
+    });
   });
 
   test('fires once, cancels the backup, keeps counting until due', () async {
