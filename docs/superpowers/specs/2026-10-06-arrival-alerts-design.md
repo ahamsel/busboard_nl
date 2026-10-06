@@ -109,9 +109,11 @@ Whenever an Android alert is set or re-timed, the app also schedules a backup no
   - timetable-only trips;
   - a later bus re-timing the alert.
 - **Replay:**
-  - `tool/capture_stop_predictions.dart` records one stop's Metrobus JSON every 30 s.
-  - A rush-hour recording at MUN Centre (1150) becomes a fixture.
-  - A replay test plays it through `AlertTracker` for every trip and lead time. Its "real departure" is when the trip leaves the predictions or reaches zero. It checks the §1 success criteria.
+  - `tool/capture_gtfsrt_alerts.dart` records the two GTFS-RT feeds (vehicle positions and trip updates) every 30 s.
+  - A rush-hour recording is replayed through the watcher's own path: each poll's feeds go to `TimeTrackApi.fetchLiveVehiclesResult()`, then `liveResultForAlert`, then `AlertTracker`, at one poll per 30 s.
+  - Alerts are set for every trip in the trip-updates feed, at up to three of its stops, for each lead time the prediction still allows.
+  - A stop's "real departure" is the first poll where it leaves the trip's stop predictions. A trip that leaves the feed with the stop due within 5 min departs then; one that leaves with the stop further ahead is a feed ghost and is not scored.
+  - It checks the §1 success criteria, and synthetic GTFS-RT polls test the replay itself.
 - **iPhone scheduler tests** (with a fake notifier): the scheduled time, replacement on a newer prediction and on going to the background, and notifying at once when the time has passed.
 - **Widget tests:**
   - the bell's states (live, timetable-only, too late, too far);
