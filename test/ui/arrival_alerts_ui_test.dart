@@ -12,6 +12,7 @@ import 'package:busboard_nl/ui/arrival_alerts/alert_strip.dart';
 import 'package:busboard_nl/ui/arrival_alerts/lead_time_sheet.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -86,6 +87,11 @@ void main() {
       AlertBell(arrival: _row(2), stopId: '1150', stopName: 'MUN Centre'),
       AlertBell(arrival: _row(61), stopId: '1150', stopName: 'MUN Centre'),
     ]));
+    expect(find.byIcon(BBIcons.bell), findsNothing);
+  });
+
+  testWidgets('no bell at exactly 3 minutes: no lead time is possible', (tester) async {
+    await _pump(tester, AlertBell(arrival: _row(3), stopId: '1150', stopName: 'MUN Centre'));
     expect(find.byIcon(BBIcons.bell), findsNothing);
   });
 
@@ -171,6 +177,57 @@ void main() {
       width: 320,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cancelling after the bell has left the screen does not throw', (tester) async {
+    final show = ValueNotifier(true);
+    await _pump(tester, ValueListenableBuilder<bool>(
+      valueListenable: show,
+      builder: (_, on, _) =>
+          on ? AlertBell(arrival: _row(20), stopId: '1150', stopName: 'MUN Centre') : const SizedBox(),
+    ));
+    await tester.tap(find.byIcon(BBIcons.bell));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Set alert'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(BBIcons.bellFill));
+    await tester.pumpAndSettle();
+    expect(find.text('Cancel your alert for route 10?'), findsOneWidget);
+    show.value = false; // a Board refresh drops the row while the dialog is open
+    await tester.pump();
+    await tester.tap(find.text('Cancel alert'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a tappable row with its bell exposes one row node, one bell node and no unlabeled button or tap target', (tester) async {
+    final handle = tester.ensureSemantics();
+    final arrival = _row(20);
+    await _pump(
+      tester,
+      ArrivalRowTile(
+        arrival: arrival,
+        onTap: () {},
+        action: AlertBell(arrival: arrival, stopId: '1150', stopName: 'MUN Centre'),
+      ),
+    );
+    expect(find.bySemanticsLabel(ArrivalRowTile.semanticsLabel(arrival, use24h: true)), findsOneWidget);
+    expect(find.bySemanticsLabel('Alert me before route 10 arrives'), findsOneWidget);
+
+    final unlabeledButtons = <String>[];
+    void walk(SemanticsNode n) {
+      final d = n.getSemanticsData();
+      if ((d.flagsCollection.isButton || d.hasAction(SemanticsAction.tap)) && d.label.isEmpty) {
+        unlabeledButtons.add(d.toString());
+      }
+      n.visitChildren((c) {
+        walk(c);
+        return true;
+      });
+    }
+    walk(tester.getSemantics(find.byType(ArrivalRowTile)));
+    expect(unlabeledButtons, isEmpty);
+    handle.dispose();
   });
 
   testWidgets('the sheet does not overflow at 320 pt and 2× text', (tester) async {

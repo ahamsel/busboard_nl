@@ -37,9 +37,11 @@ void main() {
   });
 
   group('lead rules', () {
-    test('a bell from 3 to 60 minutes away', () {
+    test('a bell from 4 to 60 minutes away', () {
       expect(canAlert(_row(minutes: 2)), isFalse);
-      expect(canAlert(_row(minutes: 3)), isTrue);
+      expect(canAlert(_row(minutes: 3)), isFalse);
+      expect(leadChoicesFor(3), isEmpty);
+      expect(canAlert(_row(minutes: 4)), isTrue);
       expect(canAlert(_row(minutes: 60)), isTrue);
       expect(canAlert(_row(minutes: 61)), isFalse);
     });
