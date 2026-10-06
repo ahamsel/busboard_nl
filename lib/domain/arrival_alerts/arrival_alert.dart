@@ -10,8 +10,9 @@ const alertLeadChoices = <int>[3, 5, 10];
 const alertMinMinutesAway = 3;
 const alertMaxMinutesAway = 60;
 
-/// Whether [row] gets a bell.
-bool canAlert(ArrivalRow row) => row.minutesAway >= alertMinMinutesAway && row.minutesAway <= alertMaxMinutesAway;
+/// Whether [row] gets a bell: at least one lead time is still possible, and the bus is at most 60 min away.
+bool canAlert(ArrivalRow row) =>
+    row.minutesAway <= alertMaxMinutesAway && leadChoicesFor(row.minutesAway).isNotEmpty;
 
 /// The lead times still possible for a bus [minutesAway] out: only those shorter than the wait.
 List<int> leadChoicesFor(int minutesAway) => [for (final m in alertLeadChoices) if (m < minutesAway) m];

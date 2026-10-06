@@ -31,6 +31,8 @@ class AlertBell extends ConsumerWidget {
   }
 
   Future<void> _confirmCancel(BuildContext context, WidgetRef ref) async {
+    // Read before the await: the Board may drop this row while the dialog is open.
+    final controller = ref.read(arrivalAlertProvider.notifier);
     final yes = await BBDialog.show<bool>(
       context,
       title: 'Cancel your alert for route ${arrival.routeShortName}?',
@@ -39,7 +41,7 @@ class AlertBell extends ConsumerWidget {
         BBDialogAction(label: 'Cancel alert', value: true, primary: true),
       ],
     );
-    if (yes == true) await ref.read(arrivalAlertProvider.notifier).cancel();
+    if (yes == true) await controller.cancel();
   }
 
   Future<void> _set(BuildContext context, WidgetRef ref, ArrivalAlert? current) async {

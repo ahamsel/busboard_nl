@@ -37,7 +37,11 @@ class _LeadTimeCard extends StatefulWidget {
 
 class _LeadTimeCardState extends State<_LeadTimeCard> {
   late final List<int> _allowed = leadChoicesFor(widget.arrival.minutesAway);
-  late int _lead = _allowed.contains(widget.initialLead) ? widget.initialLead : _allowed.last;
+  late int _lead = _allowed.contains(widget.initialLead)
+      ? widget.initialLead
+      : _allowed.isEmpty
+          ? alertLeadChoices.first
+          : _allowed.last;
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +87,7 @@ class _LeadTimeCardState extends State<_LeadTimeCard> {
                       Text('BusBoard will ask to send notifications, so it can alert you.', style: bb.text.caption),
                     ],
                     const SizedBox(height: BBSpace.l),
-                    BBButton(label: 'Set alert', expand: true, onPressed: () => nav.pop(_lead)),
+                    BBButton(label: 'Set alert', expand: true, onPressed: _allowed.isEmpty ? null : () => nav.pop(_lead)),
                     const SizedBox(height: BBSpace.s),
                     BBButton(label: 'Cancel', kind: BBButtonKind.quiet, expand: true, onPressed: () => nav.pop()),
                   ],

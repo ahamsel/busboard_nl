@@ -10,12 +10,16 @@ class BBCard extends StatelessWidget {
     this.onTap,
     this.padding = const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: 10),
     this.semanticLabel,
+    this.exposeSemantics = true,
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry padding;
   final String? semanticLabel;
+
+  /// See [BBPressable.exposeSemantics].
+  final bool exposeSemantics;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +28,7 @@ class BBCard extends StatelessWidget {
       child: Padding(padding: padding, child: child),
     );
     if (onTap != null) {
-      return BBPressable(onTap: onTap, semanticLabel: semanticLabel, child: box);
+      return BBPressable(onTap: onTap, semanticLabel: semanticLabel, exposeSemantics: exposeSemantics, child: box);
     }
     if (semanticLabel != null) {
       return Semantics(label: semanticLabel, excludeSemantics: true, child: box);

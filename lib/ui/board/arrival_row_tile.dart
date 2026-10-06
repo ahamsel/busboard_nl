@@ -154,6 +154,8 @@ class ArrivalRowTile extends StatelessWidget {
     );
     return BBCard(
       onTap: onTap,
+      // The content below carries the tap and label; the card adds no second node.
+      exposeSemantics: false,
       child: Row(
         children: [
           Expanded(
