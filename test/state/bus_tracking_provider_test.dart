@@ -4,6 +4,7 @@ import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/realtime/timetrack_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,6 +46,12 @@ class _FakeApi extends TimeTrackApi {
 class _FastSettings extends SettingsNotifier {
   @override
   AppSettings build() => const AppSettings(refreshIntervalSeconds: 1);
+}
+
+/// The longest refresh interval the settings allow.
+class _SlowSettings extends SettingsNotifier {
+  @override
+  AppSettings build() => const AppSettings(refreshIntervalSeconds: 60);
 }
 
 void main() {
@@ -139,5 +146,52 @@ void main() {
     expect(container.read(settingsProvider).refreshIntervalSeconds, 30);
     expect(container.read(busTrackStoreProvider), same(store));
     expect(container.read(busTrackRendererProvider), same(renderer));
+  });
+
+  group('following a bus', () {
+    late _FakeApi api;
+    late ProviderContainer container;
+
+    setUp(() async {
+      api = _FakeApi([
+        [fix(meters: 100, seconds: feedSeconds())],
+      ]);
+      container = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => outAndBackRepo()),
+        timetrackApiProvider.overrideWithValue(api),
+        settingsProvider.overrideWith(_SlowSettings.new),
+      ]);
+      addTearDown(container.dispose);
+      await container.read(gtfsRepositoryProvider.future);
+    });
+
+    test('a new follow polls at once instead of waiting out the refresh interval', () async {
+      await firstSnapshot(container);
+      expect(api.calls, 1);
+      container.read(followProvider.notifier).follow('2573');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(api.calls, 2, reason: 'the follow should not wait up to 60 s for the next poll');
+    });
+
+    test('a follow started while the map is offstage polls as soon as the map listens again, not before', () async {
+      final sub = container.listen(busTrackingStreamProvider, (_, _) {});
+      await container.read(busTrackingStreamProvider.future);
+      expect(api.calls, 1);
+      // The map tab goes offstage (Riverpod pauses its subscription), and the
+      // Board starts a follow.
+      sub.pause();
+      container.read(followProvider.notifier).follow('2573');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(api.calls, 1, reason: 'no polling while nothing on screen listens');
+      sub.resume();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(api.calls, 2);
+    });
+
+    test('with no follow there are no extra polls', () async {
+      await firstSnapshot(container);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(api.calls, 1);
+    });
   });
 }

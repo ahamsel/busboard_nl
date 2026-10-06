@@ -17,6 +17,7 @@ import '../domain/map/bus_track_store.dart';
 import '../domain/map/delayed_track_renderer.dart';
 import '../domain/map/route_geometry.dart';
 import '../domain/map/bus_tracking_state.dart';
+import 'follow_providers.dart';
 
 // ─── Settings ──────────────────────────────────────────────
 
@@ -273,7 +274,8 @@ final busTrackRendererProvider = Provider<DelayedTrackRenderer?>((ref) {
 });
 
 /// Polls the live feed into [busTrackStoreProvider] and publishes one
-/// [BusTrackingState] per bus after every poll.
+/// [BusTrackingState] per bus after every poll. Only the map listens, and
+/// Riverpod pauses it while the map tab is offstage.
 final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>((ref) async* {
   final store = ref.watch(busTrackStoreProvider);
   if (store == null) {
@@ -282,6 +284,10 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
   }
   final api = ref.read(timetrackApiProvider);
   final interval = Duration(seconds: ref.watch(settingsProvider.select((s) => s.refreshIntervalSeconds)));
+  // A new follow (often from the Board, with the map offstage) restarts the
+  // loop, which polls at once: once the map is listening, the bus shows after
+  // one poll instead of after the rest of the refresh interval (up to 60 s).
+  ref.watch(followProvider.select((f) => f?.vehicleId));
 
   Map<String, BusTrackingState> snapshot(DateTime now) => Map.unmodifiable({
         for (final t in store.tracks.values) t.vehicleId: BusTrackingState.fromTrack(t, stale: store.isStale(t, now)),
