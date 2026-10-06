@@ -14,7 +14,7 @@
 - Everything is worked out on the phone: no server, no push service, no account, no API keys, nothing sent anywhere but the Metrobus requests the app already makes.
 - The app stays free, with no ads.
 - Accessibility stays at least as good as today: every new control has a screen-reader label, and nothing overflows at 2× text.
-- Battery and data stay small: one small request per 30 s while an alert runs, and never for more than 90 minutes.
+- Battery and data stay small: two small GTFS-RT feeds (vehicle positions and trip updates, about 37 KB together) every 30 s while an alert runs, at most about 6.5 MB over the 90-minute cap.
 
 **Success criteria**
 - In a replay of a recorded rush hour of one stop's Metrobus predictions (§5), an alert for a live trip fires within ±1 min of "the bus's real departure − lead time" in at least 90% of cases, and never more than 3 min late.
@@ -79,7 +79,7 @@ On each check, `AlertTracker` looks for the alert's departure among the live dep
 A row only counts as live when its realtime flag says so. The GTFS-RT source sets it only for a vehicle on the trip with a fix under 5 min old and a known delay, so feed ghosts and vehicles with no delay data fall back to the timetable. Steps 2–4 are for a source without trip ids; the GTFS-RT source always has one.
 
 ### 3.3 Backup alert on Android
-Whenever an Android alert is set or re-timed, the app also schedules a backup notification for 2 minutes after the latest "predicted time − lead", so a live watcher always fires first. Since it comes 2 minutes late, it says the bus is about lead − 2 min away (at least 1): as an estimate from the last live sighting for a live alert, in the timetable wording otherwise. The watcher cancels the backup when it fires, and re-times it on each check. Some phones (e.g. Samsung, Xiaomi) kill background services to save battery; with the backup, the rider still gets an alert.
+Whenever an Android alert is set or re-timed, the app also schedules a backup notification for 2 minutes after the latest "predicted time − lead", so a live watcher always fires first. Since it comes 2 minutes late, it says the bus is about lead − 2 min away (at least 1): as an estimate from the last live sighting for a live alert, in the timetable wording otherwise. The watcher cancels the backup when it fires, and re-times it on each check. Some phones (e.g. Samsung, Xiaomi) kill background services to save battery; with the backup, the rider still gets an alert. The backup never writes `firedAt`, so when the app opens at or after the backup time (alert time + 2 min) and finds a stored alert that has not fired, it counts as fired at that time and no watcher is restarted for it; otherwise a restarted watcher would see the alert time long past and fire a second time.
 
 ### 3.4 Platform setup
 - **Android:**
