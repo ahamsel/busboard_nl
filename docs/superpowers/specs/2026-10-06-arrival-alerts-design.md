@@ -22,7 +22,7 @@
   - at most 20% fire more than 2 min late;
   - an alert that never fires counts as a failure;
   - at least 50 alerts are scored.
-- The 1-minute early margin (§2.4) was tuned on the 10-05 capture; it is confirmed on a second capture before release.
+- The 1-minute early margin (§2.4) was tuned on the 10-05 capture and confirmed on a second one (2026-10-06, 11:36–13:35, 631 alerts scored): 72.6% within ±2 min, 18.7% more than 2 min late. Lead 10 alone: 52.8% / 36.0%. iPhone (margin only): 66.4% / 15.5%.
 - An alert fires exactly once.
 - On the Android emulator with the phone locked and in forced Doze, the live countdown keeps updating and the alert arrives.
 - On the iOS simulator with the app in the background, the scheduled alert arrives.
@@ -145,5 +145,5 @@ Whenever an Android alert is set or re-timed, the app also schedules a backup no
 - **Google may reject the `specialUse` description.** Fall back to `dataSync`. Failing that, ship scheduled-only alerts on Android, with the backup alert as the only alert.
 - **Battery-saving phones may still kill the watcher.** The backup alert covers it.
 - **The GTFS-RT feed may stall or show ghosts.** Alerts use the timetable and say so. (The Metrobus stop endpoint has answered 403 Forbidden since 2026-10-05; alerts no longer use it.)
-- **Feed accuracy.** Even with the feed's per-stop times and the margin, about 70% of alerts land within ±2 min of the bus's real passage (73% on the 10-05 capture; 64% for the 10-min lead). An arrival estimate from the bus's own GPS track is the next step, out of scope here.
+- **Feed accuracy.** Even with the feed's per-stop times and the margin, about 70% of alerts land within ±2 min of the bus's real passage (73% on the 10-05 capture and 73% on the 10-06 one; 53–64% for the 10-min lead, and 66–67% on iPhone, which has the margin but not the per-stop times). An arrival estimate from the bus's own GPS track is the next step, out of scope here.
 - **iPhone estimates drift when a bus runs late after the rider leaves the app.** They're labelled as estimates, and opening the app re-times them.
