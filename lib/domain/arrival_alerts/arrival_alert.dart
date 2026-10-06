@@ -6,6 +6,9 @@ import '../arrival/arrival_models.dart';
 /// Lead times a rider can pick, in minutes (spec §2.1).
 const alertLeadChoices = <int>[3, 5, 10];
 
+/// The Android backup alert comes this long after the live one would, so a live watcher always fires first (spec §3.3).
+const backupGrace = Duration(minutes: 2);
+
 /// No bell for a bus farther than this. Nearer buses have one while a lead time is still possible (from 4 min).
 const alertMaxMinutesAway = 60;
 

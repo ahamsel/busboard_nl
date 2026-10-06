@@ -15,9 +15,6 @@ import '../domain/arrival_alerts/arrival_alert.dart';
 import '../domain/arrival_alerts/gtfs_rt_source.dart';
 import 'alert_runner.dart';
 
-/// The backup alert comes this long after the live one would, so a live watcher always fires first (spec §3.3).
-const backupGrace = Duration(minutes: 2);
-
 const _serviceId = 4100;
 const _cancelButton = 'cancel';
 const _finishedEvent = 'arrival_alert.finished';
