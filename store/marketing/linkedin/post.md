@@ -1,49 +1,28 @@
-# LinkedIn post — BusBoard NL 1.2
+# LinkedIn post: BusBoard NL 1.2
 
-Attach: `out/BusBoard-NL-1.2-carousel.pdf` (document post, title "BusBoard NL 1.2: what's new")
-or `out/BusBoard-NL-1.2-slides.mp4` (video). Post after Apple approves 1.2 so both stores match.
+Attach the video `~/Desktop/BusBoardNL-1.2-follow-a-bus.mp4` (18.6 s, vertical 1080×1920, no sound), or your own phone recording of following a bus at rush hour. Upload it directly to LinkedIn; don't post a YouTube link. The carousel (`out/BusBoard-NL-1.2-carousel.pdf`) is a fallback.
 
----
-
-## Main version
-
-In February I shared BusBoard NL, the MUN Centre departure boards on your phone. The question I kept asking myself while waiting in the cold: okay, but where is MY bus right now?
-
-Version 1.2 is out, and it answers exactly that.
-
-🚌 Follow your bus. Tap any live arrival and the map follows that bus to your stop: its route, how many stops are left, and the minutes until it gets there.
-
-🗺️ A rebuilt live map. I recorded two hours of real rush-hour data and replayed it again and again to retune how every bus moves. No more jumps of 100 m or more, and no more dots sliding back along their route.
-
-🎨 A full redesign. Route colours, clearer arrival boards, dark mode, and better support for larger text and screen readers.
-
-It's still free, with no ads and no account. It's built on Metrobus open data, right here in St. John's.
-
-Coming next: arrival alerts, a heads-up when your bus is a few minutes away so you can wait inside until it's time to go. It's all worked out on your phone, with nothing tracked.
-
-📲 Free on iOS and Android: ahamsel.com/busboard
-
-If you ride Metrobus, I'd love to hear what you'd want after alerts. Drop it in the comments 👇
-
-For the technical crowd: Flutter, delay-buffered interpolation along GTFS route shapes, and a replay harness built from real GTFS-Realtime captures.
-
-#StJohns #Newfoundland #MUN #Flutter #OpenData #PublicTransit
+Post on a weekday morning, about 8–10 am NL time. Both stores have 1.2: App Store 1.2.0, Play 1.2.1.
 
 ---
 
-## Shorter version (if you'd rather keep it tight)
+## Post
 
-BusBoard NL 1.2 is out 🚌
+Back in February I built a small app for Metrobus riders in St. John's, mostly because I was tired of standing in the cold guessing where my bus was.
 
-Now you can tap any live arrival and follow that bus to your stop: its route, the stops left, and the minutes until it arrives.
+This week I shipped the biggest update since. You can now tap a bus on the arrival board, and the map follows it to your stop. You see the stops it has left and the minutes until it gets there.
 
-There's also a rebuilt live map tuned on real rush-hour data, and a full redesign with dark mode.
+I also redesigned the whole app: route colours, clearer boards, dark mode, and better support for larger text and screen readers, so more people can actually use it.
 
-It's still free, with no ads and no account. Arrival alerts are coming next.
+Getting the buses to move right was harder than I expected. The live feed only sends a bus's position every so often, so I recorded two hours of real rush-hour data and replayed it again and again until the dots stopped jumping around and sliding backwards.
 
-📲 ahamsel.com/busboard
+It's free, with no ads and no account, and it's built on Metrobus open data. Next up is arrival alerts, so you can wait inside until it's actually time to head out.
 
-What should I build after alerts? 👇
+If you ride Metrobus, which route is yours? And if you don't, what's the small daily annoyance you'd build an app for?
+
+ahamsel.com/busboard
+
+#StJohnsNL #PublicTransit
 
 ---
 
@@ -52,3 +31,12 @@ What should I build after alerts? 👇
 Direct links:
 App Store: https://apps.apple.com/ca/app/busboard-nl/id6759234328
 Google Play: https://play.google.com/store/apps/details?id=com.ahamsel.busboard_nl
+
+---
+
+## Before and after posting
+
+- Before: make your profile's Featured section show BusBoard NL and ahamsel.com, and make your headline say what you build.
+- If you have a true personal detail (how long it took, a rider's message, the moment the map looked wrong), add one line in your own words after the rush-hour paragraph. Only if it's true.
+- First hour: reply to every comment with a real sentence, and don't edit the post.
+- Don't tag Metrobus. BusBoard NL is independent.
