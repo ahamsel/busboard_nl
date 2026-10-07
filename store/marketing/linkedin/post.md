@@ -8,7 +8,7 @@ Post on a weekday morning, about 8–10 am NL time. Both stores have 1.2: App St
 
 ## Post
 
-Back in February I built a small app for Metrobus riders in St. John's, mostly because I was tired of standing in the cold guessing where my bus was.
+Back in February I built a small app for Metrobus riders in St. John's.
 
 This week I shipped the biggest update since. You can now tap a bus on the arrival board, and the map follows it to your stop. You see the stops it has left and the minutes until it gets there.
 
