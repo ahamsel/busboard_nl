@@ -16,7 +16,7 @@ I also redesigned the whole app: route colours, clearer boards, dark mode, and b
 
 Getting the buses to move right was harder than I expected. The live feed only sends a bus's position every so often, so I recorded two hours of real rush-hour data and replayed it again and again until the dots stopped jumping around and sliding backwards.
 
-It's an independent app: free, with no ads and no account. It runs on your phone and uses Metrobus's public open data, the same feeds anyone can use. Next up is arrival alerts, so you can wait inside until it's actually time to head out.
+It's an independent app: free, with no ads and no account. It runs on your phone and uses Metrobus's public open data, the same feeds anyone can use. Next up is arrival alerts: pick your bus and get a heads-up when it's a few minutes from your stop, without keeping the app open.
 
 If you ride Metrobus, which route is yours? And if you don't, what's the small daily annoyance you'd build an app for?
 
