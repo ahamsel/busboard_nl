@@ -1,6 +1,6 @@
 # LinkedIn post: BusBoard NL 1.2
 
-Attach the video `~/Desktop/BusBoardNL-1.2-follow-a-bus.mp4` (18.6 s, vertical 1080×1920, no sound), or your own phone recording of following a bus at rush hour. Upload it directly to LinkedIn; don't post a YouTube link. The carousel (`out/BusBoard-NL-1.2-carousel.pdf`) is a fallback.
+Attach the video `~/Desktop/BusBoardNL-1.2-tour.mp4` (36 s, vertical 1080×1920, captioned, no sound). It's a scripted tour of 1.2.1 on live data (branch `claude/demo-video`, `integration_test/demo_tour_test.dart`). Upload it directly to LinkedIn; don't post a YouTube link. Fallbacks: `~/Desktop/BusBoardNL-1.2-follow-a-bus.mp4` or the carousel (`out/BusBoard-NL-1.2-carousel.pdf`).
 
 Post on a weekday morning, about 8–10 am NL time. Both stores have 1.2: App Store 1.2.0, Play 1.2.1.
 
