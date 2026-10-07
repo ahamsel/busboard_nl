@@ -18,11 +18,9 @@ Getting the buses to move right was harder than I expected. The live feed only s
 
 It's an independent app: free, with no ads and no account. It runs on your phone and uses Metrobus's public open data, the same feeds anyone can use. Next up is arrival alerts: pick your bus and get a heads-up when it's a few minutes from your stop, without keeping the app open.
 
-If you ride Metrobus, which route is yours? And if you don't, what's the small daily annoyance you'd build an app for?
+If you ride Metrobus and give it a try, I'd love to hear what's missing.
 
 ahamsel.com/busboard
-
-#StJohnsNL #PublicTransit
 
 ---
 
@@ -40,3 +38,4 @@ Google Play: https://play.google.com/store/apps/details?id=com.ahamsel.busboard_
 - If you have a true personal detail (how long it took, a rider's message, the moment the map looked wrong), add one line in your own words after the rush-hour paragraph. Only if it's true.
 - First hour: reply to every comment with a real sentence, and don't edit the post.
 - Don't tag Metrobus. BusBoard NL is independent.
+- No hashtags: they barely help reach now, and they make a post read like marketing.
