@@ -2,7 +2,7 @@
 
 Attach the video `~/Desktop/BusBoardNL-1.2-tour.mp4` (35 s, vertical 1080×1920, captioned, with an end card, no sound). It's a scripted tour of 1.2.1 on live data (branch `claude/demo-video`, `integration_test/demo_tour_test.dart`). Upload it directly to LinkedIn; don't post a YouTube link. Fallbacks: `~/Desktop/BusBoardNL-1.2-follow-a-bus.mp4` or the carousel (`out/BusBoard-NL-1.2-carousel.pdf`).
 
-Post on a weekday morning, about 8–10 am NL time. Both stores have 1.2: App Store 1.2.0, Play 1.2.1.
+Scheduled on LinkedIn for Thu Oct 8, 2026, 9:00 am NL time. Both stores have 1.2: App Store 1.2.0, Play 1.2.1.
 
 ---
 
@@ -14,7 +14,7 @@ This week I shipped the biggest update since. You can now tap a bus on the arriv
 
 I also redesigned the whole app: route colours, clearer boards, dark mode, and better support for larger text and screen readers, so more people can actually use it.
 
-Getting the buses to move right was harder than I expected. The live feed only sends a bus's position every so often, so I recorded two hours of real rush-hour data and replayed it again and again until the dots stopped jumping around and sliding backwards.
+Getting the buses to move right was harder than I expected. The live feed only sends a bus's position every so often, so I recorded two hours of real rush-hour data and replayed it again and again until the buses on the map stopped jumping around and sliding backwards.
 
 It's an independent app: free, with no ads and no account. It runs on your phone and uses Metrobus's public open data, the same feeds anyone can use. Next up is arrival alerts: pick your bus and get a heads-up when it's a few minutes from your stop, without keeping the app open.
 
