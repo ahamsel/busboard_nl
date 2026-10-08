@@ -10,6 +10,9 @@ import 'raptor.dart';
 import 'timetable_index.dart';
 import 'walking.dart';
 
+/// How many times a journey the live times break is planned again before it is dropped.
+const maxLiveReplans = 3;
+
 enum PlanMode { leaveNow, leaveBy, arriveBy }
 
 class PlanQuery {
@@ -102,28 +105,55 @@ class TripPlanner {
     return PlanFound(rankJourneys(candidates, arriveBy: q.mode == PlanMode.arriveBy));
   }
 
-  /// Live times for the shown journeys; a tight one is planned again from where it broke (spec §3.4).
+  /// Live times for the shown journeys. A ride the live times break (a transfer under a minute, a bus that arrives
+  /// before it leaves, a start before now) is dropped and the rest planned again from the ride before it, without
+  /// that trip; the new journey is checked in turn, up to [maxLiveReplans] times (spec §3.4).
   List<Journey> applyLive(PlanQuery q, List<Journey> js, TimeTrackFetchResult? feed, DateTime now) {
     if (feed == null || !feed.succeeded) return js;
+    final nowSeconds = secondsInServiceDay(index.serviceDate, now);
+    final earliest = q.mode == PlanMode.leaveBy ? math.max(nowSeconds, secondsInServiceDay(index.serviceDate, q.time)) : nowSeconds;
     final out = <Journey>[];
-    for (final j in js) {
-      final live = overlayLive(j, feed, now);
-      final cut = firstTightLeg(live);
-      if (cut == null) {
-        out.add(live);
-        continue;
+    for (final original in js) {
+      var j = original;
+      final skip = <String>{};
+      var replans = 0;
+      while (true) {
+        final live = overlayLive(j, feed, now);
+        final cut = firstTightLeg(live, notBefore: earliest);
+        if (cut == null) {
+          out.add(live);
+          break;
+        }
+        if (replans == maxLiveReplans) break;
+        replans++;
+        skip.add((live.legs[cut] as RideLeg).tripId);
+        // Keep the rides before the broken one (and the walks between them); the rest starts at the last one's end.
+        final lastKept = live.legs.sublist(0, cut).lastIndexWhere((l) => l is RideLeg);
+        final List<Leg> kept;
+        final List<StopOffset> access;
+        final int departAt;
+        if (lastKept < 0) {
+          kept = const [];
+          access = offsetsFor(q.from);
+          departAt = earliest;
+        } else {
+          final ride = live.legs[lastKept] as RideLeg;
+          final stop = index.stopIndex[ride.alightStopId];
+          if (stop == null) break;
+          // The kept rides go back on their timetable times, so the next overlay finds them as scheduled.
+          kept = j.legs.sublist(0, lastKept + 1);
+          access = [StopOffset(stop, 0)];
+          departAt = ride.arrives + index.sameStopTransferSeconds[stop];
+        }
+        final rest = raptorForward(index, access: access, egress: offsetsFor(q.to), departAt: departAt, skipTrips: skip);
+        if (rest.isEmpty) break;
+        final tail = rest.reduce((a, b) => a.arrives <= b.arrives ? a : b);
+        j = Journey(
+          serviceDate: original.serviceDate,
+          legs: retimeWalks([...kept, ...tail.legs]),
+          replannedForLiveTimes: true,
+        );
       }
-      // Keep the legs before the tight ride; the rider is at the end of the last of them.
-      final kept = live.legs.sublist(0, cut);
-      final last = kept.last;
-      final stopId = last is RideLeg ? last.alightStopId : (last as WalkLeg).toStopId;
-      final from = stopId == null ? null : index.stopIndex[stopId];
-      if (from == null) continue;
-      final ready = last.endSeconds + (last is RideLeg ? minTransferSeconds : 0);
-      final rest = raptorForward(index, access: [StopOffset(from, 0)], egress: offsetsFor(q.to), departAt: ready);
-      if (rest.isEmpty) continue;
-      final tail = rest.reduce((a, b) => a.arrives <= b.arrives ? a : b);
-      out.add(Journey(serviceDate: j.serviceDate, legs: retimeWalks([...kept, ...tail.legs]), replannedForLiveTimes: true));
     }
     return out;
   }

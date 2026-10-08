@@ -22,6 +22,12 @@ void main() {
     expect(ride.stopCount, 2);
   });
 
+  test('a banned trip is never boarded: the next catchable one is taken', () {
+    final j = raptorForward(idx,
+        access: [StopOffset(s('A'), 0)], egress: [StopOffset(s('C'), 0)], departAt: 8 * 3600, skipTrips: {'1-0'});
+    expect((j.single.legs.single as RideLeg).tripId, '1-1');
+  });
+
   test('a same-stop transfer waits at least a minute', () {
     // 1-0: A 08:00 → C 08:10. Route 2 leaves C at 08:05, 08:20, …: the 08:20 is the first one catchable.
     final j = plan('A', 'E', 8 * 3600).first;
