@@ -7,18 +7,33 @@ bool _covers(Journey a, Journey b) =>
 String _rideKey(Journey j) => j.legs.whereType<RideLeg>().map((r) => r.tripId).join(',');
 
 /// The shown options (spec §3.1).
-List<Journey> rankJourneys(List<Journey> candidates, {int max = 5}) {
+///
+/// Leave by favours the earliest arrival and fills up with the earliest departures. Arrive by turns that round:
+/// the latest departure (closest to the deadline) is the first pick, ties on rides and walking go to the later
+/// departure, and the rest fill by latest departure first. Either way the result is sorted by departure.
+List<Journey> rankJourneys(List<Journey> candidates, {int max = 5, bool arriveBy = false}) {
   final kept = <Journey>[];
   for (final j in candidates) {
-    final redundant = kept.any((u) => _covers(u, j) || _rideKey(u) == _rideKey(j) && (u.departs - j.departs).abs() <= 120);
+    final redundant = kept.any(
+      (u) => _covers(u, j) || _rideKey(u) == _rideKey(j) && (u.departs - j.departs).abs() <= 120,
+    );
     if (redundant) continue;
     kept.removeWhere((u) => _covers(j, u));
     kept.add(j);
   }
   if (kept.isEmpty) return const [];
-  Journey best(int Function(Journey) key) =>
-      kept.reduce((a, b) => key(a) < key(b) || key(a) == key(b) && a.arrives <= b.arrives ? a : b);
-  final picked = <Journey>{best((j) => j.arrives), best((j) => j.rides), best((j) => j.walkSeconds)};
-  final rest = kept.where((j) => !picked.contains(j)).toList()..sort((a, b) => a.departs.compareTo(b.departs));
+  Journey best(int Function(Journey) key) => kept.reduce((a, b) {
+    final ka = key(a), kb = key(b);
+    if (ka != kb) return ka < kb ? a : b;
+    if (arriveBy && a.departs != b.departs) return a.departs > b.departs ? a : b;
+    return a.arrives <= b.arrives ? a : b;
+  });
+  final picked = <Journey>{
+    if (arriveBy) best((j) => -j.departs) else best((j) => j.arrives),
+    best((j) => j.rides),
+    best((j) => j.walkSeconds),
+  };
+  final rest = kept.where((j) => !picked.contains(j)).toList()
+    ..sort((a, b) => arriveBy ? b.departs.compareTo(a.departs) : a.departs.compareTo(b.departs));
   return [...picked, ...rest].take(max).toList()..sort((a, b) => a.departs.compareTo(b.departs));
 }
