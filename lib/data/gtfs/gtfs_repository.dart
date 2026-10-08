@@ -54,6 +54,9 @@ class GtfsRepository {
   }
   final Map<String, ServiceCalendar> calendarsById = {};
   final List<CalendarDate> calendarDates = [];
+
+  /// transfers.txt rules, by from stop.
+  final Map<String, List<TransferRule>> transfersByFromStop = {};
   final Map<String, List<ShapePoint>> shapesById = {};
   final Map<String, List<double>> shapeCumulativeDistances = {};
   final Map<String, List<TripShapeEntry>> tripsByRouteShortName = {};
@@ -87,6 +90,7 @@ class GtfsRepository {
     final calendars = await parser.parseCalendar();
     final calDates = await parser.parseCalendarDates();
     final shapes = await parser.parseShapes();
+    final transfers = await parser.parseTransfers();
 
     // Build indexes
     stopsById.clear();
@@ -116,6 +120,11 @@ class GtfsRepository {
 
     calendarDates.clear();
     calendarDates.addAll(calDates);
+
+    transfersByFromStop.clear();
+    for (final t in transfers) {
+      transfersByFromStop.putIfAbsent(t.fromStopId, () => []).add(t);
+    }
 
     // Build shapes index (sorted by sequence)
     shapesById.clear();
