@@ -14,7 +14,8 @@ const _all = <IconData>[
   BBIcons.update, BBIcons.pin, BBIcons.timer, BBIcons.download, BBIcons.palette, BBIcons.detour,
   BBIcons.reducedService, BBIcons.stopMoved, BBIcons.accessible, BBIcons.additionalService,
   BBIcons.checkCircle, BBIcons.locationOff, BBIcons.layers, BBIcons.add, BBIcons.remove,
-  BBIcons.bell, BBIcons.bellFill,
+  BBIcons.bell, BBIcons.bellFill, BBIcons.plan, BBIcons.planFill, BBIcons.swap, BBIcons.walk,
+  BBIcons.calendar,
 ];
 
 void main() {
@@ -36,6 +37,8 @@ void main() {
     expect(BBIcons.boardFill.fontFamily, 'PhosphorFill');
     expect(BBIcons.mapFill.fontFamily, 'PhosphorFill');
     expect(BBIcons.alertsFill.fontFamily, 'PhosphorFill');
+    expect(BBIcons.plan.fontFamily, 'PhosphorRegular');
+    expect(BBIcons.planFill.fontFamily, 'PhosphorFill');
     expect(BBIcons.star.fontFamily, 'PhosphorFill');
     expect(BBIcons.starOutline.fontFamily, 'PhosphorRegular');
   });

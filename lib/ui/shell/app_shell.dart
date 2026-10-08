@@ -40,6 +40,7 @@ class AppShell extends ConsumerWidget {
                     activeIcon: BBIcons.alertsFill,
                     badgeCount: activeAlertCount,
                   ),
+                  const BBNavItem(label: 'Plan', icon: BBIcons.plan, activeIcon: BBIcons.planFill),
                 ],
                 currentIndex: index,
                 onSelect: (i) => navigationShell.goBranch(i, initialLocation: i == index),
