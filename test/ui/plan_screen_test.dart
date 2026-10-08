@@ -6,6 +6,7 @@ import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/trip_planner/place_picker_sheet.dart';
 import 'package:busboard_nl/ui/trip_planner/plan_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import '../helpers/planner_app.dart';
+import '../kit/kit_test_helpers.dart';
 import '../trip_planner/test_network.dart';
 
 final _now = DateTime(testDay.year, testDay.month, testDay.day, 8, 1);
@@ -40,6 +42,9 @@ String _textIn(WidgetTester tester, Key key) => tester
 ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(PlanScreen)));
 
 void main() {
+  // Real glyph widths, so the 2x text checks measure what a phone shows.
+  setUpAll(loadAppFonts);
+
   testWidgets('the nav bar has Board, Map, Alerts and Plan; Plan opens the planner', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
     final bar = find.byType(BBNavBar);
@@ -263,6 +268,25 @@ void main() {
     expect(find.byType(JourneyCard), findsWidgets);
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in const [Size(320, 568), Size(390, 844)]) {
+    testWidgets('at 2x text on ${size.width.toInt()}x${size.height.toInt()} every When label reads in full', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, textScale: 2);
+      for (final label in ['Leave now', 'Leave by', 'Arrive by']) {
+        expect(find.text(label), findsOneWidget);
+        await tester.ensureVisible(find.text(label));
+        await tester.pumpAndSettle();
+        final p = tester.renderObject<RenderParagraph>(find.text(label));
+        expect(p.didExceedMaxLines, isFalse, reason: '"$label" is cut short');
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('every control has a screen-reader label', (tester) async {
     final handle = tester.ensureSemantics();
