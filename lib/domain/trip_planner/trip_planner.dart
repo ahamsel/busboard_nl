@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
 import '../../data/gtfs/gtfs_repository.dart';
+import '../../data/realtime/timetrack_api.dart';
 import 'journey.dart';
+import 'live_overlay.dart';
 import 'place.dart';
 import 'ranking.dart';
 import 'raptor.dart';
@@ -98,5 +100,31 @@ class TripPlanner {
       if (candidates.isEmpty) return PlanNoJourney();
     }
     return PlanFound(rankJourneys(candidates, arriveBy: q.mode == PlanMode.arriveBy));
+  }
+
+  /// Live times for the shown journeys; a tight one is planned again from where it broke (spec §3.4).
+  List<Journey> applyLive(PlanQuery q, List<Journey> js, TimeTrackFetchResult? feed, DateTime now) {
+    if (feed == null || !feed.succeeded) return js;
+    final out = <Journey>[];
+    for (final j in js) {
+      final live = overlayLive(j, feed, now);
+      final cut = firstTightLeg(live);
+      if (cut == null) {
+        out.add(live);
+        continue;
+      }
+      // Keep the legs before the tight ride; the rider is at the end of the last of them.
+      final kept = live.legs.sublist(0, cut);
+      final last = kept.last;
+      final stopId = last is RideLeg ? last.alightStopId : (last as WalkLeg).toStopId;
+      final from = stopId == null ? null : index.stopIndex[stopId];
+      if (from == null) continue;
+      final ready = last.endSeconds + (last is RideLeg ? minTransferSeconds : 0);
+      final rest = raptorForward(index, access: [StopOffset(from, 0)], egress: offsetsFor(q.to), departAt: ready);
+      if (rest.isEmpty) continue;
+      final tail = rest.reduce((a, b) => a.arrives <= b.arrives ? a : b);
+      out.add(Journey(serviceDate: j.serviceDate, legs: retimeWalks([...kept, ...tail.legs]), replannedForLiveTimes: true));
+    }
+    return out;
   }
 }
