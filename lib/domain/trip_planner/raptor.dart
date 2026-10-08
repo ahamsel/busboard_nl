@@ -50,13 +50,15 @@ class _State {
   }
 }
 
-/// Leave by [departAt]: the earliest arrivals with 1..[rides] rides (spec §3.3).
+/// Leave by [departAt]: the earliest arrivals with 1..[rides] rides (spec §3.3). Trips in [skipTrips] are never
+/// boarded (the next catchable one is taken instead).
 List<Journey> raptorForward(
   TimetableIndex idx, {
   required List<StopOffset> access,
   required List<StopOffset> egress,
   required int departAt,
   int rides = maxRides,
+  Set<String> skipTrips = const {},
 }) {
   final n = idx.stopIds.length;
   final st = _State(rides + 1, n, _inf);
@@ -121,7 +123,7 @@ List<Journey> raptorForward(
         final onFoot = st.walk[k - 1][stop];
         final ready = afterBus < onFoot ? afterBus : onFoot;
         if (ready >= _inf) continue;
-        final t = _earliestTrip(p, pos, ready);
+        final t = _earliestTrip(p, pos, ready, skipTrips);
         if (t != null && (trip == null || t < trip)) {
           trip = t;
           boardPos = pos;
@@ -175,10 +177,11 @@ List<Journey> raptorForward(
   return journeys;
 }
 
-/// The first trip leaving position [pos] at or after [ready] (trips are in order and don't overtake).
-int? _earliestTrip(TransitPattern p, int pos, int ready) {
+/// The first trip leaving position [pos] at or after [ready] (trips are in order and don't overtake), not one of
+/// [skip].
+int? _earliestTrip(TransitPattern p, int pos, int ready, [Set<String> skip = const {}]) {
   for (var t = 0; t < p.departures.length; t++) {
-    if (p.departures[t][pos] >= ready) return t;
+    if (p.departures[t][pos] >= ready && (skip.isEmpty || !skip.contains(p.tripIds[t]))) return t;
   }
   return null;
 }
