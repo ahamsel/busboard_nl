@@ -61,6 +61,7 @@ class FollowCardHeader extends StatelessWidget {
     required this.onSeeAll,
     this.actionsFirst = false,
     this.actionsKey,
+    this.alertAction,
   });
 
   final FollowSnapshot snapshot;
@@ -85,6 +86,9 @@ class FollowCardHeader extends StatelessWidget {
 
   /// On the column holding the actions, so the map can keep them in the peek.
   final Key? actionsKey;
+
+  /// The arrival-alert bell, at the end of the title row until the bus arrives.
+  final Widget? alertAction;
 
   @override
   Widget build(BuildContext context) {
@@ -131,58 +135,97 @@ class FollowCardHeader extends StatelessWidget {
         BBButton(label: 'Stop following', kind: BBButtonKind.quiet, expand: true, onPressed: onStop),
       ],
     );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),
+    final minutesLabel = minutes == null || arrived ? null : (minutes <= 0 ? 'Now' : '$minutes min');
+    final minutesStyle =
+        bb.text.headline.copyWith(color: minutes != null && minutes <= 5 ? bb.colors.soon : bb.colors.ink);
+    final minutesText = minutes == null || minutesLabel == null
+        ? null
+        : Semantics(
+            label: switch (minutes) {
+              <= 0 => 'Due now',
+              1 => '1 minute to your stop',
+              _ => '$minutes minutes to your stop',
+            },
+            excludeSemantics: true,
+            child: Text(minutesLabel, style: minutesStyle),
+          );
+    final bell = arrived ? null : alertAction;
+    final title = Expanded(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              RouteBadge.name(route),
-              const SizedBox(width: BBSpace.m),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      headsign == null || headsign.isEmpty ? 'Route $route' : 'to $headsign',
-                      style: bb.text.headline,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(subtitle, style: bb.text.caption),
-                  ],
-                ),
-              ),
-              if (minutes != null && !arrived) ...[
-                const SizedBox(width: BBSpace.s),
-                Semantics(
-                  label: switch (minutes) {
-                    <= 0 => 'Due now',
-                    1 => '1 minute to your stop',
-                    _ => '$minutes minutes to your stop',
-                  },
-                  excludeSemantics: true,
-                  child: Text(
-                    minutes <= 0 ? 'Now' : '$minutes min',
-                    style: bb.text.headline.copyWith(color: minutes <= 5 ? bb.colors.soon : bb.colors.ink),
-                  ),
-                ),
-              ],
-            ],
+          Text(
+            headsign == null || headsign.isEmpty ? 'Route $route' : 'to $headsign',
+            style: bb.text.headline,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          if (actionsFirst) ...[const SizedBox(height: BBSpace.m), actions],
-          const SizedBox(height: BBSpace.s),
-          // Its text changes only with the stop count, so a screen reader
-          // announces it at most once per stop.
-          Semantics(liveRegion: true, label: line, excludeSemantics: true, child: Text(line, style: bb.text.body)),
-          const SizedBox(height: BBSpace.s),
-          ExcludeSemantics(child: _StopStrip(snapshot: snapshot, routeLabel: route)),
-          if (!actionsFirst) ...[const SizedBox(height: BBSpace.m), actions],
+          Text(subtitle, style: bb.text.caption),
         ],
       ),
     );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),
+      child: LayoutBuilder(builder: (context, constraints) {
+        // Large text or a narrow screen: the minutes and the bell get their own row under the title, rather
+        // than squeezing it.
+        final below = (minutesText != null || bell != null) &&
+            _titleShare(context, constraints.maxWidth, minutesLabel, minutesStyle, bell != null) < 0.4;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                RouteBadge.name(route),
+                const SizedBox(width: BBSpace.m),
+                title,
+                if (!below && (minutesText != null || bell != null)) ...[
+                  const SizedBox(width: BBSpace.s),
+                  ?minutesText,
+                  ?bell,
+                ],
+              ],
+            ),
+            if (below) ...[
+              const SizedBox(height: BBSpace.s),
+              Row(children: [Expanded(child: minutesText ?? const SizedBox.shrink()), ?bell]),
+            ],
+            if (actionsFirst) ...[const SizedBox(height: BBSpace.m), actions],
+            const SizedBox(height: BBSpace.s),
+            // Its text changes only with the stop count, so a screen reader
+            // announces it at most once per stop.
+            Semantics(liveRegion: true, label: line, excludeSemantics: true, child: Text(line, style: bb.text.body)),
+            const SizedBox(height: BBSpace.s),
+            ExcludeSemantics(child: _StopStrip(snapshot: snapshot, routeLabel: route)),
+            if (!actionsFirst) ...[const SizedBox(height: BBSpace.m), actions],
+          ],
+        );
+      }),
+    );
   }
+
+  /// The share of the title row beside the badge that the title would keep next to the minutes and the bell.
+  /// [width] is the whole row's.
+  static double _titleShare(BuildContext context, double width, String? minutes, TextStyle style, bool bell) {
+    if (!width.isFinite || width <= 0) return 1;
+    final scaler = MediaQuery.textScalerOf(context);
+    var trailing = BBSpace.s + (bell ? _bellWidth : 0);
+    if (minutes != null) {
+      final painter = TextPainter(
+        text: TextSpan(text: minutes, style: style),
+        textScaler: scaler,
+        textDirection: Directionality.of(context),
+        maxLines: 1,
+      )..layout();
+      trailing += painter.width;
+      painter.dispose();
+    }
+    final beside = width - RouteBadge.largeSide * scaler.scale(1).clamp(1.0, RouteBadge.maxScale) - BBSpace.m;
+    return beside <= 0 ? 0 : (beside - trailing) / beside;
+  }
+
+  /// A `BBIconButton`'s tap target.
+  static const double _bellWidth = 44;
 }
 
 /// The last stop driven, the bus, then the stops ahead up to your stop: at

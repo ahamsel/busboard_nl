@@ -70,6 +70,7 @@ Future<void> _host(
   double width = 390,
   bool use24h = true,
   bool actionsFirst = false,
+  Widget? alertAction,
 }) async {
   tester.view.physicalSize = Size(width * 3, 2400);
   tester.view.devicePixelRatio = 3;
@@ -92,6 +93,7 @@ Future<void> _host(
             onStop: onStop ?? () {},
             onSeeAll: onSeeAll ?? () {},
             actionsFirst: actionsFirst,
+            alertAction: alertAction,
           ),
         ),
         SliverToBoxAdapter(child: FollowCardBody(snapshot: snapshot)),
@@ -335,5 +337,35 @@ void main() {
       expect(followEndMessage(FollowEnd.notFound, '2573', 'MUN Centre'), "Bus 2573 isn't reporting its position");
       expect(followEndMessage(FollowEnd.arrived, '2573', 'MUN Centre'), isNull);
     });
+  });
+
+  group('header: the minutes and the bell', () {
+    const bell = SizedBox(width: 44, height: 44, child: Text('BELL'));
+    // The test font's glyphs are wide squares, so this is the roomiest case rather than a phone's.
+    testWidgets('sit beside the title at 390 pt, text x1.0', (tester) async {
+      await _host(tester, _snap(), minutes: 12, alertAction: bell);
+      final title = tester.getRect(find.text('to Downtown'));
+      expect(tester.getRect(find.text('12 min')).top, lessThan(title.bottom));
+      expect(tester.getRect(find.text('12 min')).left, greaterThan(title.left));
+      expect(tester.takeException(), isNull);
+    });
+    for (final scale in [2.0, 3.0]) {
+      testWidgets('get their own row under the title at 320 pt, text x$scale', (tester) async {
+        await _host(tester, _snap(), minutes: 12, width: 320, textScale: scale, alertAction: bell);
+        final title = tester.getRect(find.text('to Downtown'));
+        final minutes = tester.getRect(find.text('12 min'));
+        expect(minutes.top, greaterThanOrEqualTo(title.bottom));
+        expect(tester.getRect(find.text('BELL')).top, greaterThanOrEqualTo(title.bottom));
+        expect(tester.getRect(find.text('BELL')).left, greaterThanOrEqualTo(minutes.right));
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
+  testWidgets('header: the alert bell shows until the bus has arrived', (tester) async {
+    await _host(tester, _snap(), alertAction: const Text('BELL'));
+    expect(find.text('BELL'), findsOneWidget);
+    await _host(tester, _snap(busIndex: 2, toGo: 0, arrived: true), alertAction: const Text('BELL'));
+    expect(find.text('BELL'), findsNothing);
   });
 }

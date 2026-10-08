@@ -8,6 +8,7 @@ import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../kit/kit_test_helpers.dart';
+import '../helpers/fake_alerts.dart';
 
 final _failing = MockClient((_) async => http.Response('down', 500));
 final _emptyKiosk = MockClient((_) async => http.Response('{"arrivals":[]}', 200));
@@ -144,6 +146,7 @@ Future<void> _pump(
   bool use24h = true,
 }) async {
   SharedPreferences.setMockInitialValues({});
+  useInMemoryAlertStore();
   final router = GoRouter(initialLocation: '/board/1150', routes: [
     GoRoute(path: '/', builder: (_, _) => const Text('PICKER'), routes: [
       GoRoute(path: 'board/:id', builder: (_, s) => ArrivalBoardScreen(stopId: s.pathParameters['id']!)),
@@ -153,6 +156,7 @@ Future<void> _pump(
     GoRoute(path: '/map', builder: (_, _) => const Text('MAP')),
   ]);
   final container = ProviderContainer(overrides: [
+      ...fakeAlertOverrides,
       gtfsRepositoryProvider.overrideWith((ref) async {
         if (repo == null) throw Exception('not loaded');
         return repo;
@@ -283,6 +287,23 @@ void main() {
     final container = ProviderScope.containerOf(tester.element(find.text('MAP')));
     expect(container.read(followProvider), const FollowTarget('2573'));
     expect(find.text('MAP'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('the first arrival keeps its top space under a leading card', (tester) async {
+    double firstRowTop() {
+      final pad = tester.widget<Padding>(
+          find.ancestor(of: find.byType(ArrivalRowTile).first, matching: find.byType(Padding)).first);
+      return (pad.padding as EdgeInsets).top;
+    }
+
+    await _pump(tester, repo: _repoWithDepartures(), alerts: [_alert('Water Street Detour')]);
+    expect(find.text('Water Street Detour'), findsOneWidget);
+    expect(firstRowTop(), BBSpace.s);
+    expect((tester.widget<Padding>(find.ancestor(of: find.byType(ArrivalRowTile).at(1), matching: find.byType(Padding)).first)
+                .padding as EdgeInsets)
+            .top,
+        0);
     await _unmount(tester);
   });
 
