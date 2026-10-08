@@ -146,20 +146,30 @@ List<Journey> raptorForward(
 
     // A better arrival with k rides? Only values this round improved count; older ones were counted already.
     var roundBest = _inf, roundStop = -1, roundEgress = 0;
-    var roundByBus = true;
+    var roundWalkTo = -1; // >= 0: the best is a bus to roundStop, then a walk of roundEgress seconds to this stop
     for (final e in egress) {
       final s = e.stop;
       if (st.ride[k][s] < st.ride[k - 1][s] && st.ride[k][s] + e.seconds < roundBest) {
-        (roundBest, roundStop, roundEgress, roundByBus) = (st.ride[k][s] + e.seconds, s, e.seconds, true);
+        (roundBest, roundStop, roundEgress, roundWalkTo) = (st.ride[k][s] + e.seconds, s, e.seconds, -1);
       }
-      // On foot only at a stop destination: walking on to a pin would be two walks in a row.
-      if (e.seconds == 0 && st.walk[k][s] < st.walk[k - 1][s] && st.walk[k][s] < roundBest) {
-        (roundBest, roundStop, roundEgress, roundByBus) = (st.walk[k][s], s, 0, false);
+      // Bus, then a walk, only to a stop destination: walking on to a pin would be two walks in a row. Taken straight
+      // from the bus values, so a walk-in from the origin (round 0) can't hide it.
+      if (e.seconds == 0) {
+        for (final f in idx.footpathsInto[s]) {
+          final from = f.other;
+          if (st.ride[k][from] < st.ride[k - 1][from] && st.ride[k][from] + f.seconds < roundBest) {
+            (roundBest, roundStop, roundEgress, roundWalkTo) = (st.ride[k][from] + f.seconds, from, f.seconds, s);
+          }
+        }
       }
     }
     if (roundStop >= 0 && roundBest < bestTarget) {
       bestTarget = roundBest;
-      journeys.add(_forwardJourney(idx, st, k, roundStop, roundByBus, roundEgress));
+      final j = _forwardJourney(idx, st, k, roundStop, true, roundWalkTo < 0 ? roundEgress : 0);
+      journeys.add(roundWalkTo < 0
+          ? j
+          : j.copyWith(
+              legs: retimeWalks([...j.legs, _walkLeg(idx.stopIds[roundStop], idx.stopIds[roundWalkTo], roundEgress)])));
     }
   }
   return journeys;

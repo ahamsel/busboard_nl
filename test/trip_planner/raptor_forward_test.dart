@@ -1,3 +1,4 @@
+import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/raptor.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
@@ -82,5 +83,26 @@ void main() {
     expect(j.at(j.departs), DateTime(2026, 10, 7, 0, 20));
     expect(secondsInServiceDay(testDay, DateTime(2026, 10, 8, 0, 20)), 86400 + 1200);
     expect(secondsInServiceDay(testDay, DateTime(2026, 10, 7, 8, 5)), 8 * 3600 + 300);
+  });
+
+  test('a destination near the origin is still reached by bus, then a walk', () {
+    // P and Q are 100 m apart; the only bus leaves P, loops out to M and comes back to N, 200 m from Q.
+    final net = TestNetwork();
+    void stop(String id, double lat, double lon) =>
+        net.repo.stopsById[id] = StopInfo(stopId: id, stopName: 'Stop $id', stopLat: lat, stopLon: lon);
+    stop('P', 47.5300, -52.7000);
+    stop('Q', 47.5309, -52.7000);
+    stop('M', 47.5390, -52.7000);
+    stop('N', 47.5309, -52.6973);
+    net.repo.routesById['7'] = RouteInfo(routeId: '7', routeShortName: '7', routeLongName: 'Route 7');
+    net.addTrip('7-0', '7', ['P', 'M', 'N'], 8 * 3600, 120);
+    idx = TimetableIndex.build(net.repo, testDay);
+
+    final j = plan('P', 'Q', 8 * 3600).single;
+    expect(j.legs.whereType<RideLeg>().single.alightStopId, 'N');
+    final walk = j.legs.last as WalkLeg;
+    expect((walk.fromStopId, walk.toStopId), ('N', 'Q'));
+    expect(walk.startSeconds, 8 * 3600 + 240);
+    expect(j.arrives, 8 * 3600 + 240 + walk.seconds);
   });
 }

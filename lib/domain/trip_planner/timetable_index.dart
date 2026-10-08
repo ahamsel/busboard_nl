@@ -147,7 +147,9 @@ class TimetableIndex {
         final sb = repo.stopsById[stopIds[b]]!;
         final d = haversineMeters(sa.stopLat, sa.stopLon, sb.stopLat, sb.stopLon);
         if (d > maxTransferMeters) continue;
-        final seconds = override[key] ?? walkSeconds(d);
+        // Never under the minimum change time, even for stops at the same spot or a short transfers.txt entry.
+        final raw = override[key] ?? walkSeconds(d);
+        final seconds = raw < minTransferSeconds ? minTransferSeconds : raw;
         idx.footpaths[a].add(Footpath(b, seconds));
         idx.footpathsInto[b].add(Footpath(a, seconds));
       }

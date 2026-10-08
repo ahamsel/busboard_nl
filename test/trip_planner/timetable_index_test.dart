@@ -78,4 +78,15 @@ void main() {
       }
     }
   });
+
+  test('stops at the same spot are still a full minute apart on foot, both ways', () {
+    final net = TestNetwork();
+    net.repo.stopsById['A2'] = StopInfo(stopId: 'A2', stopName: 'Stop A2', stopLat: 47.5600, stopLon: -52.7500);
+    final idx = TimetableIndex.build(net.repo, testDay);
+    final a = idx.stopIndex['A']!, a2 = idx.stopIndex['A2']!;
+    expect(idx.footpaths[a].singleWhere((f) => f.other == a2).seconds, minTransferSeconds);
+    expect(idx.footpaths[a2].singleWhere((f) => f.other == a).seconds, minTransferSeconds);
+    expect(idx.footpathsInto[a].singleWhere((f) => f.other == a2).seconds, minTransferSeconds);
+    expect(idx.footpathsInto[a2].singleWhere((f) => f.other == a).seconds, minTransferSeconds);
+  });
 }
