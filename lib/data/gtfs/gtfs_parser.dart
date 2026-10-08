@@ -21,7 +21,10 @@ class GtfsParser {
     if (rows.isEmpty) return [];
 
     // First row is headers
-    final headers = rows.first.map((e) => e.toString().trim()).toList();
+    // Strip a UTF-8 BOM (U+FEFF) from the first header; trim() does not remove it.
+    final headers = rows.first
+        .map((e) => e.toString().replaceFirst('﻿', '').trim())
+        .toList();
     final result = <Map<String, String>>[];
 
     for (var i = 1; i < rows.length; i++) {
@@ -159,6 +162,22 @@ class GtfsParser {
           );
         })
         .where((s) => s.shapeId.isNotEmpty)
+        .toList();
+  }
+
+  // Parse transfers.txt into TransferRule list.
+  Future<List<TransferRule>> parseTransfers() async {
+    final rows = await _parseCsv('transfers.txt');
+    return rows
+        .map((row) {
+          return TransferRule(
+            fromStopId: row['from_stop_id'] ?? '',
+            toStopId: row['to_stop_id'] ?? '',
+            transferType: int.tryParse(row['transfer_type'] ?? '') ?? 0,
+            minTransferSeconds: int.tryParse(row['min_transfer_time'] ?? ''),
+          );
+        })
+        .where((t) => t.fromStopId.isNotEmpty && t.toStopId.isNotEmpty)
         .toList();
   }
 
