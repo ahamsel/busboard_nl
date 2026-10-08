@@ -61,6 +61,8 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
                 routes: [
                   GoRoute(
                     path: 'journey',
+                    // A deep link or a restored route carries no journey: back to the planner.
+                    redirect: (context, state) => state.extra is Journey ? null : '/plan',
                     builder: (context, state) => JourneyDetailScreen(journey: state.extra! as Journey),
                   ),
                 ],
