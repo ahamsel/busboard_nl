@@ -11,6 +11,7 @@ class BBPressable extends StatefulWidget {
     this.onTap,
     this.semanticLabel,
     this.haptic = false,
+    this.exposeSemantics = true,
   });
 
   final Widget child;
@@ -19,6 +20,10 @@ class BBPressable extends StatefulWidget {
   /// When set, replaces the child's own semantics.
   final String? semanticLabel;
   final bool haptic;
+
+  /// False leaves the tap to a descendant's own semantics (a row that restates its
+  /// tap on its content), so no unlabeled duplicate "button" node is added.
+  final bool exposeSemantics;
 
   @override
   State<BBPressable> createState() => _BBPressableState();
@@ -48,29 +53,32 @@ class _BBPressableState extends State<BBPressable> {
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
     final duration = BBMotion.of(context, BBMotion.press);
+    final gesture = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      excludeFromSemantics: !widget.exposeSemantics,
+      onTapDown: enabled ? (_) => _setDown(true) : null,
+      onTapUp: enabled ? (_) => _setDown(false) : null,
+      onTapCancel: enabled ? () => _setDown(false) : null,
+      onTap: enabled ? _handleTap : null,
+      child: AnimatedScale(
+        scale: _down ? 0.98 : 1,
+        duration: duration,
+        curve: BBMotion.curve,
+        child: AnimatedOpacity(
+          opacity: _down ? 0.85 : 1,
+          duration: duration,
+          child: widget.child,
+        ),
+      ),
+    );
+    if (!widget.exposeSemantics) return gesture;
     return Semantics(
       button: true,
       enabled: enabled,
       label: widget.semanticLabel,
       onTap: enabled ? _handleTap : null,
       excludeSemantics: widget.semanticLabel != null,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: enabled ? (_) => _setDown(true) : null,
-        onTapUp: enabled ? (_) => _setDown(false) : null,
-        onTapCancel: enabled ? () => _setDown(false) : null,
-        onTap: enabled ? _handleTap : null,
-        child: AnimatedScale(
-          scale: _down ? 0.98 : 1,
-          duration: duration,
-          curve: BBMotion.curve,
-          child: AnimatedOpacity(
-            opacity: _down ? 0.85 : 1,
-            duration: duration,
-            child: widget.child,
-          ),
-        ),
-      ),
+      child: gesture,
     );
   }
 }

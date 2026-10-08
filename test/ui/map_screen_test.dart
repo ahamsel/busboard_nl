@@ -10,6 +10,7 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/copy/legal_copy.dart';
+import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_screen.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
@@ -25,6 +26,7 @@ import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show CircleLayerProperties, LatLng, SymbolLayerProperties;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_alerts.dart';
 import '../map/support/fake_map_surface.dart';
 import '../map/support/out_and_back.dart';
 
@@ -168,6 +170,7 @@ Future<void> _pump(
     addTearDown(tester.view.reset);
   }
   SharedPreferences.setMockInitialValues(prefs);
+  useInMemoryAlertStore();
   final router = GoRouter(initialLocation: '/map', routes: [
     GoRoute(path: '/', builder: (_, _) => const Text('PICKER')),
     GoRoute(path: '/map', builder: (_, _) => ValueListenableBuilder<bool>(
@@ -184,6 +187,7 @@ Future<void> _pump(
       gtfsRepositoryProvider.overrideWith((ref) async => (repo ?? _repo)()),
       stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
       busTrackingStreamProvider.overrideWith((ref) => busStream ?? Stream.value(buses)),
+      ...fakeAlertOverrides,
       ...overrides,
     ],
     child: MaterialApp.router(
@@ -645,6 +649,7 @@ void main() {
       _RecordingSurface? surfaceOverride,
       Size size = const Size(390, 844),
       double textScale = 1,
+      List<ArrivalRow> arrivals = const [],
     }) async {
       feed = StreamController<Map<String, BusTrackingState>>();
       addTearDown(feed.close);
@@ -657,6 +662,7 @@ void main() {
         prefs: {'selectedStopId': 's2'},
         repo: outAndBackRepo,
         busStream: feed.stream,
+        arrivals: arrivals,
         disableAnimations: disableAnimations,
         overrides: overrides,
       );
@@ -1094,6 +1100,56 @@ void main() {
       await realSecond(tester);
       await _frames(tester, 3);
       expect(surface.moves.where((m) => m.$2 == 15.0), isEmpty, reason: 'no recentre on the stop at zoom 15');
+    });
+
+    for (final scale in [1.0, 1.3, 1.6, 2.0]) {
+      testWidgets('the alert bell sits in the follow card and nothing overflows at 320 pt, text x$scale', (tester) async {
+        final arrival = ArrivalRow(
+          routeShortName: '10',
+          headsign: 'Downtown',
+          scheduledTime: GtfsTime.parse('09:52:00'),
+          predictedTime: GtfsTime.parse('09:55:00'),
+          minutesAway: 12,
+          liveStatus: LiveStatus.behind,
+          isLive: true,
+          tripId: 't12',
+          vehicleNumber: '2573',
+          isEnhanced: false,
+          routeRun: '10-1',
+        );
+        await pumpFollow(tester, size: const Size(320, 640), textScale: scale, arrivals: [arrival]);
+        await startFollowing(tester);
+        final bell = find.bySemanticsLabel('Alert me before route 10 arrives');
+        expect(bell, findsOneWidget);
+        final card = tester.getRect(find.byKey(BBSheet.cardKey));
+        expect(tester.getRect(bell).bottom, lessThanOrEqualTo(card.bottom));
+        for (final label in ['See all stops', 'Stop following']) {
+          final r = tester.getRect(find.ancestor(of: find.text(label), matching: find.byType(BBButton)));
+          expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$label stays in the peek with the bell');
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets("the bell is for the followed bus's arrival, even when another is listed first", (tester) async {
+      ArrivalRow arrival(String trip, String vehicle, int minutes) => ArrivalRow(
+            routeShortName: '10',
+            headsign: 'Downtown',
+            scheduledTime: GtfsTime.parse('09:52:00'),
+            predictedTime: GtfsTime.parse('09:55:00'),
+            minutesAway: minutes,
+            liveStatus: LiveStatus.behind,
+            isLive: true,
+            tripId: trip,
+            vehicleNumber: vehicle,
+            isEnhanced: false,
+            routeRun: '10-1',
+          );
+      await pumpFollow(tester, arrivals: [arrival('t99', '9999', 6), arrival('t12', '2573', 12)]);
+      await startFollowing(tester);
+      final bell = tester.widget<AlertBell>(find.byType(AlertBell));
+      expect(bell.arrival.tripId, 't12');
+      expect(bell.arrival.vehicleNumber, '2573');
     });
 
     testWidgets('no overflow at 320 pt and text x2.0 while following', (tester) async {

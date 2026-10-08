@@ -51,4 +51,6 @@ abstract final class BBIcons {
   static const IconData layers = IconData(0xe466, fontFamily: 'PhosphorRegular'); // stack
   static const IconData add = IconData(0xe3d4, fontFamily: 'PhosphorRegular'); // plus
   static const IconData remove = IconData(0xe32a, fontFamily: 'PhosphorRegular'); // minus
+  static const IconData bell = IconData(0xe0ce, fontFamily: 'PhosphorRegular'); // bell
+  static const IconData bellFill = IconData(0xe0ce, fontFamily: 'PhosphorFill'); // bell
 }

@@ -14,6 +14,7 @@ const _all = <IconData>[
   BBIcons.update, BBIcons.pin, BBIcons.timer, BBIcons.download, BBIcons.palette, BBIcons.detour,
   BBIcons.reducedService, BBIcons.stopMoved, BBIcons.accessible, BBIcons.additionalService,
   BBIcons.checkCircle, BBIcons.locationOff, BBIcons.layers, BBIcons.add, BBIcons.remove,
+  BBIcons.bell, BBIcons.bellFill,
 ];
 
 void main() {

@@ -11,6 +11,7 @@ Plan from any stop
 
 • Enter a four-digit stop ID or choose a nearby stop.
 • Compare Metrobus live predictions with scheduled departures.
+• Set an arrival alert: get a notification when your bus is 3, 5 or 10 minutes away.
 • See run and vehicle details when Metrobus provides them.
 • Pull to refresh for the latest available information.
 
