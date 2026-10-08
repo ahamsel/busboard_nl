@@ -66,9 +66,20 @@ void main() {
   });
 
   test('ranking: an option that leaves earlier for the same arrival is dropped', () {
-    Journey j(int dep, int arr, String trip) => Journey(serviceDate: testDay, legs: [
-          RideLeg(routeId: '1', tripId: trip, boardStopId: 'A', alightStopId: 'C', departs: dep, arrives: arr, stopCount: 2),
-        ]);
+    Journey j(int dep, int arr, String trip) => Journey(
+      serviceDate: testDay,
+      legs: [
+        RideLeg(
+          routeId: '1',
+          tripId: trip,
+          boardStopId: 'A',
+          alightStopId: 'C',
+          departs: dep,
+          arrives: arr,
+          stopCount: 2,
+        ),
+      ],
+    );
     expect(rankJourneys([j(100, 1000, 'x'), j(400, 1000, 'y')]).map((r) => r.departs), [400]);
     expect(rankJourneys([j(400, 1000, 'y'), j(100, 1000, 'x')]).map((r) => r.departs), [400]);
   });
@@ -78,6 +89,36 @@ void main() {
     final keys = js.map((j) => j.legs.whereType<RideLeg>().map((r) => r.tripId).join(',')).toSet();
     expect(keys.length, js.length);
     expect(rankJourneys([...js, ...js]).length, js.length);
+  });
+
+  group('ranking: trimming to max', () {
+    // Seven one-ride, no-walk options, 600 s each, none covering another.
+    final seven = [
+      for (var i = 1; i <= 7; i++)
+        Journey(
+          serviceDate: testDay,
+          legs: [
+            RideLeg(
+              routeId: '1',
+              tripId: 't$i',
+              boardStopId: 'A',
+              alightStopId: 'C',
+              departs: i * 100,
+              arrives: i * 100 + 600,
+              stopCount: 2,
+            ),
+          ],
+        ),
+    ];
+
+    test('arrive by keeps the latest departures, in departure order', () {
+      expect(rankJourneys(seven, arriveBy: true).map((r) => r.departs), [300, 400, 500, 600, 700]);
+      expect(rankJourneys(seven.reversed.toList(), arriveBy: true).map((r) => r.departs), [300, 400, 500, 600, 700]);
+    });
+
+    test('leave by keeps the earliest departures, in departure order', () {
+      expect(rankJourneys(seven).map((r) => r.departs), [100, 200, 300, 400, 500]);
+    });
   });
 
   test('places round-trip through JSON; malformed entries give null', () {

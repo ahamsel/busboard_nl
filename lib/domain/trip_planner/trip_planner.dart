@@ -97,6 +97,6 @@ class TripPlanner {
       }
       if (candidates.isEmpty) return PlanNoJourney();
     }
-    return PlanFound(rankJourneys(candidates));
+    return PlanFound(rankJourneys(candidates, arriveBy: q.mode == PlanMode.arriveBy));
   }
 }
