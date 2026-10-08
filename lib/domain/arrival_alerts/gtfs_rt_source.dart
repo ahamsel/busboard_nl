@@ -19,8 +19,8 @@ const liveFixMaxAge = Duration(minutes: 5);
 MetrobusDeparturesResult liveResultForAlert(ArrivalAlert alert, TimeTrackFetchResult? feed, DateTime now) {
   if (feed == null || !feed.succeeded) return MetrobusDeparturesResult.failure();
   final vehicle = alert.tripId.isEmpty ? null : TimeTrackApi.buildTripIndex(feed.vehicles, now: now)[alert.tripId];
-  final rows = vehicle != null && _fresh(vehicle, now) && _delayKnown(vehicle)
-      ? [_departure(alert, vehicle, _feedTimeAtStop(alert, feed), now)]
+  final rows = vehicle != null && liveTripUsable(feed, alert.tripId, now)
+      ? [_departure(alert, vehicle, feedTimeAtStop(feed, alert.tripId, alert.stopId, alert.scheduledAt), now)]
       : const <MetrobusDeparture>[];
   return MetrobusDeparturesResult(
     departures: rows,
@@ -31,6 +31,13 @@ MetrobusDeparturesResult liveResultForAlert(ArrivalAlert alert, TimeTrackFetchRe
   );
 }
 
+/// The trip's bus counts as live: a fix under [liveFixMaxAge] old and a known delay (also used by the trip planner).
+bool liveTripUsable(TimeTrackFetchResult feed, String tripId, DateTime now) {
+  if (!feed.succeeded || tripId.isEmpty) return false;
+  final v = TimeTrackApi.buildTripIndex(feed.vehicles, now: now)[tripId];
+  return v != null && _fresh(v, now) && _delayKnown(v);
+}
+
 bool _fresh(TimeTrackVehicle v, DateTime now) {
   final fix = DateTime.tryParse(v.positionTime) ?? DateTime.tryParse(v.timeStamp);
   return fix != null && now.difference(fix) <= liveFixMaxAge;
@@ -39,20 +46,20 @@ bool _fresh(TimeTrackVehicle v, DateTime now) {
 /// The feed reports no delay as 0 with an empty deviation; that is not "on time" (see `BusTrackStore`).
 bool _delayKnown(TimeTrackVehicle v) => v.gtfsStopSequenceDeviation.isNotEmpty;
 
-/// The trip update's prediction at the alert's stop, or null when it lists no visit there with a time or delay
-/// within [AlertTracker.sameRunWindow] of the alert's scheduled time. A loop trip's later visit (once the alert's has
+/// The trip update's prediction at the given stop, or null when it lists no visit there with a time or delay
+/// within [AlertTracker.sameRunWindow] of the given scheduled time. A loop trip's later visit (once the given one has
 /// left the feed) or an absurd feed time is not this visit.
-DateTime? _feedTimeAtStop(ArrivalAlert alert, TimeTrackFetchResult feed) {
-  final visits = feed.stopTimes[alert.tripId]?[alert.stopId];
+DateTime? feedTimeAtStop(TimeTrackFetchResult feed, String tripId, String stopId, DateTime scheduledAt) {
+  final visits = feed.stopTimes[tripId]?[stopId];
   if (visits == null) return null;
   DateTime? best;
   Duration? bestOff;
   for (final v in visits) {
-    final predicted = v.predictedFor(alert.scheduledAt);
+    final predicted = v.predictedFor(scheduledAt);
     if (predicted == null) continue;
     // A visit's own timetable time is its time less its delay; without both, its prediction stands in.
     final scheduled = v.time != null && v.delay != null ? v.time!.subtract(v.delay!) : predicted;
-    final off = scheduled.difference(alert.scheduledAt).abs();
+    final off = scheduled.difference(scheduledAt).abs();
     if (off > AlertTracker.sameRunWindow) continue;
     if (bestOff == null || off < bestOff) {
       best = predicted;
