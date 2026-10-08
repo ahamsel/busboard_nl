@@ -1,5 +1,6 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
@@ -112,6 +113,69 @@ void main() {
   testWidgets('stop card with no arrivals says so', (tester) async {
     await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
     expect(find.text('No buses due soon'), findsOneWidget);
+  });
+
+  ArrivalRow row({required String route, required bool live, String? vehicle}) => ArrivalRow(
+        routeShortName: route,
+        headsign: 'Downtown',
+        scheduledTime: GtfsTime.parse('09:52:00'),
+        minutesAway: 4,
+        isLive: live,
+        tripId: 't-$route',
+        vehicleNumber: vehicle,
+      );
+
+  testWidgets('stop card: tapping a live row follows that bus and closes the card', (tester) async {
+    await _host(tester,
+        header: const StopCardHeader(stop: _mun),
+        body: const StopCardBody(stop: _mun),
+        arrivals: [row(route: '21', live: true, vehicle: '2573')]);
+    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
+    container.read(mapSelectionProvider.notifier).select(const StopSelection('1150'));
+    await tester.tap(find.text('Downtown'));
+    await tester.pumpAndSettle();
+    expect(container.read(followProvider), const FollowTarget('2573'));
+    expect(container.read(mapSelectionProvider), isNull);
+    expect(find.text('BOARD 1150'), findsNothing, reason: 'the rider stays on the map');
+  });
+
+  testWidgets('stop card: scheduled-only and vehicle-less rows are inert', (tester) async {
+    await _host(tester,
+        header: const StopCardHeader(stop: _mun),
+        body: const StopCardBody(stop: _mun),
+        arrivals: [
+          row(route: '5', live: false, vehicle: '2574'),
+          row(route: '6', live: true),
+          row(route: '7', live: true, vehicle: ''),
+        ]);
+    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
+    for (final route in ['5', '6', '7']) {
+      await tester.tap(find.bySemanticsLabel(RegExp('^Route $route ')));
+      await tester.pumpAndSettle();
+    }
+    expect(container.read(followProvider), isNull);
+  });
+
+  testWidgets('stop card: only live rows announce the follow hint', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _host(tester,
+        header: const StopCardHeader(stop: _mun),
+        body: const StopCardBody(stop: _mun),
+        arrivals: [row(route: '21', live: true, vehicle: '2573'), row(route: '5', live: false)]);
+    expect(
+      find.semantics.byLabel('Route 21 Downtown, live, 4 minutes'),
+      isSemantics(
+        label: 'Route 21 Downtown, live, 4 minutes',
+        isButton: true,
+        hasTapAction: true,
+        onTapHint: 'follow bus 2573 on the map',
+      ),
+    );
+    expect(
+      find.semantics.byLabel('Route 5 Downtown, scheduled, 4 minutes'),
+      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: false, hasTapAction: false),
+    );
+    handle.dispose();
   });
 
   testWidgets('bus card: route, destination, bus number and lateness', (tester) async {
