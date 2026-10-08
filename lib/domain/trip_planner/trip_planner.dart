@@ -107,11 +107,14 @@ class TripPlanner {
 
   /// Live times for the shown journeys. A ride the live times break (a transfer under a minute, a bus that arrives
   /// before it leaves, a start before now) is dropped and the rest planned again from the ride before it, without
-  /// that trip; the new journey is checked in turn, up to [maxLiveReplans] times (spec §3.4).
+  /// that trip; the new journey is checked in turn, up to [maxLiveReplans] times (spec §3.4). The result is ranked
+  /// again (no repeats, at most 5, by departure); empty when none can be shown.
   List<Journey> applyLive(PlanQuery q, List<Journey> js, TimeTrackFetchResult? feed, DateTime now) {
     if (feed == null || !feed.succeeded) return js;
     final nowSeconds = secondsInServiceDay(index.serviceDate, now);
-    final earliest = q.mode == PlanMode.leaveBy ? math.max(nowSeconds, secondsInServiceDay(index.serviceDate, q.time)) : nowSeconds;
+    final earliest = q.mode == PlanMode.leaveBy
+        ? math.max(nowSeconds, secondsInServiceDay(index.serviceDate, q.time))
+        : nowSeconds;
     final out = <Journey>[];
     for (final original in js) {
       var j = original;
@@ -145,7 +148,13 @@ class TripPlanner {
           access = [StopOffset(stop, 0)];
           departAt = ride.arrives + index.sameStopTransferSeconds[stop];
         }
-        final rest = raptorForward(index, access: access, egress: offsetsFor(q.to), departAt: departAt, skipTrips: skip);
+        final rest = raptorForward(
+          index,
+          access: access,
+          egress: offsetsFor(q.to),
+          departAt: departAt,
+          skipTrips: skip,
+        );
         if (rest.isEmpty) break;
         final tail = rest.reduce((a, b) => a.arrives <= b.arrives ? a : b);
         j = Journey(
@@ -155,6 +164,7 @@ class TripPlanner {
         );
       }
     }
-    return out;
+    // Re-planned journeys can repeat one already in the list, or leave later than the one after them.
+    return rankJourneys(out, arriveBy: q.mode == PlanMode.arriveBy);
   }
 }

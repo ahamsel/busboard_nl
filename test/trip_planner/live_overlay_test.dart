@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
@@ -128,6 +129,62 @@ void main() {
     expect(noDoubleWalks(shown), isTrue);
   });
 
+  test('an early first bus gives a ranked list: no repeated journeys, in departure order', () {
+    // The early 1-0 is planned again from A and finds 1-1 → 2-2, which a later search (08:05) also lists.
+    final all = (planner.plan(query) as PlanFound).journeys;
+    final later = (planner.plan(
+      PlanQuery(from: query.from, to: query.to, mode: query.mode, time: now.add(const Duration(minutes: 5))),
+    ) as PlanFound).journeys;
+    final first = all.first.legs.whereType<RideLeg>().first;
+    final feed = feedWith(net, {first.tripId: -300}, now);
+    String key(Journey j) => j.legs.whereType<RideLeg>().map((r) => r.tripId).join(',');
+    final shown = planner.applyLive(query, [...all, ...later], feed, now);
+
+    expect(shown, isNotEmpty);
+    final keys = shown.map(key).toList();
+    expect(keys.toSet().length, keys.length, reason: keys.join(' | '));
+    expect([for (final j in shown) j.departs], orderedEquals([for (final j in shown) j.departs]..sort()));
+    expect(shown.length, lessThanOrEqualTo(5));
+    for (final j in shown) {
+      expect(j.departs, greaterThanOrEqualTo(8 * 3600));
+      expect(noDoubleWalks(j), isTrue);
+      expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), isNot(contains(first.tripId)));
+    }
+  });
+
+  test('a walking transfer onto a bus the live times make too early: planned again from the alight stop', () {
+    // A 08:00 → C 08:10 (1-0), walk C → G (6 min) to 08:16, then 8-0 at 08:17 to H. 8-0 running 5 min early leaves G
+    // at 08:12, before the rider can be there; the next one, 8-1, leaves at 09:00.
+    net.repo.routesById['8'] = RouteInfo(routeId: '8', routeShortName: '8', routeLongName: 'Route 8');
+    net.addTrip('8-0', '8', ['G', 'H'], 8 * 3600 + 17 * 60, 600);
+    net.addTrip('8-1', '8', ['G', 'H'], 9 * 3600, 600);
+    final p = TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay));
+    final toH = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'H', name: 'Stop H'),
+      mode: PlanMode.leaveBy,
+      time: now,
+    );
+    final planned = (p.plan(toH) as PlanFound).journeys.first;
+    expect(planned.legs.map((l) => l.runtimeType), [RideLeg, WalkLeg, RideLeg]);
+    final ride = planned.legs.first as RideLeg;
+    expect((planned.legs.last as RideLeg).tripId, '8-0');
+
+    final feed = feedWith(net, {'8-0': -300}, now);
+    expect(firstTightLeg(overlayLive(planned, feed, now)), 2);
+    final shown = p.applyLive(toH, [planned], feed, now).single;
+
+    expect(shown.replannedForLiveTimes, isTrue);
+    expect(noDoubleWalks(shown), isTrue);
+    expect(firstTightLeg(shown, notBefore: 8 * 3600), isNull);
+    final kept = shown.legs.first as RideLeg;
+    expect((kept.tripId, kept.departs, kept.arrives, kept.live), (ride.tripId, ride.departs, ride.arrives, false));
+    final tailWalk = shown.legs[1] as WalkLeg; // the search starts at C, the kept ride's alight stop
+    expect((tailWalk.fromStopId, tailWalk.toStopId), ('C', 'G'));
+    expect(shown.legs.whereType<RideLeg>().map((r) => r.tripId), [ride.tripId, '8-1']);
+    expect(shown.arrives, 9 * 3600 + 600);
+  });
+
   test('a leg with only its board stop live, ending before it starts, stays on the timetable', () {
     // 2-1 (C 08:20 → E 08:28) with C ten minutes late and E unlisted would leave at 08:30, after it arrives.
     final j = firstAtoE();
@@ -138,7 +195,7 @@ void main() {
     expect(firstTightLeg(out), isNull);
   });
 
-  test('a re-plan after a walking transfer never shows two walks in a row', () {
+  test('when the first ride breaks, the re-plan starts from the origin and ends with a single walk', () {
     final toG = PlanQuery(
       from: StopPlace(stopId: 'A', name: 'Stop A'),
       to: StopPlace(stopId: 'G', name: 'Stop G'),
