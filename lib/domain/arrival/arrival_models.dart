@@ -26,7 +26,8 @@ class ArrivalRow {
   /// Trip headsign (e.g., "Crosbie Rd - The Village").
   final String headsign;
 
-  /// Scheduled departure time as GTFS time.
+  /// Scheduled departure time as GTFS time, counted from the midnight of
+  /// the day the Board was asked about (yesterday's 24:15 is 00:15).
   final GtfsTime scheduledTime;
 
   /// Predicted departure time (adjusted by live data), or null.

@@ -9,6 +9,7 @@ import '../../data/realtime/timetrack_api.dart';
 import '../../data/trip_planner/saved_trip_store.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
+import '../../domain/arrival_alerts/alert_tracker.dart';
 import '../../domain/location/nearest_stop_service.dart';
 import '../../domain/trip_planner/journey.dart';
 import '../../domain/trip_planner/live_overlay.dart';
@@ -23,11 +24,11 @@ import '../kit/kit.dart';
 import 'journey_card.dart';
 
 /// The arrival the Board shows for [leg]'s trip at its board stop: the Board's own row (same service, same live
-/// vehicles), the call nearest the leg's departure. Null when the journey isn't today or the Board wouldn't list
-/// that bus (more than 3 hours away, or gone).
+/// vehicles), the call nearest the leg's departure. The Board counts from today's midnight, so a journey on last
+/// night's service (planned before midnight, its ride past 24:00) is moved back a day to match. Null when the Board
+/// wouldn't list that bus (more than 3 hours away, or gone) or lists only another day's run of the trip.
 ArrivalRow? boardArrivalFor(Journey j, RideLeg leg, GtfsRepository repo, TimeTrackFetchResult? feed, DateTime now) {
-  final day = j.serviceDate;
-  if (day.year != now.year || day.month != now.month || day.day != now.day) return null;
+  final departs = leg.departs - secondsInServiceDay(j.serviceDate, DateTime(now.year, now.month, now.day));
   final rows = ArrivalService(repo).getUpcomingArrivals(
     stopId: leg.boardStopId,
     now: now,
@@ -38,7 +39,9 @@ ArrivalRow? boardArrivalFor(Journey j, RideLeg leg, GtfsRepository repo, TimeTra
   int? bestGap;
   for (final r in rows) {
     if (r.tripId != leg.tripId) continue;
-    final gap = (r.scheduledTime.totalSeconds - leg.departs).abs();
+    final gap = (r.scheduledTime.totalSeconds - departs).abs();
+    // The trip runs every day: a row a day off is another day's bus.
+    if (gap > AlertTracker.sameRunWindow.inSeconds) continue;
     if (bestGap == null || gap < bestGap) {
       best = r;
       bestGap = gap;
