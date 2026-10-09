@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/trip_planner/place.dart';
+import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
@@ -128,15 +129,25 @@ class ArrivalsPreview extends ConsumerWidget {
   }
 }
 
-/// A column of arrival rows.
-class ArrivalsList extends StatelessWidget {
+/// A column of arrival rows. Live rows follow their bus on the map, which is
+/// already on screen, so the selection closes and the follow camera takes over.
+class ArrivalsList extends ConsumerWidget {
   const ArrivalsList({super.key, required this.rows});
 
   final List<ArrivalRow> rows;
 
+  VoidCallback? _followable(WidgetRef ref, ArrivalRow a) {
+    final vehicle = a.followableVehicle;
+    if (vehicle == null) return null;
+    return () {
+      ref.read(mapSelectionProvider.notifier).clear();
+      ref.read(followProvider.notifier).follow(vehicle);
+    };
+  }
+
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context, WidgetRef ref) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [for (final a in rows) ArrivalRowTile(arrival: a)],
+        children: [for (final a in rows) ArrivalRowTile(arrival: a, onTap: _followable(ref, a))],
       );
 }
