@@ -55,6 +55,13 @@ class PlanDraft {
       : PlanQuery(from: from!, to: to!, mode: mode, time: mode == PlanMode.leaveNow ? now : time ?? now);
 }
 
+/// Half an hour from [now], rounded up to the next 5 minutes (a time on the mark stays).
+DateTime defaultPlanTime(DateTime now) {
+  final t = now.add(const Duration(minutes: 30));
+  final mark = DateTime(t.year, t.month, t.day, t.hour, t.minute - t.minute % 5);
+  return mark == t ? mark : mark.add(const Duration(minutes: 5));
+}
+
 class PlanQueryNotifier extends Notifier<PlanDraft> {
   @override
   PlanDraft build() => const PlanDraft();
@@ -62,7 +69,13 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
   void setFrom(Place? p) => state = PlanDraft(from: p, to: state.to, mode: state.mode, time: state.time);
   void setTo(Place? p) => state = PlanDraft(from: state.from, to: p, mode: state.mode, time: state.time);
   void swap() => state = PlanDraft(from: state.to, to: state.from, mode: state.mode, time: state.time);
-  void setMode(PlanMode m) => state = PlanDraft(from: state.from, to: state.to, mode: m, time: state.time);
+  /// Leave by and Arrive by with no time chosen yet start at [defaultPlanTime], not now: Arrive by now has no bus.
+  void setMode(PlanMode m) => state = PlanDraft(
+        from: state.from,
+        to: state.to,
+        mode: m,
+        time: state.time ?? (m == PlanMode.leaveNow ? null : defaultPlanTime(ref.read(plannerClockProvider)())),
+      );
   void setTime(DateTime t) => state = PlanDraft(from: state.from, to: state.to, mode: state.mode, time: t);
 
   /// A saved trip opened from its card: its ends, leaving now.

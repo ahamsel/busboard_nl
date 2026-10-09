@@ -69,6 +69,44 @@ void main() {
     expect((c.read(planQueryProvider).from as StopPlace).stopId, 'C');
   });
 
+  group('a time for Leave by and Arrive by', () {
+    test('switching with no time chosen: now + 30 min, rounded up to 5 minutes', () {
+      final q = c.read(planQueryProvider.notifier);
+      q.setMode(PlanMode.arriveBy);
+      expect(c.read(planQueryProvider).time, at(8, 35)); // 8:01 + 30 = 8:31
+      clock = DateTime(testDay.year, testDay.month, testDay.day, 8, 30, 0);
+      c.read(planQueryProvider.notifier).setTrip(stop('A'), stop('C'));
+      q.setMode(PlanMode.leaveBy);
+      expect(c.read(planQueryProvider).time, at(9, 0), reason: 'already on a 5-minute mark');
+      clock = DateTime(testDay.year, testDay.month, testDay.day, 8, 30, 20);
+      c.read(planQueryProvider.notifier).setTrip(stop('A'), stop('C'));
+      q.setMode(PlanMode.arriveBy);
+      expect(c.read(planQueryProvider).time, at(9, 5), reason: 'seconds past the mark round up');
+    });
+
+    test('a time already chosen is kept, and Leave now sets none', () {
+      final q = c.read(planQueryProvider.notifier);
+      q.setMode(PlanMode.leaveNow);
+      expect(c.read(planQueryProvider).time, isNull);
+      q
+        ..setTime(at(8, 25))
+        ..setMode(PlanMode.arriveBy);
+      expect(c.read(planQueryProvider).time, at(8, 25));
+      q.setMode(PlanMode.leaveBy);
+      expect(c.read(planQueryProvider).time, at(8, 25));
+    });
+
+    test('so the first Arrive by view has buses', () async {
+      c.read(planQueryProvider.notifier)
+        ..setFrom(stop('A'))
+        ..setTo(stop('C'))
+        ..setMode(PlanMode.arriveBy);
+      final out = await results() as PlanFound;
+      expect(out.journeys, isNotEmpty);
+      expect(out.journeys.every((j) => j.arrives <= 8 * 3600 + 35 * 60), isTrue);
+    });
+  });
+
   test('arrive by 8:25: every option arrives in time', () async {
     c.read(planQueryProvider.notifier)
       ..setFrom(stop('A'))

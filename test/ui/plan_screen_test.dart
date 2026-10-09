@@ -119,6 +119,16 @@ void main() {
     }
   });
 
+  testWidgets('switching to Arrive by starts at 8:35, not now, so the first view has buses', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
+    await _chooseAtoC(tester);
+    await tester.tap(find.text('Arrive by'));
+    await tester.pumpAndSettle();
+    expect(_textIn(tester, PlanScreen.timeButtonKey), contains('8:35'));
+    expect(find.text('No buses get you there at that time'), findsNothing);
+    expect(find.byType(JourneyCard), findsWidgets);
+  });
+
   testWidgets('a destination no bus reaches says so', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
     await _choose(tester, 'Choose a starting point', 'A', 'Stop A (A)');
@@ -189,7 +199,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(_textIn(tester, PlanScreen.dateButtonKey), contains('Tomorrow'));
     final time = _container(tester).read(planQueryProvider).time!;
-    expect((time.day, time.hour, time.minute), (testDay.day + 1, 8, 1));
+    // Leave by starts at 8:35 (8:01 + 30 min, rounded up); the date picker keeps that time of day.
+    expect((time.day, time.hour, time.minute), (testDay.day + 1, 8, 35));
   });
 
   testWidgets('My location reads "Location is off" and does nothing when location is off', (tester) async {
