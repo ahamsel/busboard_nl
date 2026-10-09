@@ -7,6 +7,7 @@ import '../../data/realtime/timetrack_api.dart';
 import '../../data/trip_planner/saved_trip_store.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
+import '../../domain/location/nearest_stop_service.dart';
 import '../../domain/trip_planner/journey.dart';
 import '../../domain/trip_planner/live_overlay.dart';
 import '../../domain/trip_planner/place.dart';
@@ -42,6 +43,24 @@ ArrivalRow? boardArrivalFor(Journey j, RideLeg leg, GtfsRepository repo, TimeTra
     }
   }
   return best;
+}
+
+/// [p] as a saved trip keeps it (spec §3.5): a "My location" pin is where the phone was, so it is saved as "Near"
+/// the closest stop rather than as a My location that would no longer follow the phone.
+Place placeForSaving(Place p, GtfsRepository? repo) {
+  if (p is! PinPlace || p.label != myLocationLabel) return p;
+  final nearest = repo == null
+      ? null
+      : NearestStopService()
+          .findNearestStops(
+            latitude: p.lat,
+            longitude: p.lon,
+            allStops: repo.stopsById.values,
+            maxDistance: double.infinity,
+            maxResults: 1,
+          )
+          .firstOrNull;
+  return PinPlace(lat: p.lat, lon: p.lon, label: nearest == null ? 'Dropped pin' : 'Near ${nearest.stop.stopName}');
 }
 
 /// What the detail says when the live times break the trip (spec §3.4).
@@ -80,8 +99,11 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
     if (arrival != null) ref.read(arrivalAlertProvider.notifier).onBoardArrivals(ride.boardStopId, [arrival]);
   }
 
-  Future<void> _save(Place from, Place to) async {
+  Future<void> _save(Place draftFrom, Place draftTo) async {
     setState(() => _saving = true);
+    final repo = ref.read(gtfsRepositoryProvider).value;
+    final from = placeForSaving(draftFrom, repo);
+    final to = placeForSaving(draftTo, repo);
     try {
       final trips = await ref.read(savedTripsProvider.future);
       if (!mounted) return;

@@ -114,7 +114,7 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
       );
       if (!mounted) return;
       Navigator.of(context)
-          .pop(PickedPlace(PinPlace(lat: position.latitude, lon: position.longitude, label: 'My location')));
+          .pop(PickedPlace(PinPlace(lat: position.latitude, lon: position.longitude, label: myLocationLabel)));
     } catch (_) {
       if (mounted) setState(() => _locationOff = true);
     } finally {
@@ -187,7 +187,7 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
                               if (matches.isNotEmpty) const BBDivider(),
                               _PickRow(
                                 icon: BBIcons.nearMe,
-                                label: _locationOff ? 'Location is off' : 'My location',
+                                label: _locationOff ? 'Location is off' : myLocationLabel,
                                 onTap: _locationOff || _locating ? null : _useMyLocation,
                               ),
                               _PickRow(
