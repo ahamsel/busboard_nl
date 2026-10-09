@@ -1095,6 +1095,21 @@ void main() {
       expect(surface.routePushes, pushes);
     });
 
+    testWidgets('a follow from a planned trip counts to its boarding stop, not the saved one', (tester) async {
+      await pumpFollow(tester); // the saved stop is s2
+      containerOf(tester).read(followProvider.notifier).follow('2573', stopId: 's3');
+      await _frames(tester, 3);
+      expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s3$')), findsOneWidget);
+      expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s2$')), findsNothing);
+      expect(find.text("Your stop isn't on this trip"), findsNothing);
+    });
+
+    testWidgets('a follow from the Board still counts to the saved stop', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s2$')), findsOneWidget);
+    });
+
     testWidgets('the Following chip tells screen readers it brings the camera back to the bus', (tester) async {
       final semantics = tester.ensureSemantics();
       await pumpFollow(tester);

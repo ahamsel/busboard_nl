@@ -40,7 +40,7 @@
 ### 2.3 Journey detail
 - A timeline of legs: "Walk 3 min to MUN Centre (1150) · Route 10 at 8:12, 6 stops · Walk 2 min to stop 1600 · Route 2 at 8:31 · Arrive 8:47".
 - **Show on map** draws the ride legs in route colours and the walk legs as dotted lines.
-- The first ride leg offers **Follow** (the existing follow mode) and the **bell** (1.3.0 arrival alerts, same rules as on the Board).
+- The first ride leg offers **Follow** (the existing follow mode) and the **bell** (1.3.0 arrival alerts, same rules as on the Board). A follow started here counts to the trip's boarding stop as "your stop", not the Board's saved stop.
 - **Save trip** (a star) saves From → To as a saved trip, named by its ends ("MUN Centre → Avalon Mall") and renameable. A toast says "Saved" or "Already saved" (the same two ends are never stored twice), or "You can save up to 10 trips" when the list is full.
 
 ### 2.4 Empty and error states

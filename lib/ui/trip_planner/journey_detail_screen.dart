@@ -393,8 +393,9 @@ class _FirstRideActions extends ConsumerWidget {
     );
   }
 
+  /// The follow counts to this trip's boarding stop, not the Board's saved stop.
   void _follow(BuildContext context, WidgetRef ref, String vehicle) {
-    ref.read(followProvider.notifier).follow(vehicle);
+    ref.read(followProvider.notifier).follow(vehicle, stopId: stopId);
     context.go('/map');
   }
 }
