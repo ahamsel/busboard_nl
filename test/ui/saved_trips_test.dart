@@ -296,4 +296,50 @@ void main() {
     expect(out.map((d) => d.ride.tripId), ['a', 'b', 'd']);
     expect(out.map((d) => d.time.hour * 60 + d.time.minute), [480, 490, 500]);
   });
+
+  test('two routes leaving at the same minute both stay', () {
+    final day = DateTime(2026, 10, 8);
+    Journey j(String trip, String route, int departs) => Journey(serviceDate: day, legs: [
+          RideLeg(
+            routeId: route,
+            tripId: trip,
+            boardStopId: 'A',
+            alightStopId: 'C',
+            departs: departs,
+            arrives: departs + 600,
+            stopCount: 2,
+          ),
+        ]);
+    final out = savedTripDepartures([j('a', '1', 29400), j('b', '2', 29400), j('c', '2', 29400)]);
+    expect(out.map((d) => d.ride.tripId), ['a', 'b']);
+  });
+
+  testWidgets('the card lists distinct times, earliest first, three at most, from journeys that repeat and run out of order',
+      (tester) async {
+    Journey j(String trip, int departs) => Journey(serviceDate: testDay, legs: [
+          RideLeg(
+            routeId: '1',
+            tripId: trip,
+            boardStopId: 'A',
+            alightStopId: 'C',
+            departs: departs,
+            arrives: departs + 600,
+            stopCount: 2,
+          ),
+        ]);
+    final handle = tester.ensureSemantics();
+    final journeys = [
+      j('b', 8 * 3600 + 1200), // 8:20
+      j('a', 8 * 3600 + 600), // 8:10
+      j('b', 8 * 3600 + 1200), // 8:20 again, with another second leg
+      j('c', 8 * 3600 + 1800), // 8:30
+      j('d', 8 * 3600 + 2400), // 8:40
+    ];
+    await _pump(tester, overrides: [savedTripNextProvider(_aToC.id).overrideWith((ref) async => journeys)]);
+    expect(find.text('8:10 · 1'), findsOneWidget);
+    expect(find.text('8:20, 8:30'), findsOneWidget);
+    expect(find.textContaining('8:40'), findsNothing);
+    expect(find.bySemanticsLabel('Saved trip Stop A → Stop C, next bus 8:10, route 1'), findsOneWidget);
+    handle.dispose();
+  });
 }
