@@ -70,30 +70,41 @@ void main() {
   });
 
   group('a time for Leave by and Arrive by', () {
-    test('switching with no time chosen: now + 30 min, rounded up to 5 minutes', () {
-      final q = c.read(planQueryProvider.notifier);
-      q.setMode(PlanMode.arriveBy);
-      expect(c.read(planQueryProvider).time, at(8, 35)); // 8:01 + 30 = 8:31
-      clock = DateTime(testDay.year, testDay.month, testDay.day, 8, 30, 0);
-      c.read(planQueryProvider.notifier).setTrip(stop('A'), stop('C'));
-      q.setMode(PlanMode.leaveBy);
-      expect(c.read(planQueryProvider).time, at(9, 0), reason: 'already on a 5-minute mark');
-      clock = DateTime(testDay.year, testDay.month, testDay.day, 8, 30, 20);
-      c.read(planQueryProvider.notifier).setTrip(stop('A'), stop('C'));
-      q.setMode(PlanMode.arriveBy);
-      expect(c.read(planQueryProvider).time, at(9, 5), reason: 'seconds past the mark round up');
+    test('the default is now + 30 min, rounded up to 5 minutes', () {
+      expect(defaultPlanTime(at(8, 1)), at(8, 35)); // 8:01 + 30 = 8:31
+      expect(defaultPlanTime(at(8, 30)), at(9, 0), reason: 'already on a 5-minute mark');
+      expect(defaultPlanTime(DateTime(testDay.year, testDay.month, testDay.day, 8, 30, 20)), at(9, 5),
+          reason: 'seconds past the mark round up');
+      expect(c.read(planDefaultTimeProvider), at(8, 35));
     });
 
-    test('a time already chosen is kept, and Leave now sets none', () {
-      final q = c.read(planQueryProvider.notifier);
+    test('switching with no time picked keeps none: the plan uses the default', () {
+      final q = c.read(planQueryProvider.notifier)
+        ..setFrom(stop('A'))
+        ..setTo(stop('C'))
+        ..setMode(PlanMode.arriveBy);
+      final draft = c.read(planQueryProvider);
+      expect(draft.time, isNull);
+      expect(draft.usesDefaultTime, isTrue);
+      expect(draft.toQuery(at(8, 1))!.time, at(8, 35));
+      expect(draft.toQuery(at(8, 1), defaultTime: at(9, 0))!.time, at(9, 0));
       q.setMode(PlanMode.leaveNow);
-      expect(c.read(planQueryProvider).time, isNull);
-      q
+      expect(c.read(planQueryProvider).usesDefaultTime, isFalse);
+      expect(c.read(planQueryProvider).toQuery(at(8, 1))!.time, at(8, 1));
+    });
+
+    test('a time picked is kept, and Leave now ignores it', () {
+      final q = c.read(planQueryProvider.notifier)
+        ..setFrom(stop('A'))
+        ..setTo(stop('C'))
         ..setTime(at(8, 25))
         ..setMode(PlanMode.arriveBy);
       expect(c.read(planQueryProvider).time, at(8, 25));
+      expect(c.read(planQueryProvider).usesDefaultTime, isFalse);
+      q.setMode(PlanMode.leaveNow);
+      expect(c.read(planQueryProvider).toQuery(at(8, 1))!.time, at(8, 1));
       q.setMode(PlanMode.leaveBy);
-      expect(c.read(planQueryProvider).time, at(8, 25));
+      expect(c.read(planQueryProvider).toQuery(at(9, 40))!.time, at(8, 25), reason: 'a picked time does not move');
     });
 
     test('so the first Arrive by view has buses', () async {
