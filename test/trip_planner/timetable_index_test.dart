@@ -1,5 +1,7 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/domain/trip_planner/walking.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -14,6 +16,39 @@ void main() {
     expect(p1.departures[0][0], 8 * 3600);
     expect(p1.departures[1][0], 8 * 3600 + 600);
     expect(p1.arrivals[0][2], 8 * 3600 + 600);
+  });
+
+  test('a trip with a blank or malformed stop time is left out; the rest still plan', () {
+    final net = TestNetwork();
+    // 1-1 has no arrival time at B; 1-2 has a garbled departure at A.
+    void breakRow(String stop, String trip, {String? arrival, String? departure}) {
+      final rows = net.repo.stopTimesByStopId[stop]!;
+      final i = rows.indexWhere((r) => r.tripId == trip);
+      final r = rows[i];
+      rows[i] = StopTimeRow(
+        tripId: r.tripId,
+        arrivalTime: arrival ?? r.arrivalTime,
+        departureTime: departure ?? r.departureTime,
+        stopId: r.stopId,
+        stopSequence: r.stopSequence,
+      );
+    }
+
+    breakRow('B', '1-1', arrival: '');
+    breakRow('A', '1-2', departure: '08:2O:00');
+    final idx = TimetableIndex.build(net.repo, testDay);
+    final p1 = idx.patterns.singleWhere((p) => p.routeId == '1');
+    expect(p1.tripIds, ['1-0', '1-3', '1-4', '1-5']);
+
+    final out = TripPlanner(net.repo, idx).plan(
+      PlanQuery(
+        from: StopPlace(stopId: 'A', name: 'Stop A'),
+        to: StopPlace(stopId: 'C', name: 'Stop C'),
+        mode: PlanMode.leaveBy,
+        time: DateTime(testDay.year, testDay.month, testDay.day, 8, 5),
+      ),
+    );
+    expect((out as PlanFound).journeys.first.departs, 8 * 3600 + 1800);
   });
 
   test('stops know which patterns serve them', () {
