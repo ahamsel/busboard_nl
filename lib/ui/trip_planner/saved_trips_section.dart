@@ -46,6 +46,23 @@ String _clock(DateTime t, bool use24h) =>
 /// The first ride of [j]; null for a journey that is only walking.
 RideLeg? _firstRide(Journey j) => j.legs.whereType<RideLeg>().firstOrNull;
 
+/// The buses the card lists: each journey's first ride, by when it leaves, earliest first. Journeys that share
+/// a first bus (or leave at the same time) count once; at most three.
+@visibleForTesting
+List<({DateTime time, RideLeg ride})> savedTripDepartures(Iterable<Journey> journeys) {
+  final all = [
+    for (final j in journeys)
+      if (_firstRide(j) case final ride?) (time: j.at(ride.departs), ride: ride),
+  ]..sort((a, b) => a.time.compareTo(b.time));
+  final out = <({DateTime time, RideLeg ride})>[];
+  for (final d in all) {
+    if (out.any((o) => o.time == d.time || o.ride.tripId == d.ride.tripId)) continue;
+    out.add(d);
+    if (out.length == 3) break;
+  }
+  return out;
+}
+
 class _SavedTripCard extends ConsumerWidget {
   const _SavedTripCard({super.key, required this.trip});
 
@@ -53,13 +70,12 @@ class _SavedTripCard extends ConsumerWidget {
 
   Future<void> _more(BuildContext context, WidgetRef ref) async {
     final action = await _editTrip(context, trip);
-    if (action == null) return;
+    if (action == null || !context.mounted) return;
     final saved = ref.read(savedTripsProvider.notifier);
     switch (action) {
       case _Rename(:final name):
         await saved.rename(trip.id, name);
       case _Remove():
-        if (!context.mounted) return;
         final confirmed = await BBDialog.show<bool>(
           context,
           title: 'Remove this saved trip?',

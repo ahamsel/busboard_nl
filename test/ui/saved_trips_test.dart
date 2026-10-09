@@ -1,4 +1,5 @@
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
+import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
@@ -9,10 +10,12 @@ import 'package:busboard_nl/ui/trip_planner/saved_trips_section.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/planner_app.dart';
 import '../kit/kit_test_helpers.dart';
+import '../trip_planner/live_overlay_test.dart' show feedWith;
 import '../trip_planner/test_network.dart';
 
 DateTime _at(int h, int m) =>
@@ -34,6 +37,7 @@ Future<void> _pump(
   DateTime? now,
   double textScale = 1,
   List<SavedTrip>? trips,
+  List<Override> overrides = const [],
   Size size = const Size(390, 1400),
 }) async {
   tester.view.physicalSize = size;
@@ -44,6 +48,7 @@ Future<void> _pump(
     net: TestNetwork(),
     now: now ?? _at(8, 1),
     textScale: textScale,
+    overrides: overrides,
   );
   final saved = _container(tester).read(savedTripsProvider.notifier);
   for (final t in trips ?? [_aToC]) {
@@ -253,4 +258,42 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('a bus running 2 minutes late shows its live time, "live", and says so aloud', (tester) async {
+    final handle = tester.ensureSemantics();
+    final net = TestNetwork();
+    final feed = feedWith(net, {'1-1': 120}, _at(8, 1));
+    await _pump(tester, overrides: [plannerLiveFeedProvider.overrideWith((ref) async => feed)]);
+    expect(find.text('8:12 · 1 · live'), findsOneWidget);
+    expect(find.text('8:20, 8:30'), findsOneWidget);
+    expect(find.bySemanticsLabel('Saved trip Stop A → Stop C, next bus 8:12, route 1, live'), findsOneWidget);
+    final text = tester.widget<Text>(find.text('8:12 · 1 · live'));
+    expect(text.style?.color, BBColors.light.liveInk);
+    handle.dispose();
+  });
+
+  test('departures are distinct, earliest first, three at most', () {
+    final day = DateTime(2026, 10, 8);
+    Journey j(String trip, int departs) => Journey(serviceDate: day, legs: [
+          RideLeg(
+            routeId: '1',
+            tripId: trip,
+            boardStopId: 'A',
+            alightStopId: 'C',
+            departs: departs,
+            arrives: departs + 600,
+            stopCount: 2,
+          ),
+        ]);
+    final out = savedTripDepartures([
+      j('b', 29400),
+      j('a', 29400 - 600),
+      j('b', 29400), // the same bus again (a different second leg)
+      j('c', 29400), // another bus at the same minute
+      j('d', 29400 + 600),
+      j('e', 29400 + 1200),
+    ]);
+    expect(out.map((d) => d.ride.tripId), ['a', 'b', 'd']);
+    expect(out.map((d) => d.time.hour * 60 + d.time.minute), [480, 490, 500]);
+  });
 }
