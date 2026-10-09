@@ -66,7 +66,7 @@ class TimetableIndex {
     // Per route + stop sequence: (tripId, departures, arrivals), grouped before splitting overtakers.
     final groups = <String, (String, List<int>, List<(String, List<int>, List<int>)>)>{};
 
-    void addTrip(TripInfo trip, List<StopTimeRow> rows, int shift) {
+    void addTrip(TripInfo trip, List<StopTimeRow> rows, List<int> dep, List<int> arr, int shift) {
       final stops = <int>[];
       for (final r in rows) {
         final s = stopIndex[r.stopId];
@@ -76,19 +76,24 @@ class TimetableIndex {
       if (stops.length < 2) return;
       final key = '${trip.routeId}|${stops.join(',')}';
       final g = groups.putIfAbsent(key, () => (trip.routeId, stops, []));
-      g.$3.add((
-        trip.tripId,
-        [for (final r in rows) GtfsTime.parse(r.departureTime).totalSeconds + shift],
-        [for (final r in rows) GtfsTime.parse(r.arrivalTime).totalSeconds + shift],
-      ));
+      g.$3.add((trip.tripId, [for (final t in dep) t + shift], [for (final t in arr) t + shift]));
     }
 
     for (final MapEntry(key: tripId, value: rows) in rowsByTrip.entries) {
       final trip = repo.tripsById[tripId];
       if (trip == null) continue;
-      if (today.contains(trip.serviceId)) addTrip(trip, rows, 0);
-      final pastMidnight = GtfsTime.parse(rows.last.arrivalTime).totalSeconds >= Duration.secondsPerDay;
-      if (pastMidnight && yesterday.contains(trip.serviceId)) addTrip(trip, rows, -Duration.secondsPerDay);
+      final runsToday = today.contains(trip.serviceId);
+      final ranYesterday = yesterday.contains(trip.serviceId);
+      if (!runsToday && !ranYesterday) continue;
+      final List<int> dep, arr;
+      try {
+        dep = [for (final r in rows) GtfsTime.parse(r.departureTime).totalSeconds];
+        arr = [for (final r in rows) GtfsTime.parse(r.arrivalTime).totalSeconds];
+      } catch (_) {
+        continue; // a blank or malformed time: skip the trip, as the Board skips the row
+      }
+      if (runsToday) addTrip(trip, rows, dep, arr, 0);
+      if (ranYesterday && arr.last >= Duration.secondsPerDay) addTrip(trip, rows, dep, arr, -Duration.secondsPerDay);
     }
 
     // Trips sorted by first departure; one that would overtake goes to the next pattern that can take it.
