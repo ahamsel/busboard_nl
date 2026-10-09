@@ -138,7 +138,17 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
     final use24h = BBTime.use24h(context);
     final live = feed != null && feed.succeeded;
     final j = live ? overlayLive(widget.journey, feed, now) : widget.journey;
-    final broken = live && firstTightLeg(j, notBefore: secondsInServiceDay(j.serviceDate, now)) != null;
+    // Only what is still ahead counts: the start-before-now check while the first ride hasn't left, and no ride
+    // that has left already (the rider may be on the bus, past a change that was tight).
+    final nowSeconds = secondsInServiceDay(j.serviceDate, now);
+    final firstLeaves = j.legs.whereType<RideLeg>().firstOrNull?.departs;
+    final broken = live &&
+        firstTightLeg(
+              j,
+              notBefore: firstLeaves != null && firstLeaves >= nowSeconds ? nowSeconds : null,
+              ignoreBefore: nowSeconds,
+            ) !=
+            null;
     String clock(int s) => BBTime.of(j.at(s), use24h: use24h);
 
     final from = draft.from;

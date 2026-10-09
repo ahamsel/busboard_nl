@@ -34,12 +34,16 @@ RideLeg _liveRide(Journey j, RideLeg leg, TimeTrackFetchResult feed, DateTime no
 /// The index of the first ride that can't be taken as shown; null when every one can. A ride is broken when it
 /// leaves less than [minTransferSeconds] after the bus before it arrives (or before the walk before it ends), when
 /// it arrives before it leaves, or, for the first ride, when the journey starts before [notBefore] (seconds from the
-/// service day's midnight).
-int? firstTightLeg(Journey j, {int? notBefore}) {
+/// service day's midnight). A ride that leaves before [ignoreBefore] has happened already and is never reported.
+int? firstTightLeg(Journey j, {int? notBefore, int? ignoreBefore}) {
   var firstRide = true;
   for (var i = 0; i < j.legs.length; i++) {
     final leg = j.legs[i];
     if (leg is! RideLeg) continue;
+    if (ignoreBefore != null && leg.departs < ignoreBefore) {
+      firstRide = false;
+      continue;
+    }
     if (leg.departs > leg.arrives) return i;
     if (firstRide && notBefore != null && j.departs < notBefore) return i;
     firstRide = false;
