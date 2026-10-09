@@ -36,10 +36,11 @@ class ArrivalService {
     final activeServices = repository.activeServiceIds(today);
 
     // Also check previous day for after-midnight trips (>24:00)
-    final yesterday = today.subtract(const Duration(days: 1));
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
     final yesterdayServices = repository.activeServiceIds(yesterday);
 
-    // Current time as GTFS time (seconds since midnight)
+    // Current time as GTFS time (seconds since today's midnight). Every row's
+    // times count from that same midnight: yesterday's 24:15 is today's 00:15.
     final nowTime = GtfsTime.fromDateTime(now);
 
     // Build live vehicle index if available
@@ -57,78 +58,79 @@ class ArrivalService {
       if (route == null) continue;
 
       // Parse GTFS departure time
-      final GtfsTime departureTime;
+      final GtfsTime serviceTime;
       try {
-        departureTime = GtfsTime.parse(st.departureTime);
+        serviceTime = GtfsTime.parse(st.departureTime);
       } catch (_) {
         continue;
       }
 
-      // Determine if this trip is active today
-      bool isActive = false;
-      if (departureTime.isNextDay) {
-        // After-midnight trip — check if yesterday's service includes this
-        isActive = yesterdayServices.contains(trip.serviceId);
-      } else {
-        isActive = activeServices.contains(trip.serviceId);
-      }
-      if (!isActive) continue;
+      // The stop time runs on today's service at its own time, and on
+      // yesterday's service (past 24:00 only) a day earlier.
+      final runs = [
+        if (activeServices.contains(trip.serviceId)) serviceTime,
+        if (serviceTime.isNextDay && yesterdayServices.contains(trip.serviceId))
+          GtfsTime.fromSeconds(
+            serviceTime.totalSeconds - Duration.secondsPerDay,
+          ),
+      ];
+      for (final departureTime in runs) {
+        // Calculate minutes away (raw scheduled — may be in the past for late buses)
+        final minutesAway = departureTime.minutesFrom(nowTime);
+        // Skip if more than 3 hours away
+        if (minutesAway > 180) continue;
 
-      // Calculate minutes away (raw scheduled — may be in the past for late buses)
-      final minutesAway = departureTime.minutesFrom(nowTime);
-      // Skip if more than 3 hours away
-      if (minutesAway > 180) continue;
+        // Check for live data
+        final liveVehicle = liveIndex[st.tripId];
+        GtfsTime? predictedTime;
+        LiveStatus? liveStatus;
+        bool isLive = false;
+        String? vehicleNumber;
+        int? schedDiffMins;
 
-      // Check for live data
-      final liveVehicle = liveIndex[st.tripId];
-      GtfsTime? predictedTime;
-      LiveStatus? liveStatus;
-      bool isLive = false;
-      String? vehicleNumber;
-      int? schedDiffMins;
+        if (liveVehicle != null) {
+          isLive = true;
+          vehicleNumber = liveVehicle.vehicle;
+          schedDiffMins = liveVehicle.gtfsStopSequenceSchedDifferenceMins;
 
-      if (liveVehicle != null) {
-        isLive = true;
-        vehicleNumber = liveVehicle.vehicle;
-        schedDiffMins = liveVehicle.gtfsStopSequenceSchedDifferenceMins;
+          // Apply prediction:
+          // diff positive = bus is AHEAD of schedule → arrives earlier
+          // diff negative = bus is BEHIND schedule → arrives later
+          // predicted = scheduled - diff_minutes
+          final adjustedSeconds =
+              departureTime.totalSeconds - (schedDiffMins * 60);
+          predictedTime = GtfsTime.fromSeconds(adjustedSeconds);
 
-        // Apply prediction:
-        // diff positive = bus is AHEAD of schedule → arrives earlier
-        // diff negative = bus is BEHIND schedule → arrives later
-        // predicted = scheduled - diff_minutes
-        final adjustedSeconds =
-            departureTime.totalSeconds - (schedDiffMins * 60);
-        predictedTime = GtfsTime.fromSeconds(adjustedSeconds);
-
-        // Determine live status
-        if (schedDiffMins > 0) {
-          liveStatus = LiveStatus.ahead;
-        } else if (schedDiffMins < 0) {
-          liveStatus = LiveStatus.behind;
-        } else {
-          liveStatus = LiveStatus.onTime;
+          // Determine live status
+          if (schedDiffMins > 0) {
+            liveStatus = LiveStatus.ahead;
+          } else if (schedDiffMins < 0) {
+            liveStatus = LiveStatus.behind;
+          } else {
+            liveStatus = LiveStatus.onTime;
+          }
         }
+
+        // Calculate minutes away using predicted or scheduled time
+        final effectiveTime = predictedTime ?? departureTime;
+        final effectiveMinutes = effectiveTime.minutesFrom(nowTime);
+        if (effectiveMinutes < -1) continue; // Already departed
+
+        arrivals.add(
+          ArrivalRow(
+            routeShortName: route.routeShortName,
+            headsign: trip.tripHeadsign,
+            scheduledTime: departureTime,
+            predictedTime: predictedTime,
+            minutesAway: effectiveMinutes < 0 ? 0 : effectiveMinutes,
+            liveStatus: liveStatus,
+            isLive: isLive,
+            tripId: st.tripId,
+            vehicleNumber: vehicleNumber,
+            schedDiffMins: schedDiffMins,
+          ),
+        );
       }
-
-      // Calculate minutes away using predicted or scheduled time
-      final effectiveTime = predictedTime ?? departureTime;
-      final effectiveMinutes = effectiveTime.minutesFrom(nowTime);
-      if (effectiveMinutes < -1) continue; // Already departed
-
-      arrivals.add(
-        ArrivalRow(
-          routeShortName: route.routeShortName,
-          headsign: trip.tripHeadsign,
-          scheduledTime: departureTime,
-          predictedTime: predictedTime,
-          minutesAway: effectiveMinutes < 0 ? 0 : effectiveMinutes,
-          liveStatus: liveStatus,
-          isLive: isLive,
-          tripId: st.tripId,
-          vehicleNumber: vehicleNumber,
-          schedDiffMins: schedDiffMins,
-        ),
-      );
     }
 
     // Merge stop-specific Metrobus predictions if available.
