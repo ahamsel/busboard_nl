@@ -46,7 +46,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
           ),
           // Branch 1: Map
           StatefulShellBranch(
-            routes: [GoRoute(path: '/map', builder: (context, state) => const MapScreen())],
+            routes: [GoRoute(path: '/map', builder: (context, state) => MapScreen(pick: state.uri.queryParameters['pick']))],
           ),
           // Branch 2: Service alerts
           StatefulShellBranch(

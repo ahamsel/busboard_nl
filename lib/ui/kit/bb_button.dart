@@ -13,6 +13,7 @@ class BBButton extends StatelessWidget {
     this.kind = BBButtonKind.primary,
     this.icon,
     this.expand = false,
+    this.wrap = false,
   });
 
   final String label;
@@ -20,6 +21,9 @@ class BBButton extends StatelessWidget {
   final BBButtonKind kind;
   final IconData? icon;
   final bool expand;
+
+  /// Let a long label wrap onto several lines (large text) instead of ellipsising.
+  final bool wrap;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +41,8 @@ class BBButton extends StatelessWidget {
         Flexible(
           child: Text(
             label,
-            overflow: TextOverflow.ellipsis,
+            textAlign: wrap ? TextAlign.center : null,
+            overflow: wrap ? TextOverflow.visible : TextOverflow.ellipsis,
             style: bb.text.label.copyWith(color: fg, fontSize: 15, fontWeight: FontWeight.w800),
           ),
         ),

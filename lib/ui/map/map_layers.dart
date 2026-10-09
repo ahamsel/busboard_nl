@@ -94,8 +94,8 @@ Map<String, dynamic> _point(double lat, double lon, Map<String, dynamic> propert
 String _hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
 /// Sources, layers and marker images of the Harbour map (spec §3.2), bottom to
-/// top: followed route (casing, line), stops, bus notches, bus badges, your
-/// stop. Your stop is on top because buses park on it at a terminal and would
+/// top: followed route (casing, line), a planned journey (ride casing, ride
+/// line, dotted walks), stops, bus notches, bus badges, your stop. Your stop is on top because buses park on it at a terminal and would
 /// hide it; taps are unaffected, since they pick buses (first) and stops by
 /// distance from the tap, not by what is drawn on top. [install] runs after every style load (a style switch clears
 /// everything natively); updates are cheap GeoJSON swaps that register any new marker image first.
@@ -109,6 +109,11 @@ class MapLayers {
   static const routeSource = 'bb-route';
   static const routeCasingLayer = 'bb-route-casing';
   static const routeLineLayer = 'bb-route-line';
+  static const journeySource = 'bb-journey';
+  static const journeyCasingLayer = 'bb-journey-casing';
+  static const journeyLineLayer = 'bb-journey-line';
+  static const journeyWalkSource = 'bb-journey-walk';
+  static const journeyWalkLayer = 'bb-journey-walk-layer';
   static const stopsSource = 'bb-stops';
   static const stopsLayer = 'bb-stops-layer';
   static const myStopSource = 'bb-my-stop';
@@ -120,17 +125,47 @@ class MapLayers {
 
   final _images = <String>{};
 
+  /// A route line's dark edge and its coloured line: each feature carries its 'color' and 'opacity'.
+  static final _casing = LineLayerProperties(
+    lineColor: _hex(RoutePalette.ink),
+    lineWidth: 9.0,
+    lineOpacity: [
+      Expressions.multiply,
+      0.3,
+      [Expressions.get, 'opacity'],
+    ],
+    lineCap: 'round',
+    lineJoin: 'round',
+  );
+  static const _line = LineLayerProperties(
+    lineColor: [Expressions.get, 'color'],
+    lineWidth: 6.0,
+    lineOpacity: [Expressions.get, 'opacity'],
+    lineCap: 'round',
+    lineJoin: 'round',
+  );
+
   Future<void> install({required Iterable<StopInfo> stops}) async {
     // onStyleLoaded can fire more than once for the same native style (the iOS
     // plugin re-applies the style on creation), so a second install finds our
     // layers and sources already there. Clear them first, layers before the
     // sources they draw from; on a fresh style there is nothing to remove.
-    for (final layer in [myStopLayer, badgeLayer, notchLayer, stopsLayer, routeLineLayer, routeCasingLayer]) {
+    for (final layer in [
+      myStopLayer,
+      badgeLayer,
+      notchLayer,
+      stopsLayer,
+      journeyWalkLayer,
+      journeyLineLayer,
+      journeyCasingLayer,
+      routeLineLayer,
+      routeCasingLayer,
+    ]) {
       try {
         await surface.removeLayer(layer);
       } catch (_) {}
     }
-    for (final source in [busesSource, myStopSource, stopsSource, routeSource]) {
+    for (final source in [busesSource, myStopSource, stopsSource, journeyWalkSource, journeySource, routeSource]) {
       try {
         await surface.removeSource(source);
       } catch (_) {}
@@ -140,28 +175,23 @@ class MapLayers {
     _images.add(MarkerImages.myStopId);
 
     await surface.addGeoJsonSource(routeSource, _collection(const []));
+    await surface.addLineLayer(routeSource, routeCasingLayer, _casing);
+    await surface.addLineLayer(routeSource, routeLineLayer, _line);
+
+    // A planned journey: its rides drawn as the followed route is, its walks as dots.
+    await surface.addGeoJsonSource(journeySource, _collection(const []));
+    await surface.addLineLayer(journeySource, journeyCasingLayer, _casing);
+    await surface.addLineLayer(journeySource, journeyLineLayer, _line);
+    await surface.addGeoJsonSource(journeyWalkSource, _collection(const []));
     await surface.addLineLayer(
-      routeSource,
-      routeCasingLayer,
+      journeyWalkSource,
+      journeyWalkLayer,
       LineLayerProperties(
         lineColor: _hex(RoutePalette.ink),
-        lineWidth: 9.0,
-        lineOpacity: [
-          Expressions.multiply,
-          0.3,
-          [Expressions.get, 'opacity'],
-        ],
-        lineCap: 'round',
-        lineJoin: 'round',
-      ),
-    );
-    await surface.addLineLayer(
-      routeSource,
-      routeLineLayer,
-      const LineLayerProperties(
-        lineColor: [Expressions.get, 'color'],
-        lineWidth: 6.0,
-        lineOpacity: [Expressions.get, 'opacity'],
+        lineWidth: 4.0,
+        lineOpacity: 0.7,
+        // Round caps on zero-length dashes draw dots.
+        lineDasharray: const [0.0, 2.0],
         lineCap: 'round',
         lineJoin: 'round',
       ),
@@ -296,4 +326,27 @@ class MapLayers {
   }
 
   Future<void> clearRoute() => surface.setGeoJsonSource(routeSource, _collection(const []));
+
+  /// A planned journey (spec §2.3): each ride's part of its trip in its route colour, each walk as a dotted
+  /// straight line. Coordinates are [lon, lat] pairs.
+  Future<void> updateJourney({
+    required List<({List<List<double>> line, Color color})> rides,
+    required List<List<List<double>>> walks,
+  }) async {
+    Map<String, dynamic> line(List<List<double>> coords, Map<String, dynamic> properties) => {
+          'type': 'Feature',
+          'geometry': {'type': 'LineString', 'coordinates': coords},
+          'properties': properties,
+        };
+    await surface.setGeoJsonSource(
+      journeySource,
+      _collection([for (final r in rides) line(r.line, {'color': _hex(r.color), 'opacity': 1.0})]),
+    );
+    await surface.setGeoJsonSource(journeyWalkSource, _collection([for (final w in walks) line(w, const {})]));
+  }
+
+  Future<void> clearJourney() async {
+    await surface.setGeoJsonSource(journeySource, _collection(const []));
+    await surface.setGeoJsonSource(journeyWalkSource, _collection(const []));
+  }
 }
