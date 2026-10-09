@@ -282,6 +282,26 @@ void main() {
     expect(planner.applyLive(q, js, null, at812).first.departs, 8 * 3600 + 1200);
   });
 
+  test('a Leave by 60 to 75 minutes ahead still looks back for a late bus', () {
+    // Asked at 8:00 for 9:05: 1-6 is timetabled 8:58 (within the live horizon) and runs 8 min late, so it leaves
+    // A at 9:06; the next timetabled bus is 9:30.
+    net.addTrip('1-6', '1', ['A', 'B', 'C'], 8 * 3600 + 58 * 60, 300);
+    net.addTrip('1-7', '1', ['A', 'B', 'C'], 9 * 3600 + 30 * 60, 300);
+    final p = TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay));
+    final at800 = DateTime(testDay.year, testDay.month, testDay.day, 8, 0);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveBy,
+      time: DateTime(testDay.year, testDay.month, testDay.day, 9, 5),
+    );
+    final js = (p.plan(q, now: at800) as PlanFound).journeys;
+    expect(js.first.departs, 9 * 3600 + 30 * 60);
+    final shown = p.applyLive(q, js, feedWith(net, {'1-6': 480}, at800), at800);
+    final first = shown.first.legs.whereType<RideLeg>().single;
+    expect((first.tripId, first.departs, first.live), ('1-6', 9 * 3600 + 6 * 60, true));
+  });
+
   test('a Leave by more than an hour ahead: live times change nothing, look-back or not', () {
     // Asked at 7:30 for 8:40: the 8:40 and 8:50 buses are past the live horizon.
     final at730 = DateTime(testDay.year, testDay.month, testDay.day, 7, 30);
