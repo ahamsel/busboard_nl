@@ -34,7 +34,7 @@
 - **Saved trips** sit at the top. Each card shows its name and up to 3 distinct departure times, earliest first, in the short form "8:12 · 10 · live, 8:24, 8:41" (the first bus with its route and a live mark; the others as times only, without AM or PM). Each time is when the bus leaves the rider's boarding stop, not when the rider sets out. Tapping a card fills the planner with its ends for "Leave now". A long-press, or the card's More button, offers Rename and Remove.
 - **The planner** below:
   - **From** and **To**: each takes a stop number, a stop name, "My location" or "Pick on map". A swap button exchanges them. "My location" reads "Finding you…" while it waits for a fix, for at most 10 s; then "Couldn't find your location", and it can be tapped again.
-  - **When**: Leave now / Leave by / Arrive by, with an exact-minute time picker and a date for later days. Both pickers are the app's own kit pickers, and the When control wraps at large text. Leave by and Arrive by start at half an hour from now, rounded up to the next 5 minutes, until the rider picks a time (a picked time is kept when the mode changes).
+  - **When**: Leave now / Leave by / Arrive by, with an exact-minute time picker and a date for later days. Both pickers are the app's own kit pickers, and the When control wraps at large text. Leave by and Arrive by start at half an hour from now, rounded up to the next 5 minutes, and move on with the clock until the rider picks a time (a picked time is kept when the mode changes).
   - **Results** appear as soon as both ends are set (no Plan button) and show 3–5 journeys. Each result card shows the leave and arrive times, the total minutes, the route badges in order (10 → 2), the walking minutes, and a live dot when a live time was used. A warning shows when a transfer is tight (§3.4).
 
 ### 2.3 Journey detail
@@ -78,7 +78,7 @@
 
 ### 3.3 Search details
 - **Leave by T** (Leave now is T = now): forward RAPTOR from the origin's access stops at T + their walk time.
-- **Arrive by T:** reverse RAPTOR from the destination's egress stops at T − their walk time, giving each journey's latest departure.
+- **Arrive by T:** reverse RAPTOR from the destination's egress stops at T − their walk time, giving each journey's latest departure. Rebuilding a journey from its latest departure can get off a bus later than needed (a longer ride, then a longer walk), so each departure found is then searched forward as well: the fastest way from that departure that still arrives by T is shown, and the slower copy is dropped.
 - Rounds: 1 ride, then up to 3 transfers (4 rides). Walking links are relaxed after each round.
 - The day's index is built in a background isolate (`Isolate.run`), so building it never blocks the UI thread. The search itself runs on the main isolate; it took under 10 ms for one search pass on the real schedule in the test run (worst of 200), which is why it needs no isolate.
 - **Midnight:** today's index includes yesterday's trips that run past midnight (times ≥ 24:00), shifted by −24 h, so a query at 00:10 finds them. Tomorrow's index is used only for the "next bus" line: on Leave by (and Leave now) with no journey left today, the provider searches tomorrow from 00:00 and offers its first bus. Arrive by never looks at tomorrow.

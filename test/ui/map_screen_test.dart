@@ -1104,6 +1104,17 @@ void main() {
       expect(find.text("Your stop isn't on this trip"), findsNothing);
     });
 
+    testWidgets('following the same bus for another stop keeps the route line drawn', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(surface.features('bb-route'), isNotEmpty);
+      // The same bus, now from a planned trip boarding at s3; the bus has not moved.
+      containerOf(tester).read(followProvider.notifier).follow('2573', stopId: 's3');
+      await _frames(tester, 3);
+      expect(surface.features('bb-route').map((f) => (f['properties'] as Map)['part']), ['driven', 'ahead']);
+      expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s3$')), findsOneWidget);
+    });
+
     testWidgets('a follow from the Board still counts to the saved stop', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
