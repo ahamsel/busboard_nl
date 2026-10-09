@@ -196,8 +196,9 @@ class TripPlanner {
         );
       }
     }
-    // Past the live horizon no overlay applies, so a look-back could only find buses that have gone.
-    if (q.mode != PlanMode.arriveBy && earliest - nowSeconds <= liveHorizon.inSeconds) {
+    // A look-back bus leaves up to lookBackSeconds before earliest; past the live horizon from then, no overlay
+    // applies, so it could only find buses that have gone.
+    if (q.mode != PlanMode.arriveBy && earliest - nowSeconds <= liveHorizon.inSeconds + lookBackSeconds) {
       out.addAll(_lookBack(q, feed, now, earliest));
     }
     // Re-planned journeys can repeat one already in the list, or leave later than the one after them.
