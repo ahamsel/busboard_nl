@@ -92,12 +92,14 @@ class StubMap {
   void longPress(double lat, double lon) => config!.onLongPress!(LatLng(lat, lon));
 }
 
-/// Pumps the app's real route tree (shell, four tabs) on [net] at [now], starting at [initial].
+/// Pumps the app's real route tree (shell, four tabs) on [net] at [now] ([clock], when given, tells the time
+/// instead), starting at [initial].
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
   required TestNetwork net,
   required DateTime now,
+  DateTime Function()? clock,
   String initial = '/plan',
   double textScale = 1,
   GeolocatorPlatform? geolocator,
@@ -123,7 +125,7 @@ Future<void> pumpPlannerApp(
         ),
         gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
         nearestStopsProvider.overrideWith((ref) async => const <NearbyStop>[]),
-        plannerClockProvider.overrideWithValue(() => now),
+        plannerClockProvider.overrideWithValue(clock ?? () => now),
         // Isolate.run never finishes under testWidgets' fake async.
         timetableIndexBuilderProvider.overrideWithValue((repo, day) async => TimetableIndex.build(repo, day)),
         timetrackApiProvider.overrideWithValue(

@@ -48,11 +48,22 @@ class PlanDraft {
   final Place? from;
   final Place? to;
   final PlanMode mode;
+
+  /// The time the rider picked; null until they pick one.
   final DateTime? time;
 
-  PlanQuery? toQuery(DateTime now) => from == null || to == null
+  /// Leave by or Arrive by with no time picked: the plan is for [planDefaultTimeProvider], which moves with the clock.
+  bool get usesDefaultTime => mode != PlanMode.leaveNow && time == null;
+
+  /// [defaultTime] stands in for a time not picked; without it, [defaultPlanTime] of [now].
+  PlanQuery? toQuery(DateTime now, {DateTime? defaultTime}) => from == null || to == null
       ? null
-      : PlanQuery(from: from!, to: to!, mode: mode, time: mode == PlanMode.leaveNow ? now : time ?? now);
+      : PlanQuery(
+          from: from!,
+          to: to!,
+          mode: mode,
+          time: mode == PlanMode.leaveNow ? now : time ?? defaultTime ?? defaultPlanTime(now),
+        );
 }
 
 /// Half an hour from [now], rounded up to the next 5 minutes (a time on the mark stays).
@@ -62,6 +73,17 @@ DateTime defaultPlanTime(DateTime now) {
   return mark == t ? mark : mark.add(const Duration(minutes: 5));
 }
 
+/// [defaultPlanTime] for now, moved on as the clock passes each 5-minute mark, so a Leave by or Arrive by time the
+/// rider never picked doesn't go stale while the Plan tab stays open.
+final planDefaultTimeProvider = Provider.autoDispose<DateTime>((ref) {
+  final now = ref.read(plannerClockProvider)();
+  final at = defaultPlanTime(now);
+  // It moves on once now + 30 min passes [at]; a second's slack so it has.
+  final timer = Timer(at.subtract(const Duration(minutes: 30)).difference(now) + const Duration(seconds: 1), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return at;
+});
+
 class PlanQueryNotifier extends Notifier<PlanDraft> {
   @override
   PlanDraft build() => const PlanDraft();
@@ -69,13 +91,8 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
   void setFrom(Place? p) => state = PlanDraft(from: p, to: state.to, mode: state.mode, time: state.time);
   void setTo(Place? p) => state = PlanDraft(from: state.from, to: p, mode: state.mode, time: state.time);
   void swap() => state = PlanDraft(from: state.to, to: state.from, mode: state.mode, time: state.time);
-  /// Leave by and Arrive by with no time chosen yet start at [defaultPlanTime], not now: Arrive by now has no bus.
-  void setMode(PlanMode m) => state = PlanDraft(
-        from: state.from,
-        to: state.to,
-        mode: m,
-        time: state.time ?? (m == PlanMode.leaveNow ? null : defaultPlanTime(ref.read(plannerClockProvider)())),
-      );
+  /// Leave by and Arrive by with no time picked plan for [planDefaultTimeProvider], not now: Arrive by now has no bus.
+  void setMode(PlanMode m) => state = PlanDraft(from: state.from, to: state.to, mode: m, time: state.time);
   void setTime(DateTime t) => state = PlanDraft(from: state.from, to: state.to, mode: state.mode, time: t);
 
   /// A saved trip opened from its card: its ends, leaving now.
@@ -135,7 +152,8 @@ Future<PlanOutcome> _plan(Ref ref, PlanQuery q, TimeTrackFetchResult? feed, Date
 
 final planResultsProvider = FutureProvider.autoDispose<PlanOutcome?>((ref) async {
   final now = ref.read(plannerClockProvider)();
-  final q = ref.watch(planQueryProvider).toQuery(now);
+  final draft = ref.watch(planQueryProvider);
+  final q = draft.toQuery(now, defaultTime: draft.usesDefaultTime ? ref.watch(planDefaultTimeProvider) : null);
   if (q == null) return null;
   return _plan(ref, q, ref.watch(_liveFeedNow), now);
 });

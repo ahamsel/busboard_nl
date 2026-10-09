@@ -97,7 +97,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
     ref.listen(planQueryProvider, (_, _) => _formChanged = true);
     if (!results.isLoading) _formChanged = false;
     final now = ref.read(plannerClockProvider)();
-    final when = draft.time ?? now;
+    final when = draft.usesDefaultTime ? ref.watch(planDefaultTimeProvider) : draft.time ?? now;
     final use24h = BBTime.use24h(context);
     final q = ref.read(planQueryProvider.notifier);
 
