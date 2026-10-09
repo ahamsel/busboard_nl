@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/arrival/arrival_models.dart';
+import '../../domain/trip_planner/place.dart';
 import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
+import '../../state/trip_planner_providers.dart';
 import '../alerts/service_alert_card.dart';
 import '../board/arrival_row_tile.dart';
 import '../kit/kit.dart';
@@ -41,7 +43,7 @@ class StopCardHeader extends StatelessWidget {
   }
 }
 
-/// Stop card body: next arrivals, any stop alert, Set as my stop, Open board.
+/// Stop card body: next arrivals, any stop alert, Open board, Plan a trip from here, Set as my stop.
 class StopCardBody extends ConsumerWidget {
   const StopCardBody({super.key, required this.stop});
 
@@ -78,6 +80,18 @@ class StopCardBody extends ConsumerWidget {
             icon: BBIcons.board,
             expand: true,
             onPressed: () => context.go('/board/${stop.stopId}'),
+          ),
+          const SizedBox(height: BBSpace.s),
+          BBButton(
+            label: 'Plan a trip from here',
+            icon: BBIcons.plan,
+            kind: BBButtonKind.quiet,
+            expand: true,
+            wrap: true,
+            onPressed: () {
+              ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stop.stopId, name: stop.stopName));
+              context.go('/plan');
+            },
           ),
           const SizedBox(height: BBSpace.s),
           BBButton(

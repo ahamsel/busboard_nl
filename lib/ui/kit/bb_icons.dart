@@ -53,4 +53,10 @@ abstract final class BBIcons {
   static const IconData remove = IconData(0xe32a, fontFamily: 'PhosphorRegular'); // minus
   static const IconData bell = IconData(0xe0ce, fontFamily: 'PhosphorRegular'); // bell
   static const IconData bellFill = IconData(0xe0ce, fontFamily: 'PhosphorFill'); // bell
+  static const IconData plan = IconData(0xe39c, fontFamily: 'PhosphorRegular'); // path
+  static const IconData planFill = IconData(0xe39c, fontFamily: 'PhosphorFill'); // path
+  static const IconData swap = IconData(0xe098, fontFamily: 'PhosphorRegular'); // arrowsDownUp
+  static const IconData walk = IconData(0xe73a, fontFamily: 'PhosphorRegular'); // personSimpleWalk
+  static const IconData calendar = IconData(0xe10a, fontFamily: 'PhosphorRegular'); // calendarBlank
+  static const IconData more = IconData(0xe1fe, fontFamily: 'PhosphorRegular'); // dotsThree
 }

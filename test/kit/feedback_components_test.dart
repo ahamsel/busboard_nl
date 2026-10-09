@@ -131,6 +131,17 @@ void main() {
     expect(find.text('Change stop?'), findsNothing);
   });
 
+  testWidgets('dialog shows its content under the message', (tester) async {
+    await tester.pumpWidget(_launcher((c) async {
+      await BBDialog.show<String>(c, title: 'Name', content: const Text('field here'), actions: const [
+        BBDialogAction(label: 'OK', value: 'ok', primary: true),
+      ]);
+    }));
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+    expect(find.text('field here'), findsOneWidget);
+  });
+
   testWidgets('dialog fits a 320x568 phone at text scale 2.0 with actions reachable', (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;

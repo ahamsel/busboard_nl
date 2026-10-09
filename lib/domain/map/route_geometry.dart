@@ -237,6 +237,25 @@ class RouteGeometry {
     return (driven: driven, ahead: ahead);
   }
 
+  /// The part of [shapeId] from [from] to [to] metres along it (clamped to the shape), as [lon, lat] pairs, with
+  /// at least two points; null for an unknown shape or when [to] is not past [from].
+  List<List<double>>? shapeBetween(String shapeId, double from, double to) {
+    final points = _repo.shapesById[shapeId];
+    final dists = _repo.shapeCumulativeDistances[shapeId];
+    if (points == null || dists == null || points.length < 2 || dists.length != points.length) return null;
+    final a = from.clamp(0.0, dists.last);
+    final b = to.clamp(0.0, dists.last);
+    if (b <= a) return null;
+    final start = splitShape(shapeId, a)!.ahead.first;
+    final end = splitShape(shapeId, b)!.driven.last;
+    return [
+      start,
+      for (var k = 0; k < points.length; k++)
+        if (dists[k] > a && dists[k] < b) [points[k].lon, points[k].lat],
+      end,
+    ];
+  }
+
   /// Progress of the stop [tripId] departs closest to [departureSeconds]
   /// (within ±30 s; also matches trips past midnight).
   double? stopProgressAtTime(String tripId, String shapeId, int departureSeconds) {

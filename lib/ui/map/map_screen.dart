@@ -16,15 +16,20 @@ import '../../domain/map/bus_tracking_state.dart';
 import '../../domain/map/delayed_track_renderer.dart';
 import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
+import '../../domain/trip_planner/journey.dart';
 import '../../state/follow_providers.dart';
+import '../../state/journey_on_map_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
+import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../copy/legal_copy.dart';
 import '../kit/kit.dart';
+import '../trip_planner/map_plan_sheet.dart';
 import 'bus_card.dart';
 import 'follow_camera.dart';
 import 'follow_card.dart';
+import 'journey_lines.dart';
 import 'map_hit_test.dart';
 import 'map_layers.dart';
 import 'map_style.dart';
@@ -66,9 +71,14 @@ class _Follow {
 
 /// The Map tab (spec §3.3): full-screen Harbour map with your-stop and route
 /// chips, a my-location control and one floating sheet whose card follows the
-/// selection (your stop / a stop / a bus).
+/// selection (your stop / a stop / a bus). A long-press plans from or to that
+/// point; [pick] ('from' or 'to', from `/map?pick=`) makes the next tap choose
+/// that end of the trip; a journey shown from the planner is drawn on top.
 class MapScreen extends ConsumerStatefulWidget {
-  const MapScreen({super.key});
+  const MapScreen({super.key, this.pick});
+
+  /// 'from' or 'to' while the planner waits for a point on the map; anything else is ignored.
+  final String? pick;
 
   @override
   ConsumerState<MapScreen> createState() => _MapScreenState();
@@ -127,6 +137,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
 
   _Follow? _follow;
   final _pointerStarts = <int, Offset>{};
+
+  // A planned journey (spec §2.3): drawn one update at a time, each with the
+  // journey as it is then, and fitted once the camera can move.
+  Future<void> _journeyDraw = Future.value();
+  bool _journeyFitPending = false;
   // Where the follow camera must keep the bus and your stop clear of the chips
   // and the peeking sheet; refreshed by every layout.
   EdgeInsets _fitPadding = const EdgeInsets.fromLTRB(48, 96, 48, 220);
@@ -151,6 +166,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_enableMyLocation(request: false));
+    _journeyFitPending = ref.read(journeyOnMapProvider) != null;
     // A follow set before the map existed (the Board's live row): its card
     // replaces any selection.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -215,6 +231,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   void _onReady(MapSurface surface, MapCamera camera) {
     _surface = surface;
     _camera = camera;
+    _fitJourneyIfDue();
   }
 
   Future<void> _onStyleLoaded() async {
@@ -268,6 +285,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       return;
     }
     _layers = layers;
+    _queueJourneyDraw();
     _ticker ??= Ticker(_onTick);
     _resumeTicker();
   }
@@ -299,6 +317,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
 
   StopInfo? _myStop() {
     final id = ref.read(settingsProvider).selectedStopId;
+    return id == null ? null : ref.read(stopInfoProvider(id));
+  }
+
+  /// "Your stop" for the follow: the stop it was started for (a planned trip's boarding stop), else the saved one.
+  String? _followStopId() => ref.read(followProvider)?.stopId ?? ref.read(settingsProvider).selectedStopId;
+
+  StopInfo? _followStop() {
+    final id = _followStopId();
     return id == null ? null : ref.read(stopInfoProvider(id));
   }
 
@@ -390,7 +416,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       bus: bus,
       drawnProgress: drawn[id]?.progress,
       drawnTripId: drawn[id]?.tripId,
-      yourStopId: ref.read(settingsProvider).selectedStopId,
+      yourStopId: _followStopId(),
       now: now,
     );
     final changed = snap != f.snapshot;
@@ -463,8 +489,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   /// The follow is over: stop it (the listener clears the route and drops the
   /// camera) and say why, unless the bus simply arrived.
   void _endFollow(FollowEnd why, String id) {
+    final yourStop = _followStop();
     ref.read(followProvider.notifier).stop();
-    final message = followEndMessage(why, id, _myStop()?.stopName);
+    final message = followEndMessage(why, id, yourStop?.stopName);
     if (message != null && mounted) BBToast.show(context, message);
   }
 
@@ -489,9 +516,74 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
 
   void _onPointerEnd(PointerEvent e) => _pointerStarts.remove(e.pointer);
 
+  // ─── A planned journey (spec §2.3) ────────────────────────
+
+  void _onJourneyChanged(Journey? next) {
+    _journeyFitPending = next != null;
+    _queueJourneyDraw();
+    _fitJourneyIfDue();
+  }
+
+  JourneyLines? _journeyLines(Journey j) {
+    final repo = ref.read(gtfsRepositoryProvider).value;
+    final geometry = ref.read(routeGeometryProvider);
+    if (repo == null || geometry == null) return null;
+    final shown = ref.read(journeyOnMapProvider.notifier);
+    return journeyLines(j, repo, geometry, from: shown.from, to: shown.to);
+  }
+
+  /// Draws the journey as it is when this update's turn comes (none clears it).
+  void _queueJourneyDraw() {
+    _journeyDraw = _journeyDraw.then((_) async {
+      final layers = _layers;
+      if (!mounted || layers == null) return;
+      final j = ref.read(journeyOnMapProvider);
+      try {
+        final lines = j == null ? null : _journeyLines(j);
+        if (lines == null) {
+          await layers.clearJourney();
+        } else {
+          await layers.updateJourney(rides: lines.rides, walks: lines.walks);
+        }
+      } catch (e) {
+        _log('Could not draw the journey: $e');
+      }
+    });
+  }
+
+  /// Brings the whole journey into view, clear of the chips and the sheet. A
+  /// follow's camera is paused, so it doesn't pull the view straight back.
+  void _fitJourneyIfDue() {
+    final camera = _camera;
+    final j = ref.read(journeyOnMapProvider);
+    if (!_journeyFitPending || camera == null || j == null || !mounted) return;
+    final bounds = _journeyLines(j)?.bounds;
+    if (bounds == null) return;
+    _journeyFitPending = false;
+    final f = _follow;
+    if (f != null && !f.paused) setState(() => f.paused = true);
+    unawaited(_moveCamera(camera, FitMove(bounds.$1, bounds.$2), animate: !MediaQuery.disableAnimationsOf(context)));
+  }
+
   // ─── Interaction ──────────────────────────────────────────
 
+  /// True while the next tap chooses the trip's start, false for its destination, null when not picking.
+  bool? get _pickFrom => switch (widget.pick) {
+        'from' => true,
+        'to' => false,
+        _ => null,
+      };
+
+  void _finishPick(bool forFrom, LatLng tap) {
+    final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, tap);
+    final q = ref.read(planQueryProvider.notifier);
+    forFrom ? q.setFrom(place) : q.setTo(place);
+    context.go('/plan');
+  }
+
   void _onTap(LatLng tap) {
+    final pickFrom = _pickFrom;
+    if (pickFrom != null) return _finishPick(pickFrom, tap);
     final radius = tapRadiusMeters(_camera?.zoom ?? _defaultZoom);
     final selection = ref.read(mapSelectionProvider.notifier);
     final markers = _lastMarkers.isNotEmpty ? _lastMarkers : _markersFromTracking();
@@ -637,6 +729,11 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     ref.listen<FollowTarget?>(followProvider, (prev, next) {
       if (prev != next) _onFollowChanged(next);
     });
+    ref.listen<Journey?>(journeyOnMapProvider, (prev, next) {
+      if (!identical(prev, next)) _onJourneyChanged(next);
+    });
+    final journey = ref.watch(journeyOnMapProvider);
+    final pickFrom = _pickFrom;
     _syncFollow(ref.watch(followProvider));
     final follow = _follow;
     final bb = context.bb;
@@ -663,10 +760,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final selection = ref.watch(mapSelectionProvider);
     final selectedStop = selection is StopSelection ? ref.watch(stopInfoProvider(selection.stopId)) : null;
     final repo = gtfs.value!;
+    // The follow's own stop when it was started for one (a planned trip's boarding stop), else the saved stop.
+    final followStopId = ref.watch(followProvider)?.stopId ?? settings.selectedStopId;
+    final followStop = followStopId == null ? null : ref.watch(stopInfoProvider(followStopId));
     // Minutes to your stop from the live predictions, for the followed bus.
-    final yourStopArrivals = follow == null || settings.selectedStopId == null
+    final yourStopArrivals = follow == null || followStopId == null
         ? const <ArrivalRow>[]
-        : ref.watch(stopArrivalsProvider(settings.selectedStopId!)).value ?? const <ArrivalRow>[];
+        : ref.watch(stopArrivalsProvider(followStopId)).value ?? const <ArrivalRow>[];
     final buildMap = ref.watch(mapViewBuilderProvider);
     final media = MediaQuery.of(context);
     final navInset = BBNavBar.reservedHeight(context);
@@ -750,6 +850,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 onReady: _onReady,
                 onStyleLoaded: () => unawaited(_onStyleLoaded()),
                 onTap: _onTap,
+                onLongPress: (at) => unawaited(showMapPlanSheet(context, ref, at)),
                 )),
               ),
             ),
@@ -762,6 +863,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (pickFrom != null) ...[_pickBanner(pickFrom), const SizedBox(height: BBSpace.s)],
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -792,11 +894,27 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                     ],
                   ),
                   const SizedBox(height: BBSpace.m),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: BBControlPill(items: [
-                      BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
-                    ]),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: journey == null
+                              ? const SizedBox.shrink()
+                              : BBChip(
+                                  label: 'Hide trip',
+                                  icon: BBIcons.close,
+                                  semanticLabel: 'Hide the trip from the map',
+                                  onTap: () => ref.read(journeyOnMapProvider.notifier).clear(),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: BBSpace.s),
+                      BBControlPill(items: [
+                        BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
+                      ]),
+                    ],
                   ),
                 ],
               ),
@@ -842,7 +960,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 bottomInset: navInset,
                 semanticLabel: 'Map sheet',
                 header: _measuredHeader(follow != null
-                    ? _followHeader(follow, repo, myStop, yourStopArrivals, actionsFirst: headerOverflows)
+                    ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
                     : switch (selection) {
                         null => MyStopCard.header(),
                         StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),
@@ -874,6 +992,40 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
         ),
       );
     });
+  }
+
+  /// What the next tap chooses, and a way out without choosing.
+  Widget _pickBanner(bool forFrom) {
+    final bb = context.bb;
+    void cancel() => context.go('/plan');
+    return DecoratedBox(
+      decoration: bb.floating(radius: BBRadius.sheet),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(BBSpace.l, BBSpace.xs, BBSpace.xs, BBSpace.xs),
+        child: Row(
+          children: [
+            Icon(BBIcons.pin, size: 20, color: bb.colors.brand),
+            const SizedBox(width: BBSpace.s),
+            Expanded(
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  'Tap the map to choose ${forFrom ? 'your starting point' : 'your destination'}',
+                  style: bb.text.body,
+                ),
+              ),
+            ),
+            Semantics(
+              button: true,
+              label: 'Cancel choosing on the map',
+              onTap: cancel,
+              excludeSemantics: true,
+              child: BBButton(label: 'Cancel', kind: BBButtonKind.quiet, wrap: true, onPressed: cancel),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _followChip(_Follow f) => BBChip(
