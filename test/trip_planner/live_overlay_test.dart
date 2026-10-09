@@ -225,6 +225,28 @@ void main() {
     expect(shown.replannedForLiveTimes, isTrue);
   });
 
+  group('arrive by with live times', () {
+    final at830 = DateTime(testDay.year, testDay.month, testDay.day, 8, 30);
+    final by840 = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.arriveBy,
+      time: DateTime(testDay.year, testDay.month, testDay.day, 8, 40),
+    );
+
+    test('a deadline near now: no journey that has already left, and none planned again', () {
+      final js = (planner.plan(by840, now: at830) as PlanFound).journeys;
+      final shown = planner.applyLive(by840, js, feedWith(net, {'1-3': 0}, at830), at830);
+      expect(shown.map((j) => j.departs), [8 * 3600 + 1800]);
+      expect(shown.any((j) => j.replannedForLiveTimes), isFalse);
+    });
+
+    test('a journey the live times make arrive after the deadline is dropped', () {
+      final js = (planner.plan(by840, now: at830) as PlanFound).journeys;
+      expect(planner.applyLive(by840, js, feedWith(net, {'1-3': 120}, at830), at830), isEmpty);
+    });
+  });
+
   test('no feed or a failed one: journeys unchanged', () {
     final j = firstAtoE();
     expect(planner.applyLive(query, [j], null, now).single.usesLive, isFalse);

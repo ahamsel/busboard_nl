@@ -60,6 +60,57 @@ void main() {
     expect(out.firstArrival, at(8, 10));
   });
 
+  group('arrive by against now', () {
+    test('a deadline near now: no journey that has already left', () {
+      final out = planner.plan(
+        PlanQuery(from: stop('A'), to: stop('C'), mode: PlanMode.arriveBy, time: at(8, 40)),
+        now: at(8, 30),
+      );
+      final js = (out as PlanFound).journeys;
+      expect(js.map((j) => j.departs), [8 * 3600 + 1800]);
+    });
+
+    test('a walk to the first stop counts: a pin start whose walk began before now is dropped', () {
+      // About 55 m south of A: a short walk, so the 8:30 bus means leaving just before 8:30.
+      final pin = PinPlace(lat: 47.5595, lon: -52.7500, label: 'Pin');
+      final out = planner.plan(
+        PlanQuery(from: pin, to: stop('C'), mode: PlanMode.arriveBy, time: at(8, 40)),
+        now: at(8, 30),
+      );
+      expect(out, isA<PlanNoJourney>());
+      expect((out as PlanNoJourney).firstArrival, at(8, 50));
+    });
+
+    test('nothing makes the deadline any more: no journey, with the earliest arrival from now', () {
+      final out = planner.plan(
+        PlanQuery(from: stop('A'), to: stop('C'), mode: PlanMode.arriveBy, time: at(8, 25)),
+        now: at(8, 30),
+      );
+      expect(out, isA<PlanNoJourney>());
+      final first = (out as PlanNoJourney).firstArrival!;
+      expect(first.isBefore(at(8, 30)), isFalse);
+      expect(first, at(8, 40));
+    });
+
+    test("a later day's arrive by is not cut by today's now", () {
+      final tomorrow = DateTime(testDay.year, testDay.month, testDay.day + 1);
+      final net = TestNetwork();
+      final next = TripPlanner(net.repo, TimetableIndex.build(net.repo, tomorrow));
+      final out = next.plan(
+        PlanQuery(
+          from: stop('A'),
+          to: stop('C'),
+          mode: PlanMode.arriveBy,
+          time: DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 8, 40),
+        ),
+        now: at(8, 30),
+      );
+      final js = (out as PlanFound).journeys;
+      expect(js.first.departs, lessThan(8 * 3600 + 1800));
+      expect(js.last.departs, 8 * 3600 + 1800);
+    });
+  });
+
   test("just after midnight, last night's late bus is found", () {
     final j = (plan(stop('Y'), stop('Z'), PlanMode.leaveBy, at(0, 10)) as PlanFound).journeys.first;
     expect(j.at(j.departs), at(0, 20));

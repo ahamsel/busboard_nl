@@ -84,7 +84,7 @@ final plannerLiveFeedProvider = FutureProvider.autoDispose<TimeTrackFetchResult?
 /// Plans [q] with live times. When nothing runs later today on Leave by / Leave now, finds tomorrow's first bus.
 Future<PlanOutcome> _plan(Ref ref, PlanQuery q, TimeTrackFetchResult? feed, DateTime now) async {
   final planner = await ref.watch(tripPlannerProvider(_day(q.time)).future);
-  final outcome = planner.plan(q);
+  final outcome = planner.plan(q, now: now);
   if (outcome is PlanNoJourney && q.mode != PlanMode.arriveBy && q.from != q.to) {
     final tomorrow = DateTime(q.time.year, q.time.month, q.time.day + 1);
     final next = (await ref.watch(tripPlannerProvider(tomorrow).future))
