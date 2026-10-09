@@ -390,11 +390,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     _follow = target == null ? null : _Follow(target.vehicleId);
   }
 
-  /// A new follow, a different one or none: the old route line goes.
+  /// A new follow, a different one or none: the old route line goes. The same
+  /// bus for another stop keeps its line (the line is the bus's trip, not the stop's).
   void _onFollowChanged(FollowTarget? next) {
+    final sameBus = next != null && next.vehicleId == _follow?.vehicleId;
     _syncFollow(next);
     final layers = _layers;
-    if (layers != null) {
+    if (layers != null && !sameBus) {
       unawaited(layers.clearRoute().catchError((Object e) => _log('Could not clear the route line: $e')));
     }
     if (next != null) ref.read(mapSelectionProvider.notifier).clear();
