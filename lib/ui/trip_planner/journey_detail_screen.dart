@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -138,14 +140,18 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
     final use24h = BBTime.use24h(context);
     final live = feed != null && feed.succeeded;
     final j = live ? overlayLive(widget.journey, feed, now) : widget.journey;
-    // Only what is still ahead counts: the start-before-now check while the first ride hasn't left, and no ride
-    // that has left already (the rider may be on the bus, past a change that was tight).
+    // Only what is still ahead counts: no ride that has left already (the rider may be on the bus, past a change
+    // that was tight), and the start checked only while the first ride hasn't left. A rider already walking to the
+    // stop set out at the planned start, so the start is broken only when the live times moved it earlier than
+    // planned and that earlier start has passed.
     final nowSeconds = secondsInServiceDay(j.serviceDate, now);
     final firstLeaves = j.legs.whereType<RideLeg>().firstOrNull?.departs;
     final broken = live &&
         firstTightLeg(
               j,
-              notBefore: firstLeaves != null && firstLeaves >= nowSeconds ? nowSeconds : null,
+              notBefore: firstLeaves != null && firstLeaves >= nowSeconds
+                  ? math.min(nowSeconds, widget.journey.departs)
+                  : null,
               ignoreBefore: nowSeconds,
             ) !=
             null;
