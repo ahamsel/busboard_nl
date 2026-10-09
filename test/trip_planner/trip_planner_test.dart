@@ -1,3 +1,4 @@
+import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/ranking.dart';
@@ -125,6 +126,44 @@ void main() {
       final js = (out as PlanFound).journeys;
       expect(js.first.departs, lessThan(8 * 3600 + 1800));
       expect(js.last.departs, 8 * 3600 + 1800);
+    });
+  });
+
+  group('arrive by: the fastest way for each departure', () {
+    // Route L leaves O at 8:00 and loops past the pin: P1 8:05 (2-minute walk, there 8:07), then P2 8:10 (14 min,
+    // 8:24), P3 8:15 (12 min, 8:27), P4 8:20 (8 min, 8:28), P5 8:25 (4 min, 8:29). Rebuilding the latest departure
+    // gets off at the last stop that still makes the deadline, and each fill pass only moves one stop back.
+    const pinLat = 47.6000, pinLon = -52.6000;
+    const mPerLat = 111195.0, mPerLon = 74970.0;
+    late TripPlanner p;
+    setUp(() {
+      final net = TestNetwork();
+      void stopAt(String id, double north, double east) => net.repo.stopsById[id] = StopInfo(
+            stopId: id,
+            stopName: 'Stop $id',
+            stopLat: pinLat + north / mPerLat,
+            stopLon: pinLon + east / mPerLon,
+          );
+      stopAt('O', 0, 2300);
+      stopAt('P1', 100, 0);
+      stopAt('P2', -780, 0);
+      stopAt('P3', 0, 660);
+      stopAt('P4', 0, -440);
+      stopAt('P5', -200, 0);
+      net.repo.routesById['L'] = RouteInfo(routeId: 'L', routeShortName: 'L', routeLongName: 'Route L');
+      net.addTrip('L-0', 'L', ['O', 'P1', 'P2', 'P3', 'P4', 'P5'], 8 * 3600, 300);
+      p = TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay));
+    });
+
+    test('the 8:00 option is the one that gets there at 8:07', () {
+      final pin = PinPlace(lat: pinLat, lon: pinLon, label: 'Pin');
+      final walks = {for (final o in p.offsetsFor(pin)) p.index.stopIds[o.stop]: o.seconds ~/ 60};
+      expect(walks, {'P1': 2, 'P2': 14, 'P3': 12, 'P4': 8, 'P5': 4});
+      final out = p.plan(PlanQuery(from: stop('O'), to: pin, mode: PlanMode.arriveBy, time: at(8, 30)), now: at(7, 50));
+      final at800 = (out as PlanFound).journeys.where((j) => j.departs == 8 * 3600).toList();
+      expect(at800, hasLength(1));
+      expect(at800.single.arrives, 8 * 3600 + 420);
+      expect(at800.single.legs.whereType<RideLeg>().single.alightStopId, 'P1');
     });
   });
 

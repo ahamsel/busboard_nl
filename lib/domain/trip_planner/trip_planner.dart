@@ -101,6 +101,15 @@ class TripPlanner {
         if (catchable.isEmpty) break;
         by = found.map((j) => j.arrives).reduce(math.min) - 60;
       }
+      // Rebuilding the latest departure can get off a bus later than needed (a longer ride, then a longer walk). A
+      // forward search from each departure finds the fastest way for it. It goes first, so ranking keeps it and drops
+      // the slower copy (a near-duplicate of the same bus otherwise keeps whichever came first).
+      final fastest = [
+        for (final dep in {for (final j in candidates) j.departs})
+          for (final j in raptorForward(index, access: access, egress: egress, departAt: dep))
+            if (j.arrives <= t && (notBefore == null || j.departs >= notBefore)) j,
+      ];
+      candidates.insertAll(0, fastest);
       if (candidates.isEmpty) {
         final any = raptorForward(
           index,
