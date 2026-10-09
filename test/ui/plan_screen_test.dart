@@ -203,6 +203,25 @@ void main() {
     expect((time.day, time.hour, time.minute), (testDay.day + 1, 8, 35));
   });
 
+  testWidgets('an Arrive by time never picked moves on with the clock, and the plan with it', (tester) async {
+    var clock = _now;
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, clock: () => clock);
+    await _chooseAtoC(tester);
+    await tester.tap(find.text('Arrive by'));
+    await tester.pumpAndSettle();
+    expect(_textIn(tester, PlanScreen.timeButtonKey), contains('8:35')); // 8:01 + 30 min, rounded up
+    bool arrivesAt840(PlanOutcome? o) => o is PlanFound && o.journeys.any((j) => j.arrives == 8 * 3600 + 40 * 60);
+    expect(arrivesAt840(_container(tester).read(planResultsProvider).value), isFalse);
+
+    clock = _now.add(const Duration(minutes: 5));
+    await tester.pump(const Duration(minutes: 5));
+    await tester.pumpAndSettle();
+    expect(_textIn(tester, PlanScreen.timeButtonKey), contains('8:40'));
+    expect(_container(tester).read(planQueryProvider).time, isNull, reason: 'still not picked');
+    expect(arrivesAt840(_container(tester).read(planResultsProvider).value), isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('My location reads "Location is off" and does nothing when location is off', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
     await tester.tap(find.text('Choose a starting point'));
