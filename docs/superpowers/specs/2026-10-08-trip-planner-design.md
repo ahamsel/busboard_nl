@@ -31,9 +31,9 @@
 - **Stop card** (map): a new button, "Plan a trip from here", sets From to that stop.
 
 ### 2.2 The Plan tab
-- **Saved trips** sit at the top. Each card shows its name and up to 3 distinct departure times, earliest first, in the short form "8:12 · 10 · live, 8:24, 8:41" (the first bus with its route and a live mark; the others as times only, without AM or PM). Each time is when the bus leaves its first stop, not when the rider sets out. Tapping a card fills the planner with its ends for "Leave now". A long-press, or the card's More button, offers Rename and Remove.
+- **Saved trips** sit at the top. Each card shows its name and up to 3 distinct departure times, earliest first, in the short form "8:12 · 10 · live, 8:24, 8:41" (the first bus with its route and a live mark; the others as times only, without AM or PM). Each time is when the bus leaves the rider's boarding stop, not when the rider sets out. Tapping a card fills the planner with its ends for "Leave now". A long-press, or the card's More button, offers Rename and Remove.
 - **The planner** below:
-  - **From** and **To**: each takes a stop number, a stop name, "My location" or "Pick on map". A swap button exchanges them.
+  - **From** and **To**: each takes a stop number, a stop name, "My location" or "Pick on map". A swap button exchanges them. "My location" reads "Finding you…" while it waits for a fix, for at most 10 s; then "Couldn't find your location", and it can be tapped again.
   - **When**: Leave now / Leave by / Arrive by, with an exact-minute time picker and a date for later days. Both pickers are the app's own kit pickers, and the When control wraps at large text.
   - **Results** appear as soon as both ends are set (no Plan button) and show 3–5 journeys. Each result card shows the leave and arrive times, the total minutes, the route badges in order (10 → 2), the walking minutes, and a live dot when a live time was used. A warning shows when a transfer is tight (§3.4).
 
@@ -45,8 +45,8 @@
 
 ### 2.4 Empty and error states
 - **No journey:** the title is "No buses get you there at that time". The line under it depends on the mode:
-  - Leave by (and Leave now), with nothing left today: "The next bus that gets you there leaves tomorrow at …", from tomorrow's first journey.
-  - Arrive by, where no bus gets there in time: "The earliest you can get there is …", the earliest arrival that day.
+  - Leave by (and Leave now), with nothing left that day: "The next bus that gets you there leaves tomorrow at …" (or "leaves on Sat, Oct 10 at …" when the chosen date is later), from the next day's first journey.
+  - Arrive by, where no bus gets there in time: "The earliest you can get there is …", the earliest arrival that day, leaving no earlier than now.
   - Otherwise no line.
 - **An end too far from any stop** (no stop within 800 m): the title "Too far from a bus stop" and the line "Pick a closer point for your start." or "…for your destination."
 - **Schedule still loading:** a short loading state, as on the Board.
@@ -80,19 +80,22 @@
 - **Leave by T** (Leave now is T = now): forward RAPTOR from the origin's access stops at T + their walk time.
 - **Arrive by T:** reverse RAPTOR from the destination's egress stops at T − their walk time, giving each journey's latest departure.
 - Rounds: 1 ride, then up to 3 transfers (4 rides). Walking links are relaxed after each round.
-- The day's index is built in a background isolate (`Isolate.run`), so building it never blocks the UI thread. The search itself runs on the main isolate; it took about 5 ms on the real feed in the tests, which is why it needs no isolate.
+- The day's index is built in a background isolate (`Isolate.run`), so building it never blocks the UI thread. The search itself runs on the main isolate; it took under 10 ms for one search pass on the real schedule in the test run (worst of 200), which is why it needs no isolate.
 - **Midnight:** today's index includes yesterday's trips that run past midnight (times ≥ 24:00), shifted by −24 h, so a query at 00:10 finds them. Tomorrow's index is used only for the "next bus" line: on Leave by (and Leave now) with no journey left today, the provider searches tomorrow from 00:00 and offers its first bus. Arrive by never looks at tomorrow.
 - The search runs again a few times to fill the list: after each pass it moves the time 1 minute past the earliest departure found (Leave by) or 1 minute before the earliest arrival found (Arrive by), up to 4 passes, and the ranking picks from all of them.
-- **Ranking:** 3–5 results, always sorted by departure. For Leave by, the earliest arrival comes first, then the fewest rides, then the least walking, then the earliest departures. For Arrive by, the same picks turn round: the latest departure that still arrives in time comes first, ties go to the later departure, and the rest fill by latest departure.
+- **Ranking:** 3–5 results, always sorted by departure. For Leave by, the earliest arrival is picked first, then the fewest rides, then the least walking, then the earliest departures. For Arrive by, the same picks turn round: the latest departure that still arrives in time comes first, ties go to the later departure, and the rest fill by latest departure.
 
 ### 3.4 Live times and tight transfers
 - After the search, ride legs departing within the next 60 minutes take their live per-stop departure and arrival times when the feed has them (same rules as alerts: a fresh fix under 5 min old and a known delay). The times are exactly what the feed predicts, with no margin added, as on the Board and the map. A leg with only one end live whose times then contradict each other (the bus would arrive before it leaves) stays on its timetable times.
-- A connection is broken when the live times leave under 1 minute between two rides, when a ride would end before it starts, or when the first bus leaves before now (or before the chosen Leave by time). A broken journey is not shown as is: the planner searches again from the ride before the broken one, without the broken trip. The new journey is checked the same way, with at most 3 re-plans per journey; one that is still broken then is dropped. The result card shows a warning when the plan changed for that reason.
-- The final list is ranked again (no repeats, at most 5, by departure).
+- A connection is broken when the live times leave under 1 minute between two rides, when a ride leaves before the walk before it ends, when a ride would end before it starts, or when the journey would have to start before now (or before the chosen Leave by time), counting the walk to the first stop. A broken journey is not shown as is: the planner searches again from the ride before the broken one, without the broken trip. The new journey is checked the same way, with at most 3 re-plans per journey; one that is still broken then is dropped. The result card shows a warning when the plan changed for that reason.
+- **Arrive by** never offers a journey that would have to start before now (the walk to the first stop counts), on today's date; a later date is not cut by today's clock. When nothing still in reach gets there in time, the line is "The earliest you can get there is …", counted from now. A journey the live times take past the deadline is dropped.
+- The final list is ranked again (no repeats, at most 5, by departure). When two options are the same, the one not changed for live times is kept.
+- Plans never wait for the feed: the timetable results show at once, and the plan is made again when the feed answers.
+- The journey detail re-checks itself on each refresh: its legs take the live times (with the Live mark), and when they break the trip it says "This trip no longer works with live times. Go back for updated options." (a screen-reader live region). Each refresh also hands the first ride's row to the arrival alert, as the Board does, so an alert set from the detail is re-timed on iPhone.
 - Live times are refreshed while the results or a saved trip are on screen, every 30 s, as on the Board.
 
 ### 3.5 Saved trips
-- A saved trip stores its two ends (stop id, or pin latitude and longitude with a label) and a name. No times, no history.
+- A saved trip stores its two ends (stop id, or pin latitude and longitude with a label) and a name. No times, no history. A "My location" end is stored as a pin labelled "Near <closest stop>" (and the name uses that label, "Near MUN Centre → Avalon Mall"), since it is where the phone was when saved, not wherever it is later.
 - Its card runs a Leave now search when the Plan tab is shown and refreshes live times every 30 s while visible. When nothing runs later today it reads "No more buses today".
 - Up to 10 saved trips.
 
