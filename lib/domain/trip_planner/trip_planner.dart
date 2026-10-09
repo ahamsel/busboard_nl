@@ -77,7 +77,7 @@ class TripPlanner {
   }
 
   /// Plans [q] on the timetable. For Arrive by, [now] (when given) rules out journeys that would have to start
-  /// before it, the walk to the first stop included; it doesn't apply to a later day's index, which starts after it.
+  /// before it, the walk to the first stop included.
   PlanOutcome plan(PlanQuery q, {DateTime? now}) {
     final access = offsetsFor(q.from);
     if (access.isEmpty) return PlanTooFar(fromEnd: true);
@@ -88,9 +88,9 @@ class TripPlanner {
     final t = secondsInServiceDay(index.serviceDate, q.time);
     final candidates = <Journey>[];
     if (q.mode == PlanMode.arriveBy) {
-      // Negative when now is on an earlier day than the index's: nothing on this day has left yet.
-      final nowSeconds = now == null ? null : secondsInServiceDay(index.serviceDate, now);
-      final notBefore = nowSeconds != null && nowSeconds >= 0 ? nowSeconds : null;
+      // Negative when now is on an earlier day than the index's; it still rules out last night's late trips
+      // (shifted below 0) that have left.
+      final notBefore = now == null ? null : secondsInServiceDay(index.serviceDate, now);
       var by = t;
       for (var i = 0; i < 4; i++) {
         final found = raptorReverse(index, access: access, egress: egress, arriveBy: by);
@@ -187,7 +187,10 @@ class TripPlanner {
         );
       }
     }
-    if (q.mode != PlanMode.arriveBy) out.addAll(_lookBack(q, feed, now, earliest));
+    // Past the live horizon no overlay applies, so a look-back could only find buses that have gone.
+    if (q.mode != PlanMode.arriveBy && earliest - nowSeconds <= liveHorizon.inSeconds) {
+      out.addAll(_lookBack(q, feed, now, earliest));
+    }
     // Re-planned journeys can repeat one already in the list, or leave later than the one after them.
     return rankJourneys(out, arriveBy: q.mode == PlanMode.arriveBy);
   }

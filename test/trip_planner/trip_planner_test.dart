@@ -92,6 +92,23 @@ void main() {
       expect(first, at(8, 40));
     });
 
+    test("asked before midnight for the next day: last night's late bus that has left is not offered", () {
+      // 9-0 leaves X at 23:50 and reaches Z at 00:50. Asked at 23:55, it has gone.
+      final tomorrow = DateTime(testDay.year, testDay.month, testDay.day + 1);
+      final net = TestNetwork();
+      final next = TripPlanner(net.repo, TimetableIndex.build(net.repo, tomorrow));
+      final out = next.plan(
+        PlanQuery(
+          from: stop('X'),
+          to: stop('Z'),
+          mode: PlanMode.arriveBy,
+          time: DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 1, 0),
+        ),
+        now: at(23, 55),
+      );
+      expect(out, isA<PlanNoJourney>());
+    });
+
     test("a later day's arrive by is not cut by today's now", () {
       final tomorrow = DateTime(testDay.year, testDay.month, testDay.day + 1);
       final net = TestNetwork();
