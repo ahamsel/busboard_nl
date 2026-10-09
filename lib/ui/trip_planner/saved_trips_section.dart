@@ -47,7 +47,7 @@ String _clock(DateTime t, bool use24h) =>
 RideLeg? _firstRide(Journey j) => j.legs.whereType<RideLeg>().firstOrNull;
 
 /// The buses the card lists: each journey's first ride, by when it leaves, earliest first. Journeys that share
-/// a first bus (or leave at the same time) count once; at most three.
+/// a first bus, or leave at the same time on the same route, count once; at most three.
 @visibleForTesting
 List<({DateTime time, RideLeg ride})> savedTripDepartures(Iterable<Journey> journeys) {
   final all = [
@@ -56,7 +56,7 @@ List<({DateTime time, RideLeg ride})> savedTripDepartures(Iterable<Journey> jour
   ]..sort((a, b) => a.time.compareTo(b.time));
   final out = <({DateTime time, RideLeg ride})>[];
   for (final d in all) {
-    if (out.any((o) => o.time == d.time || o.ride.tripId == d.ride.tripId)) continue;
+    if (out.any((o) => o.ride.tripId == d.ride.tripId || (o.time == d.time && o.ride.routeId == d.ride.routeId))) continue;
     out.add(d);
     if (out.length == 3) break;
   }
@@ -98,9 +98,7 @@ class _SavedTripCard extends ConsumerWidget {
 
     // Each departure is its first ride's: when the bus leaves, not when the rider sets out.
     final rides = [
-      for (final j in next.value ?? const <Journey>[])
-        if (_firstRide(j) case final ride?)
-          (time: _clock(j.at(ride.departs), use24h), ride: ride),
+      for (final d in savedTripDepartures(next.value ?? const <Journey>[])) (time: _clock(d.time, use24h), ride: d.ride),
     ];
 
     final String label;
