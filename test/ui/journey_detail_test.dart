@@ -371,6 +371,57 @@ void main() {
     });
   });
 
+  group("just after midnight, last night's 00:15 bus", () {
+    // 9-1 runs on testDay's service, X 23:45 → Y 24:15 → Z 24:45. The clock reads 00:05 the next day, and bus
+    // bus-9-1 is a minute early.
+    final today = DateTime(testDay.year, testDay.month, testDay.day + 1);
+    final now = DateTime(today.year, today.month, today.day, 0, 5);
+    TestNetwork network() => TestNetwork()..addTrip('9-1', '9', ['X', 'Y', 'Z'], 23 * 3600 + 45 * 60, 1800);
+    final y = StopPlace(stopId: 'Y', name: 'Stop Y');
+    final z = StopPlace(stopId: 'Z', name: 'Stop Z');
+
+    Future<void> pump(WidgetTester tester, TestNetwork net) async {
+      tester.view.physicalSize = const Size(390, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final live = _Feed()..feed = feedWith(net, {'9-1': -60}, now);
+      await pumpPlannerApp(tester, net: net, now: now, overrides: [live.override]);
+    }
+
+    void expectLiveFollowAndBell() {
+      expect(find.text('12:14 AM → 12:44 AM · 1 stop'), findsOneWidget);
+      expect(find.text('Live'), findsOneWidget);
+      expect(find.text('Follow bus'), findsOneWidget);
+      expect(find.bySemanticsLabel('Alert me before route 9 arrives'), findsOneWidget);
+    }
+
+    testWidgets('a trip planned at 23:55 keeps Live, Follow and the bell', (tester) async {
+      final net = network();
+      await pump(tester, net);
+      final j = (TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay)).plan(
+        PlanQuery(from: y, to: z, mode: PlanMode.leaveBy, time: DateTime(testDay.year, testDay.month, testDay.day, 23, 55)),
+      ) as PlanFound).journeys.first;
+      expect((j.serviceDate, j.legs.whereType<RideLeg>().single.tripId), (testDay, '9-1'));
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      await tester.pumpAndSettle();
+      expectLiveFollowAndBell();
+    });
+
+    testWidgets('a trip planned at 00:05 has Live, Follow and the bell', (tester) async {
+      await pump(tester, network());
+      _container(tester).read(planQueryProvider.notifier)
+        ..setFrom(y)
+        ..setTo(z);
+      await tester.pumpAndSettle();
+      final card = find.text('12:14 AM → 12:44 AM');
+      await tester.ensureVisible(card);
+      await tester.pumpAndSettle();
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expectLiveFollowAndBell();
+    });
+  });
+
   testWidgets('at 2x text on 320x568 the broken-trip warning reads in full', (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;
