@@ -8,6 +8,7 @@ import '../data/realtime/timetrack_api.dart';
 import '../data/trip_planner/saved_trip_store.dart';
 import '../domain/trip_planner/journey.dart';
 import '../domain/trip_planner/place.dart';
+import '../domain/trip_planner/ranking.dart';
 import '../domain/trip_planner/timetable_index.dart';
 import '../domain/trip_planner/trip_planner.dart';
 import 'providers.dart';
@@ -111,6 +112,10 @@ Future<PlanOutcome> _plan(Ref ref, PlanQuery q, TimeTrackFetchResult? feed, Date
   if (soonest is! PlanFound) return PlanNoJourney();
   final checked = today.applyLive(leaveNow, soonest.journeys, feed, now);
   if (checked.isEmpty) return PlanNoJourney();
+  // Its look-back can find a late bus still to come that does make the deadline: that is an answer, not a miss.
+  final deadline = secondsInServiceDay(today.index.serviceDate, q.time);
+  final inTime = checked.where((j) => j.arrives <= deadline).toList();
+  if (inTime.isNotEmpty) return PlanFound(rankJourneys(inTime, arriveBy: true));
   final first = checked.reduce((a, b) => a.arrives <= b.arrives ? a : b);
   return PlanNoJourney(firstArrival: first.at(first.arrives));
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
+import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
@@ -101,12 +102,12 @@ void main() {
   });
 
   group('arrive by where the live times push every option past the deadline', () {
-    Future<PlanOutcome?> arriveBy(TimeTrackFetchResult Function(TestNetwork net) feed) async {
+    Future<PlanOutcome?> arriveBy(TimeTrackFetchResult Function(TestNetwork net) feed, {DateTime? asked}) async {
       final net = TestNetwork();
       final live = ProviderContainer(
         overrides: [
           gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
-          plannerClockProvider.overrideWithValue(() => at(8, 30)),
+          plannerClockProvider.overrideWithValue(() => asked ?? at(8, 30)),
           timetableIndexBuilderProvider.overrideWithValue((repo, day) async => TimetableIndex.build(repo, day)),
           plannerLiveFeedProvider.overrideWith((ref) async => feed(net)),
         ],
@@ -130,6 +131,18 @@ void main() {
       final out = await arriveBy((net) => feedWith(net, {'1-3': 120}, at(8, 30)));
       expect(out, isA<PlanNoJourney>());
       expect((out as PlanNoJourney).firstArrival, at(8, 42));
+    });
+
+    test('a late bus the fallback finds that does make the deadline is offered, not named as too late', () async {
+      // Asked at 8:25: the timetable's only option, 1-3 (8:30 → 8:40), runs 3 min late and misses 8:40; 1-2, due at
+      // 8:20 but 6 min late, leaves at 8:26 and gets there at 8:36.
+      final out = await arriveBy((net) => feedWith(net, {'1-2': 360, '1-3': 180}, at(8, 25)), asked: at(8, 25));
+      expect(out, isA<PlanFound>());
+      final js = (out as PlanFound).journeys;
+      expect(js, isNotEmpty);
+      expect(js.every((j) => j.arrives <= 8 * 3600 + 2400), isTrue);
+      expect(js.every((j) => j.departs >= 8 * 3600 + 1500), isTrue);
+      expect(js.first.legs.whereType<RideLeg>().first.tripId, '1-2');
     });
 
     test('nothing left to take at all: no earliest arrival', () async {
