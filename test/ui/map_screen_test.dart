@@ -661,6 +661,7 @@ void main() {
       Size size = const Size(390, 844),
       double textScale = 1,
       List<ArrivalRow> arrivals = const [],
+      Map<String, Object> prefs = const {'selectedStopId': 's2'},
     }) async {
       feed = StreamController<Map<String, BusTrackingState>>();
       addTearDown(feed.close);
@@ -670,7 +671,7 @@ void main() {
         tester,
         size: size,
         textScale: textScale,
-        prefs: {'selectedStopId': 's2'},
+        prefs: prefs,
         repo: outAndBackRepo,
         busStream: feed.stream,
         arrivals: arrivals,
@@ -1102,6 +1103,57 @@ void main() {
       expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s3$')), findsOneWidget);
       expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s2$')), findsNothing);
       expect(find.text("Your stop isn't on this trip"), findsNothing);
+    });
+
+    List<String> markedStops() => [for (final f in surface.features('bb-my-stop')) f['properties']['stopId'] as String];
+
+    testWidgets('a follow from a planned trip marks its boarding stop, and the saved stop comes back after', (tester) async {
+      await pumpFollow(tester); // the saved stop is s2
+      expect(markedStops(), ['s2']);
+      containerOf(tester).read(followProvider.notifier).follow('2573', stopId: 's3');
+      await _frames(tester, 3);
+      expect(markedStops(), ['s3'], reason: 'the boarding stop is your stop for the follow');
+      containerOf(tester).read(followProvider.notifier).stop();
+      await _frames(tester, 3);
+      expect(markedStops(), ['s2']);
+    });
+
+    testWidgets('with no saved stop, a planned follow marks its boarding stop and clears it after', (tester) async {
+      await pumpFollow(tester, prefs: const {});
+      expect(markedStops(), isEmpty);
+      containerOf(tester).read(followProvider.notifier).follow('2573', stopId: 's3');
+      await _frames(tester, 3);
+      expect(markedStops(), ['s3']);
+      containerOf(tester).read(followProvider.notifier).stop();
+      await _frames(tester, 3);
+      expect(markedStops(), isEmpty);
+    });
+
+    testWidgets('a follow from the Board keeps the saved stop marked', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(markedStops(), ['s2']);
+    });
+
+    testWidgets('choosing a new stop during a planned follow marks it once the follow ends', (tester) async {
+      await pumpFollow(tester);
+      containerOf(tester).read(followProvider.notifier).follow('2573', stopId: 's3');
+      await _frames(tester, 3);
+      await containerOf(tester).read(settingsProvider.notifier).setSelectedStop('s1');
+      await _frames(tester, 3);
+      expect(markedStops(), ['s3'], reason: 'the follow keeps its own stop');
+      containerOf(tester).read(followProvider.notifier).stop();
+      await _frames(tester, 3);
+      expect(markedStops(), ['s1']);
+    });
+
+    testWidgets('a style reload during a planned follow draws the boarding stop', (tester) async {
+      await pumpFollow(tester);
+      containerOf(tester).read(followProvider.notifier).follow('2573', stopId: 's3');
+      await _frames(tester, 3);
+      await tester.runAsync(() => _styleLoaded(surface));
+      await _frames(tester, 3);
+      expect(markedStops(), ['s3']);
     });
 
     testWidgets('following the same bus for another stop keeps the route line drawn', (tester) async {
