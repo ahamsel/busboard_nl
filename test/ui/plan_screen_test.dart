@@ -314,6 +314,7 @@ void main() {
     await tester.tap(find.byType(JourneyCard).first);
     await tester.pumpAndSettle();
     expect(find.text('Your trip'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^Route 1 · 8:10\b.*→ 8:20\b')), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is RouteBadge && w.label == '1'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^8:10\b.*→ 8:20\b')), findsOneWidget);
   });
 }

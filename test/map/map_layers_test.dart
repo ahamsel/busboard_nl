@@ -144,6 +144,9 @@ void main() {
         expect(layerOrder, [
           MapLayers.routeCasingLayer,
           MapLayers.routeLineLayer,
+          MapLayers.journeyCasingLayer,
+          MapLayers.journeyLineLayer,
+          MapLayers.journeyWalkLayer,
           MapLayers.stopsLayer,
           MapLayers.notchLayer,
           MapLayers.badgeLayer,
@@ -231,11 +234,21 @@ void main() {
         await layers.install(stops: const [_mun]);
         await layers.install(stops: const [_mun]);
         expect(surface.sources.keys,
-            unorderedEquals([MapLayers.routeSource, MapLayers.stopsSource, MapLayers.myStopSource, MapLayers.busesSource]));
+            unorderedEquals([
+              MapLayers.routeSource,
+              MapLayers.journeySource,
+              MapLayers.journeyWalkSource,
+              MapLayers.stopsSource,
+              MapLayers.myStopSource,
+              MapLayers.busesSource,
+            ]));
         expect(surface.layers.keys,
             unorderedEquals([
               MapLayers.routeCasingLayer,
               MapLayers.routeLineLayer,
+              MapLayers.journeyCasingLayer,
+              MapLayers.journeyLineLayer,
+              MapLayers.journeyWalkLayer,
               MapLayers.stopsLayer,
               MapLayers.myStopLayer,
               MapLayers.notchLayer,
@@ -250,11 +263,22 @@ void main() {
             MapLayers.badgeLayer,
             MapLayers.notchLayer,
             MapLayers.stopsLayer,
+            MapLayers.journeyWalkLayer,
+            MapLayers.journeyLineLayer,
+            MapLayers.journeyCasingLayer,
             MapLayers.routeLineLayer,
             MapLayers.routeCasingLayer,
           ])
             'remove layer $l',
-          for (final src in [MapLayers.busesSource, MapLayers.myStopSource, MapLayers.stopsSource, MapLayers.routeSource]) 'remove source $src',
+          for (final src in [
+            MapLayers.busesSource,
+            MapLayers.myStopSource,
+            MapLayers.stopsSource,
+            MapLayers.journeyWalkSource,
+            MapLayers.journeySource,
+            MapLayers.routeSource,
+          ])
+            'remove source $src',
         ];
         expect(removals, [...oneClear, ...oneClear]);
         expect(surface.features(MapLayers.stopsSource), hasLength(1));
@@ -265,7 +289,7 @@ void main() {
       await tester.runAsync(() async {
         final surface = FakeMapSurface();
         await MapLayers(surface, brightness: Brightness.light, pixelRatio: 1).install(stops: const []);
-        expect(surface.layers, hasLength(6));
+        expect(surface.layers, hasLength(9));
       });
     });
 

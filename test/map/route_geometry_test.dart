@@ -209,4 +209,25 @@ void main() {
       expect(g.splitShape('nope', 10), isNull);
     });
   });
+
+  group('shapeBetween', () {
+    test('cuts the line between two progresses, ends on the shape', () {
+      final g = RouteGeometry(outAndBackRepo());
+      final cut = g.shapeBetween(outAndBackShapeId, 200, 700)!;
+      final start = g.poseAt(outAndBackShapeId, 200)!;
+      final end = g.poseAt(outAndBackShapeId, 700)!;
+      expect(cut.first[0], closeTo(start.lon, 1e-9));
+      expect(cut.first[1], closeTo(start.lat, 1e-9));
+      expect(cut.last[0], closeTo(end.lon, 1e-9));
+      expect(cut.last[1], closeTo(end.lat, 1e-9));
+      expect(cut.length, greaterThanOrEqualTo(2));
+    });
+
+    test('nothing for an unknown shape or an empty span', () {
+      final g = RouteGeometry(outAndBackRepo());
+      expect(g.shapeBetween('nope', 0, 10), isNull);
+      expect(g.shapeBetween(outAndBackShapeId, 500, 500), isNull);
+      expect(g.shapeBetween(outAndBackShapeId, 700, 200), isNull);
+    });
+  });
 }

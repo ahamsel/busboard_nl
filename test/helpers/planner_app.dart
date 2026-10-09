@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../trip_planner/test_network.dart';
@@ -56,8 +57,21 @@ class FixedGeolocator extends GeolocatorPlatform {
   );
 }
 
+/// A stand-in for MapLibre that keeps the config it was last built with, so a test can tap or long-press the "map".
+class StubMap {
+  MapViewConfig? config;
+
+  Widget build(MapViewConfig c) {
+    config = c;
+    return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4));
+  }
+
+  void tap(double lat, double lon) => config!.onTap(LatLng(lat, lon));
+  void longPress(double lat, double lon) => config!.onLongPress!(LatLng(lat, lon));
+}
+
 /// Pumps the app's real route tree (shell, four tabs) on [net] at [now], starting at [initial].
-/// The live feed answers 503, so plans use timetable times; the map is a plain box.
+/// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
   required TestNetwork net,
@@ -66,6 +80,7 @@ Future<void> pumpPlannerApp(
   double textScale = 1,
   GeolocatorPlatform? geolocator,
   http.Client? liveClient,
+  MapViewBuilder? mapView,
   List<Override> overrides = const [],
 }) async {
   SharedPreferences.setMockInitialValues({});
@@ -92,9 +107,7 @@ Future<void> pumpPlannerApp(
         timetrackApiProvider.overrideWithValue(
           TimeTrackApi(client: liveClient ?? MockClient((_) async => http.Response('', 503))),
         ),
-        mapViewBuilderProvider.overrideWithValue(
-          (config) => const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4)),
-        ),
+        mapViewBuilderProvider.overrideWithValue(mapView ?? StubMap().build),
         ...fakeAlertOverrides,
         ...overrides,
       ],

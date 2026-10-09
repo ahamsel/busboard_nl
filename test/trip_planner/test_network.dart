@@ -9,7 +9,7 @@ import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 ///   Route 9:  X — Y — Z        one late trip, X 23:50 → Y 24:20 → Z 24:50 (past midnight)
 /// Stop G is about 300 m from C (a 6-minute walk); H is far from everything. Service runs every day of 2026.
 class TestNetwork {
-  final repo = GtfsRepository();
+  final GtfsRepository repo = _BuiltRepository();
   static const serviceId = 'WK';
 
   TestNetwork() {
@@ -70,6 +70,12 @@ class TestNetwork {
   }
 
   static String _hms(int s) => [s ~/ 3600, s % 3600 ~/ 60, s % 60].map((v) => v.toString().padLeft(2, '0')).join(':');
+}
+
+/// Built in memory rather than loaded from a feed, but as ready as a loaded one (the Board's arrivals check).
+class _BuiltRepository extends GtfsRepository {
+  @override
+  bool get isLoaded => true;
 }
 
 /// A Wednesday the test calendar covers.

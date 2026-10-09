@@ -1,5 +1,6 @@
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,6 +34,22 @@ void main() {
 
     await tester.pumpWidget(kitHost(const SizedBox(width: 160, child: BBPill(label: label)), width: 160));
     expect(tester.widget<Text>(find.text(label)).overflow, TextOverflow.ellipsis);
+  });
+
+  testWidgets('BBButton wrap lets a long label wrap instead of ellipsising', (tester) async {
+    const label = 'Plan a trip from here, please';
+    await tester.pumpWidget(kitHost(
+      SizedBox(width: 160, child: BBButton(label: label, wrap: true, expand: true, onPressed: () {})),
+      width: 160,
+    ));
+    expect(tester.renderObject<RenderParagraph>(find.text(label)).didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(kitHost(
+      SizedBox(width: 160, child: BBButton(label: label, expand: true, onPressed: () {})),
+      width: 160,
+    ));
+    expect(tester.renderObject<RenderParagraph>(find.text(label)).didExceedMaxLines, isTrue);
   });
 
   testWidgets('BBTextField applies formatters and shows an error', (tester) async {
