@@ -81,6 +81,10 @@ final plannerLiveFeedProvider = FutureProvider.autoDispose<TimeTrackFetchResult?
   }
 });
 
+/// The live feed as it is now: null until the first answer (or when it is unreadable), the last answer while the
+/// next one loads. Plans don't wait for the feed; they are made again when a new answer comes (spec §3.4).
+final _liveFeedNow = plannerLiveFeedProvider.select((f) => f.value);
+
 /// Plans [q] with live times. When nothing runs later today on Leave by / Leave now, finds tomorrow's first bus.
 Future<PlanOutcome> _plan(Ref ref, PlanQuery q, TimeTrackFetchResult? feed, DateTime now) async {
   final planner = await ref.watch(tripPlannerProvider(_day(q.time)).future);
@@ -105,8 +109,7 @@ final planResultsProvider = FutureProvider.autoDispose<PlanOutcome?>((ref) async
   final now = ref.read(plannerClockProvider)();
   final q = ref.watch(planQueryProvider).toQuery(now);
   if (q == null) return null;
-  final feed = await ref.watch(plannerLiveFeedProvider.future);
-  return _plan(ref, q, feed, now);
+  return _plan(ref, q, ref.watch(_liveFeedNow), now);
 });
 
 final savedTripStoreProvider = Provider<SavedTripStore>((ref) => SavedTripStore());
@@ -152,7 +155,7 @@ final savedTripNextProvider = FutureProvider.autoDispose.family<List<Journey>, S
   final trip = trips.where((t) => t.id == id).firstOrNull;
   if (trip == null) return const [];
   final now = ref.read(plannerClockProvider)();
-  final feed = await ref.watch(plannerLiveFeedProvider.future);
+  final feed = ref.watch(_liveFeedNow);
   final out = await _plan(ref, PlanQuery(from: trip.from, to: trip.to, mode: PlanMode.leaveNow, time: now), feed, now);
   return out is PlanFound ? out.journeys.take(3).toList() : const [];
 });
