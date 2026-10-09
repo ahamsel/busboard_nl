@@ -326,6 +326,50 @@ void main() {
     });
   });
 
+  group('a walk to the first stop', () {
+    // About 55 m south of A: a one-minute walk to 1-2 (A 8:20 → C 8:30), so the rider sets out at 8:19.
+    final pin = PinPlace(lat: 47.5595, lon: -52.7500, label: 'Pin');
+    Journey planned() {
+      final net = TestNetwork();
+      final js = (TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay)).plan(
+        PlanQuery(from: pin, to: StopPlace(stopId: 'C', name: 'Stop C'), mode: PlanMode.leaveBy, time: _at(8, 15)),
+      ) as PlanFound).journeys;
+      return js.firstWhere((j) {
+        final ride = j.legs.whereType<RideLeg>().first;
+        return ride.tripId == '1-2' && ride.boardStopId == 'A';
+      });
+    }
+
+    Future<void> open(WidgetTester tester, DateTime now, TimeTrackFetchResult feed) async {
+      tester.view.physicalSize = const Size(390, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final live = _Feed()..feed = feed;
+      await pumpPlannerApp(tester, net: TestNetwork(), now: now, overrides: [live.override]);
+      final j = planned();
+      expect((j.legs.first as WalkLeg).seconds, 60);
+      expect(j.departs, 8 * 3600 + 19 * 60);
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      await tester.pumpAndSettle();
+      expect(find.byType(JourneyDetailScreen), findsOneWidget);
+    }
+
+    testWidgets('walking, on time, to an on-time bus is no warning', (tester) async {
+      final now = DateTime(testDay.year, testDay.month, testDay.day, 8, 19, 30);
+      await open(tester, now, feedWith(TestNetwork(), {'1-2': 0}, now));
+      expect(find.text('Live'), findsOneWidget);
+      expect(find.text(_brokenWarning), findsNothing);
+    });
+
+    testWidgets('a bus early enough that the earlier start has passed is', (tester) async {
+      // 1-2 two minutes early leaves A at 8:18, so the walk had to start at 8:17; at 8:17:30 that has passed.
+      final now = DateTime(testDay.year, testDay.month, testDay.day, 8, 17, 30);
+      await open(tester, now, feedWith(TestNetwork(), {'1-2': -120}, now));
+      expect(find.text('8:18 AM → 8:28 AM · 2 stops'), findsOneWidget);
+      expect(find.text(_brokenWarning), findsOneWidget);
+    });
+  });
+
   testWidgets('at 2x text on 320x568 the broken-trip warning reads in full', (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;
