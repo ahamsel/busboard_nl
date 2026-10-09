@@ -8,7 +8,9 @@ import '../../data/trip_planner/saved_trip_store.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
 import '../../domain/trip_planner/journey.dart';
+import '../../domain/trip_planner/live_overlay.dart';
 import '../../domain/trip_planner/place.dart';
+import '../../state/arrival_alert_providers.dart';
 import '../../state/follow_providers.dart';
 import '../../state/journey_on_map_provider.dart';
 import '../../state/providers.dart';
@@ -42,8 +44,11 @@ ArrivalRow? boardArrivalFor(Journey j, RideLeg leg, GtfsRepository repo, TimeTra
   return best;
 }
 
+/// What the detail says when the live times break the trip (spec §3.4).
+const brokenByLiveTimes = 'This trip no longer works with live times. Go back for updated options.';
+
 /// One planned trip, leg by leg (spec §2.3): the timeline, Follow and the bell on the first ride, Show on map and
-/// Save trip.
+/// Save trip. Each live refresh re-times the legs and checks the trip still works (spec §3.4).
 class JourneyDetailScreen extends ConsumerStatefulWidget {
   const JourneyDetailScreen({super.key, required this.journey});
 
@@ -56,6 +61,24 @@ class JourneyDetailScreen extends ConsumerStatefulWidget {
 class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
   /// An add is in flight: a second tap must not fire another.
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // As the Board does on each refresh: a newer live time for the first ride re-times its alert (iPhone).
+    ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _retimeAlert(ref.read(plannerLiveFeedProvider).value);
+    });
+  }
+
+  void _retimeAlert(TimeTrackFetchResult? feed) {
+    final repo = ref.read(gtfsRepositoryProvider).value;
+    final ride = widget.journey.legs.whereType<RideLeg>().firstOrNull;
+    if (repo == null || ride == null) return;
+    final arrival = boardArrivalFor(widget.journey, ride, repo, feed, ref.read(plannerClockProvider)());
+    if (arrival != null) ref.read(arrivalAlertProvider.notifier).onBoardArrivals(ride.boardStopId, [arrival]);
+  }
 
   Future<void> _save(Place from, Place to) async {
     setState(() => _saving = true);
@@ -84,21 +107,25 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
-    final j = widget.journey;
     final repo = ref.watch(gtfsRepositoryProvider).value;
-    // Watched for the live bus on the first ride; it refreshes every 30 s, and the bell and Follow with it.
+    // Refreshes every 30 s: the legs' live times, the bell and Follow with it.
     final feed = ref.watch(plannerLiveFeedProvider).value;
     final draft = ref.watch(planQueryProvider);
     final saved = ref.watch(savedTripsProvider).value ?? const <SavedTrip>[];
     final now = ref.read(plannerClockProvider)();
     final use24h = BBTime.use24h(context);
+    final live = feed != null && feed.succeeded;
+    final j = live ? overlayLive(widget.journey, feed, now) : widget.journey;
+    final broken = live && firstTightLeg(j, notBefore: secondsInServiceDay(j.serviceDate, now)) != null;
     String clock(int s) => BBTime.of(j.at(s), use24h: use24h);
 
     final from = draft.from;
     final to = draft.to;
     final isSaved = from != null && to != null && saved.any((t) => t.from == from && t.to == to);
-    final firstRide = j.legs.whereType<RideLeg>().firstOrNull;
-    final arrival = firstRide == null || repo == null ? null : boardArrivalFor(j, firstRide, repo, feed, now);
+    final firstRideAt = j.legs.indexWhere((l) => l is RideLeg);
+    final firstRide = widget.journey.legs.whereType<RideLeg>().firstOrNull;
+    final arrival =
+        firstRide == null || repo == null ? null : boardArrivalFor(widget.journey, firstRide, repo, feed, now);
     final onSave = from == null || to == null || _saving ? null : () => _save(from, to);
 
     return BBScaffold(
@@ -109,6 +136,11 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
             subtitle: 'Leave ${clock(j.departs)} · arrive ${clock(j.arrives)}',
             onBack: () => context.pop(),
           ),
+          if (broken)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(BBSpace.screen, 0, BBSpace.screen, BBSpace.s),
+              child: _BrokenWarning(),
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: BBSpace.screen),
             child: BBCard(
@@ -116,10 +148,10 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  for (final leg in j.legs)
+                  for (final (i, leg) in j.legs.indexed)
                     if (leg is RideLeg) ...[
                       _RideRow(leg: leg, repo: repo, clock: clock),
-                      if (identical(leg, firstRide) && arrival != null)
+                      if (i == firstRideAt && arrival != null)
                         _FirstRideActions(arrival: arrival, stopId: leg.boardStopId, stopName: _stopName(repo, leg.boardStopId)),
                       const SizedBox(height: BBSpace.l),
                     ] else if (leg is WalkLeg && leg.seconds > 0) ...[
@@ -179,6 +211,33 @@ String _stopName(GtfsRepository? repo, String stopId) => repo?.stopsById[stopId]
 
 /// "MUN Centre (1150)".
 String _stopLabel(GtfsRepository? repo, String stopId) => '${_stopName(repo, stopId)} ($stopId)';
+
+/// The live times broke a transfer or the first bus: the rider should go back for the re-planned options. A live
+/// region, so a screen reader announces it when a refresh brings it up.
+class _BrokenWarning extends StatelessWidget {
+  const _BrokenWarning();
+
+  @override
+  Widget build(BuildContext context) {
+    final bb = context.bb;
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.all(BBSpace.m),
+        decoration: BoxDecoration(color: bb.colors.warnBg, borderRadius: BorderRadius.circular(BBRadius.button)),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ExcludeSemantics(child: Icon(BBIcons.warning, size: 20, color: bb.colors.warnInk)),
+            const SizedBox(width: BBSpace.s),
+            Expanded(child: Text(brokenByLiveTimes, style: bb.text.body.copyWith(color: bb.colors.warnInk))),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// A timeline row: a fixed-width mark (icon or badge), then its lines, read as one.
 class _TimelineRow extends StatelessWidget {
