@@ -1,5 +1,6 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
@@ -131,6 +132,26 @@ void main() {
     await _chooseAtoC(tester);
     expect(find.text('No buses get you there at that time'), findsOneWidget);
     expect(find.text('The next bus that gets you there leaves tomorrow at 8:00 AM'), findsOneWidget);
+  });
+
+  testWidgets("leave by late on a later day names the day the next bus runs, not tomorrow", (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, textScale: 2);
+    _container(tester).read(planQueryProvider.notifier)
+      ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
+      ..setTo(StopPlace(stopId: 'C', name: 'Stop C'))
+      ..setMode(PlanMode.leaveBy)
+      ..setTime(DateTime(testDay.year, testDay.month, testDay.day + 2, 22));
+    await tester.pumpAndSettle();
+    const message = 'The next bus that gets you there leaves on Sat, Oct 10 at 8:00 AM';
+    final list = find.descendant(of: find.byType(PlanScreen), matching: find.byType(Scrollable)).first;
+    await tester.scrollUntilVisible(find.text(message), 200, scrollable: list);
+    await tester.pumpAndSettle();
+    expect(find.text(message), findsOneWidget);
+    expect(tester.renderObject<RenderParagraph>(find.text(message)).didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a start far from every stop asks for a closer point', (tester) async {

@@ -39,6 +39,15 @@ String dayLabel(DateTime day, DateTime now) {
   };
 }
 
+/// When the next bus runs, by [dayLabel]: "tomorrow", or "on Fri, Oct 9".
+String nextBusDay(DateTime t, DateTime now) {
+  final d = dayLabel(t, now);
+  return switch (DateTime.utc(t.year, t.month, t.day).difference(DateTime.utc(now.year, now.month, now.day)).inDays) {
+    0 || 1 => d.toLowerCase(),
+    _ => 'on $d',
+  };
+}
+
 /// The Plan tab (spec §2.2): saved trips, then From / To / When, then the results.
 class PlanScreen extends ConsumerStatefulWidget {
   const PlanScreen({super.key});
@@ -185,14 +194,14 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
               ],
             ),
           ),
-          ..._results(context, results),
+          ..._results(context, results, now),
           SliverToBoxAdapter(child: SizedBox(height: BBNavBar.reservedHeight(context) + BBSpace.l)),
         ],
       ),
     );
   }
 
-  List<Widget> _results(BuildContext context, AsyncValue<PlanOutcome?> results) {
+  List<Widget> _results(BuildContext context, AsyncValue<PlanOutcome?> results, DateTime now) {
     final bb = context.bb;
     Widget box(Widget child) => SliverToBoxAdapter(child: child);
     // A new form loads afresh; a live refresh (or Riverpod's retry after a failure) keeps what is shown.
@@ -252,7 +261,8 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
             icon: BBIcons.noService,
             title: 'No buses get you there at that time',
             message: nextDeparture != null
-                ? 'The next bus that gets you there leaves tomorrow at ${BBTime.of(nextDeparture, use24h: BBTime.use24h(context))}'
+                ? 'The next bus that gets you there leaves ${nextBusDay(nextDeparture, now)} at '
+                      '${BBTime.of(nextDeparture, use24h: BBTime.use24h(context))}'
                 : firstArrival != null
                 ? 'The earliest you can get there is ${BBTime.of(firstArrival, use24h: BBTime.use24h(context))}'
                 : null,
