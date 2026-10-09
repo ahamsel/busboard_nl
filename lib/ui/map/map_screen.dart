@@ -320,6 +320,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     return id == null ? null : ref.read(stopInfoProvider(id));
   }
 
+  /// "Your stop" for the follow: the stop it was started for (a planned trip's boarding stop), else the saved one.
+  String? _followStopId() => ref.read(followProvider)?.stopId ?? ref.read(settingsProvider).selectedStopId;
+
+  StopInfo? _followStop() {
+    final id = _followStopId();
+    return id == null ? null : ref.read(stopInfoProvider(id));
+  }
+
   void _onTick(Duration elapsed) {
     if (!mounted || !_tickersEnabled) return; // an offstage map tab draws nothing
     final last = _lastFrameElapsed;
@@ -408,7 +416,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       bus: bus,
       drawnProgress: drawn[id]?.progress,
       drawnTripId: drawn[id]?.tripId,
-      yourStopId: ref.read(settingsProvider).selectedStopId,
+      yourStopId: _followStopId(),
       now: now,
     );
     final changed = snap != f.snapshot;
@@ -481,8 +489,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   /// The follow is over: stop it (the listener clears the route and drops the
   /// camera) and say why, unless the bus simply arrived.
   void _endFollow(FollowEnd why, String id) {
+    final yourStop = _followStop();
     ref.read(followProvider.notifier).stop();
-    final message = followEndMessage(why, id, _myStop()?.stopName);
+    final message = followEndMessage(why, id, yourStop?.stopName);
     if (message != null && mounted) BBToast.show(context, message);
   }
 
@@ -751,10 +760,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final selection = ref.watch(mapSelectionProvider);
     final selectedStop = selection is StopSelection ? ref.watch(stopInfoProvider(selection.stopId)) : null;
     final repo = gtfs.value!;
+    // The follow's own stop when it was started for one (a planned trip's boarding stop), else the saved stop.
+    final followStopId = ref.watch(followProvider)?.stopId ?? settings.selectedStopId;
+    final followStop = followStopId == null ? null : ref.watch(stopInfoProvider(followStopId));
     // Minutes to your stop from the live predictions, for the followed bus.
-    final yourStopArrivals = follow == null || settings.selectedStopId == null
+    final yourStopArrivals = follow == null || followStopId == null
         ? const <ArrivalRow>[]
-        : ref.watch(stopArrivalsProvider(settings.selectedStopId!)).value ?? const <ArrivalRow>[];
+        : ref.watch(stopArrivalsProvider(followStopId)).value ?? const <ArrivalRow>[];
     final buildMap = ref.watch(mapViewBuilderProvider);
     final media = MediaQuery.of(context);
     final navInset = BBNavBar.reservedHeight(context);
@@ -948,7 +960,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 bottomInset: navInset,
                 semanticLabel: 'Map sheet',
                 header: _measuredHeader(follow != null
-                    ? _followHeader(follow, repo, myStop, yourStopArrivals, actionsFirst: headerOverflows)
+                    ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
                     : switch (selection) {
                         null => MyStopCard.header(),
                         StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),

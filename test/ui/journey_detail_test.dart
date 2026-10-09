@@ -216,7 +216,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Follow bus'));
     await tester.pumpAndSettle();
-    expect(_container(tester).read(followProvider), const FollowTarget('1415'));
+    expect(_container(tester).read(followProvider), const FollowTarget('1415', stopId: 'A'),
+        reason: "the follow counts to the trip's boarding stop");
     expect(_location(tester), '/map');
     await _unmount(tester);
   });
