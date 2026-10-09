@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
@@ -18,6 +20,8 @@ import '../trip_planner/test_network.dart';
 void main() {
   late ProviderContainer c;
   late DateTime clock;
+  // The live feed is down by default: plans use the timetable.
+  late Future<http.Response> Function(http.Request) liveAnswer;
   DateTime at(int h, int m) => DateTime(testDay.year, testDay.month, testDay.day, h, m);
   StopPlace stop(String id) => StopPlace(stopId: id, name: 'Stop $id');
 
@@ -25,13 +29,13 @@ void main() {
     SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
     final net = TestNetwork();
     clock = at(8, 1);
+    liveAnswer = (_) async => http.Response('', 503);
     c = ProviderContainer(
       overrides: [
         gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
         plannerClockProvider.overrideWithValue(() => clock),
         timetableIndexBuilderProvider.overrideWithValue((repo, day) async => TimetableIndex.build(repo, day)),
-        // The live feed is down: plans use the timetable.
-        timetrackApiProvider.overrideWithValue(TimeTrackApi(client: MockClient((_) async => http.Response('', 503)))),
+        timetrackApiProvider.overrideWithValue(TimeTrackApi(client: MockClient((r) => liveAnswer(r)))),
       ],
     );
   });
@@ -143,6 +147,27 @@ void main() {
     await c.read(savedTripsProvider.notifier).add(SavedTrip(id: '1', name: 'A → C', from: stop('A'), to: stop('C')));
     final next = await read(savedTripNextProvider('1'), () => c.read(savedTripNextProvider('1').future));
     expect(next.length, inInclusiveRange(1, 3));
+    expect(next.first.departs, 8 * 3600 + 600);
+  });
+
+  test('a live feed that never answers: the timetable results come at once', () async {
+    liveAnswer = (_) => Completer<http.Response>().future;
+    c.read(planQueryProvider.notifier)
+      ..setFrom(stop('A'))
+      ..setTo(stop('C'));
+    final out = await results().timeout(const Duration(seconds: 2)) as PlanFound;
+    expect(out.journeys.first.departs, 8 * 3600 + 600);
+    expect(out.journeys.any((j) => j.usesLive), isFalse);
+  });
+
+  test("a live feed that never answers: a saved trip's departures come at once", () async {
+    liveAnswer = (_) => Completer<http.Response>().future;
+    await read(savedTripsProvider, () => c.read(savedTripsProvider.future));
+    await c.read(savedTripsProvider.notifier).add(SavedTrip(id: '1', name: 'A → C', from: stop('A'), to: stop('C')));
+    final next = await read(
+      savedTripNextProvider('1'),
+      () => c.read(savedTripNextProvider('1').future),
+    ).timeout(const Duration(seconds: 2));
     expect(next.first.departs, 8 * 3600 + 600);
   });
 
