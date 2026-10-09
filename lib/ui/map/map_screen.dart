@@ -268,7 +268,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     try {
       await layers.install(stops: repo.stopsById.values);
       if (!mounted || generation != _styleGeneration) return;
-      await layers.updateMyStop(_myStop());
+      await layers.updateMyStop(_followStop());
       if (!mounted || generation != _styleGeneration) return;
       // A new style starts without the route line: draw the last one again.
       final follow = _follow;
@@ -307,17 +307,13 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     }
   }
 
+  /// Your stop's marker: the follow's own stop while it has one, else the saved stop.
   Future<void> _updateMyStop(MapLayers layers) async {
     try {
-      await layers.updateMyStop(_myStop());
+      await layers.updateMyStop(_followStop());
     } catch (e) {
       _log('Could not update your stop: $e');
     }
-  }
-
-  StopInfo? _myStop() {
-    final id = ref.read(settingsProvider).selectedStopId;
-    return id == null ? null : ref.read(stopInfoProvider(id));
   }
 
   /// "Your stop" for the follow: the stop it was started for (a planned trip's boarding stop), else the saved one.
@@ -730,6 +726,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     ref.listen(busTrackingStreamProvider, (_, _) {});
     ref.listen<FollowTarget?>(followProvider, (prev, next) {
       if (prev != next) _onFollowChanged(next);
+      // A planned trip's boarding stop is marked for the follow, the saved one after it.
+      final layers = _layers;
+      if (prev?.stopId != next?.stopId && layers != null) unawaited(_updateMyStop(layers));
     });
     ref.listen<Journey?>(journeyOnMapProvider, (prev, next) {
       if (!identical(prev, next)) _onJourneyChanged(next);
