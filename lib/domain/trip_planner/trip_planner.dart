@@ -38,7 +38,7 @@ class PlanNoJourney extends PlanOutcome {
   /// Leave by: when the first bus that gets there leaves on the next service day (filled in by the provider).
   final DateTime? nextDeparture;
 
-  /// Arrive by: the earliest anything gets there that day.
+  /// Arrive by: the earliest anything gets there that day, leaving no earlier than now.
   final DateTime? firstArrival;
 }
 
@@ -70,7 +70,9 @@ class TripPlanner {
     }
   }
 
-  PlanOutcome plan(PlanQuery q) {
+  /// Plans [q] on the timetable. For Arrive by, [now] (when given) rules out journeys that would have to start
+  /// before it, the walk to the first stop included; it doesn't apply to a later day's index, which starts after it.
+  PlanOutcome plan(PlanQuery q, {DateTime? now}) {
     final access = offsetsFor(q.from);
     if (access.isEmpty) return PlanTooFar(fromEnd: true);
     final egress = offsetsFor(q.to);
@@ -80,15 +82,26 @@ class TripPlanner {
     final t = secondsInServiceDay(index.serviceDate, q.time);
     final candidates = <Journey>[];
     if (q.mode == PlanMode.arriveBy) {
+      // Negative when now is on an earlier day than the index's: nothing on this day has left yet.
+      final nowSeconds = now == null ? null : secondsInServiceDay(index.serviceDate, now);
+      final notBefore = nowSeconds != null && nowSeconds >= 0 ? nowSeconds : null;
       var by = t;
       for (var i = 0; i < 4; i++) {
         final found = raptorReverse(index, access: access, egress: egress, arriveBy: by);
         if (found.isEmpty) break;
-        candidates.addAll(found);
+        final catchable = notBefore == null ? found : found.where((j) => j.departs >= notBefore).toList();
+        candidates.addAll(catchable);
+        // Each pass leaves earlier than the one before: once none can still be caught, none later can.
+        if (catchable.isEmpty) break;
         by = found.map((j) => j.arrives).reduce(math.min) - 60;
       }
       if (candidates.isEmpty) {
-        final any = raptorForward(index, access: access, egress: egress, departAt: -Duration.secondsPerDay);
+        final any = raptorForward(
+          index,
+          access: access,
+          egress: egress,
+          departAt: math.max(notBefore ?? -Duration.secondsPerDay, -Duration.secondsPerDay),
+        );
         if (any.isEmpty) return PlanNoJourney();
         return PlanNoJourney(firstArrival: any.first.at(any.map((j) => j.arrives).reduce(math.min)));
       }
@@ -107,14 +120,16 @@ class TripPlanner {
 
   /// Live times for the shown journeys. A ride the live times break (a transfer under a minute, a bus that arrives
   /// before it leaves, a start before now) is dropped and the rest planned again from the ride before it, without
-  /// that trip; the new journey is checked in turn, up to [maxLiveReplans] times (spec §3.4). The result is ranked
-  /// again (no repeats, at most 5, by departure); empty when none can be shown.
+  /// that trip; the new journey is checked in turn, up to [maxLiveReplans] times (spec §3.4). For Arrive by, a
+  /// journey that ends up arriving after [PlanQuery.time] is dropped. The result is ranked again (no repeats, at
+  /// most 5, by departure); empty when none can be shown.
   List<Journey> applyLive(PlanQuery q, List<Journey> js, TimeTrackFetchResult? feed, DateTime now) {
     if (feed == null || !feed.succeeded) return js;
     final nowSeconds = secondsInServiceDay(index.serviceDate, now);
     final earliest = q.mode == PlanMode.leaveBy
         ? math.max(nowSeconds, secondsInServiceDay(index.serviceDate, q.time))
         : nowSeconds;
+    final deadline = q.mode == PlanMode.arriveBy ? secondsInServiceDay(index.serviceDate, q.time) : null;
     final out = <Journey>[];
     for (final original in js) {
       var j = original;
@@ -124,7 +139,8 @@ class TripPlanner {
         final live = overlayLive(j, feed, now);
         final cut = firstTightLeg(live, notBefore: earliest);
         if (cut == null) {
-          out.add(live);
+          // Arrive by: one the live times (or a re-plan) take past the deadline isn't an option.
+          if (deadline == null || live.arrives <= deadline) out.add(live);
           break;
         }
         if (replans == maxLiveReplans) break;

@@ -17,19 +17,23 @@ import '../trip_planner/test_network.dart';
 
 void main() {
   late ProviderContainer c;
+  late DateTime clock;
   DateTime at(int h, int m) => DateTime(testDay.year, testDay.month, testDay.day, h, m);
   StopPlace stop(String id) => StopPlace(stopId: id, name: 'Stop $id');
 
   setUp(() {
     SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
     final net = TestNetwork();
-    c = ProviderContainer(overrides: [
-      gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
-      plannerClockProvider.overrideWithValue(() => at(8, 1)),
-      timetableIndexBuilderProvider.overrideWithValue((repo, day) async => TimetableIndex.build(repo, day)),
-      // The live feed is down: plans use the timetable.
-      timetrackApiProvider.overrideWithValue(TimeTrackApi(client: MockClient((_) async => http.Response('', 503)))),
-    ]);
+    clock = at(8, 1);
+    c = ProviderContainer(
+      overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
+        plannerClockProvider.overrideWithValue(() => clock),
+        timetableIndexBuilderProvider.overrideWithValue((repo, day) async => TimetableIndex.build(repo, day)),
+        // The live feed is down: plans use the timetable.
+        timetrackApiProvider.overrideWithValue(TimeTrackApi(client: MockClient((_) async => http.Response('', 503)))),
+      ],
+    );
   });
   tearDown(() => c.dispose());
 
@@ -67,6 +71,28 @@ void main() {
       ..setTime(at(8, 25));
     final out = await results() as PlanFound;
     expect(out.journeys.every((j) => j.arrives <= 8 * 3600 + 1500), isTrue);
+  });
+
+  test('arrive by 8:40 asked at 8:30, the feed down: no bus that has already left', () async {
+    clock = at(8, 30);
+    c.read(planQueryProvider.notifier)
+      ..setFrom(stop('A'))
+      ..setTo(stop('C'))
+      ..setMode(PlanMode.arriveBy)
+      ..setTime(at(8, 40));
+    final out = await results() as PlanFound;
+    expect(out.journeys.map((j) => j.departs), [8 * 3600 + 1800]);
+  });
+
+  test('arrive by 8:25 asked at 8:30: no journey, and the earliest arrival is after now', () async {
+    clock = at(8, 30);
+    c.read(planQueryProvider.notifier)
+      ..setFrom(stop('A'))
+      ..setTo(stop('C'))
+      ..setMode(PlanMode.arriveBy)
+      ..setTime(at(8, 25));
+    final out = await results() as PlanNoJourney;
+    expect(out.firstArrival, at(8, 40));
   });
 
   test('leave by 22:00 with nothing left today: the first bus tomorrow', () async {
