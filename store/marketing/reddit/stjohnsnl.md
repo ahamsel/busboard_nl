@@ -25,6 +25,7 @@ It's free, with no ads and no account. It isn't the official Metrobus app; it us
 
 I'm working on arrival alerts next: a notification when your bus is a few minutes away, so you can wait inside.
 
-iPhone and Android: ahamsel.com/busboard
+iPhone: https://apps.apple.com/ca/app/busboard-nl/id6759234328
+Android: https://play.google.com/store/apps/details?id=com.ahamsel.busboard_nl
 
 If you ride Metrobus, I'd really like to hear what's missing or what's annoying about it. Which routes do you use?

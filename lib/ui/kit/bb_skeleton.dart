@@ -2,11 +2,12 @@ import 'package:flutter/widgets.dart';
 
 import 'tokens.dart';
 
-enum BBSkeletonKind { arrivalRow, alertCard, stopCard }
+enum BBSkeletonKind { arrivalRow, alertCard, stopCard, line }
 
 /// Static placeholder rows shaped like the content they stand in for, shown
 /// while a list first loads. No shimmer (reduce-motion safe); announced once
-/// as [label].
+/// as [label]. [BBSkeletonKind.line] is a bare bar with no card around it, for
+/// inside a card that is already on screen.
 class BBSkeleton extends StatelessWidget {
   const BBSkeleton({super.key, required this.kind, this.count = 3, this.label = 'Loading'});
 
@@ -68,7 +69,28 @@ class BBSkeleton extends StatelessWidget {
                 for (var i = 0; i < 3; i++) ...[box(26, 20, r: 6), const SizedBox(width: 6)],
               ]),
             ]),
+          BBSkeletonKind.line => const SizedBox.shrink(),
         };
+
+    if (kind == BBSkeletonKind.line) {
+      return Semantics(
+        container: true,
+        liveRegion: true,
+        label: label,
+        child: ExcludeSemantics(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < count; i++)
+                Padding(
+                  padding: EdgeInsets.only(bottom: i == count - 1 ? 0 : BBSpace.s),
+                  child: bar(0.6, 14),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Semantics(
       container: true,

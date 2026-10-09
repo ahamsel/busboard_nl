@@ -21,6 +21,7 @@ const _alert = ServiceAlert(
 const _boardKey = ValueKey('board-content');
 const _mapKey = ValueKey('map-content');
 const _alertsKey = ValueKey('alerts-content');
+const _planKey = ValueKey('plan-content');
 
 GoRouter _router() => GoRouter(
       initialLocation: '/',
@@ -35,6 +36,7 @@ GoRouter _router() => GoRouter(
             ]),
             StatefulShellBranch(routes: [GoRoute(path: '/map', builder: (_, _) => const SizedBox.expand(key: _mapKey, child: Text('MAP')))]),
             StatefulShellBranch(routes: [GoRoute(path: '/alerts', builder: (_, _) => const SizedBox.expand(key: _alertsKey, child: Text('ALERTS')))]),
+            StatefulShellBranch(routes: [GoRoute(path: '/plan', builder: (_, _) => const SizedBox.expand(key: _planKey, child: Text('PLAN')))]),
           ],
         ),
       ],
@@ -65,13 +67,15 @@ Future<GoRouter> _pump(WidgetTester tester, {EdgeInsets padding = EdgeInsets.zer
 }
 
 void main() {
-  testWidgets('shows the floating nav bar with Board / Map / Alerts and the alert count', (tester) async {
+  testWidgets('shows the floating nav bar with Board / Map / Alerts / Plan and the alert count', (tester) async {
     final handle = tester.ensureSemantics();
     await _pump(tester);
     expect(find.byType(BBNavBar), findsOneWidget);
+    expect(tester.widget<BBNavBar>(find.byType(BBNavBar)).items.map((i) => i.label), ['Board', 'Map', 'Alerts', 'Plan']);
     expect(find.text('Board'), findsOneWidget);
     expect(find.text('Map'), findsOneWidget);
     expect(find.bySemanticsLabel('Alerts, 1 active'), findsOneWidget);
+    expect(find.bySemanticsLabel('Plan'), findsOneWidget);
     handle.dispose();
   });
 
@@ -83,6 +87,9 @@ void main() {
     await tester.tap(find.text('Alerts'));
     await tester.pumpAndSettle();
     expect(find.text('ALERTS'), findsOneWidget);
+    await tester.tap(find.text('Plan'));
+    await tester.pumpAndSettle();
+    expect(find.text('PLAN'), findsOneWidget);
   });
 
   testWidgets('re-tapping the current tab resets the branch to its root', (tester) async {
@@ -118,6 +125,10 @@ void main() {
     await tester.tap(find.text('Alerts'));
     await tester.pumpAndSettle();
     expect(tester.getRect(find.byKey(_alertsKey)).bottom, height);
+
+    await tester.tap(find.text('Plan'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(_planKey)).bottom, height);
   });
 
   testWidgets(

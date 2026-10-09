@@ -125,6 +125,23 @@ class ServiceCalendar {
   }
 }
 
+/// One row of transfers.txt.
+class TransferRule {
+  final String fromStopId;
+  final String toStopId;
+
+  /// GTFS transfer_type: 0 recommended, 1 timed, 2 needs [minTransferSeconds], 3 not possible.
+  final int transferType;
+  final int? minTransferSeconds;
+
+  const TransferRule({
+    required this.fromStopId,
+    required this.toStopId,
+    required this.transferType,
+    this.minTransferSeconds,
+  });
+}
+
 /// Exception types for calendar_dates.txt.
 enum ExceptionType {
   added, // 1 = service added

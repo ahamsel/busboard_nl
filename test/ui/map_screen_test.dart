@@ -1,9 +1,16 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
+import 'package:busboard_nl/domain/trip_planner/journey.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/state/journey_on_map_provider.dart';
+import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/map/map_layers.dart';
+import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
@@ -17,18 +24,22 @@ import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:maplibre_gl/maplibre_gl.dart' show CircleLayerProperties, LatLng, SymbolLayerProperties;
+import 'package:maplibre_gl/maplibre_gl.dart' show CircleLayerProperties, LatLng, LineLayerProperties, SymbolLayerProperties;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_alerts.dart';
+import '../helpers/planner_app.dart';
+import '../kit/kit_test_helpers.dart';
 import '../map/support/fake_map_surface.dart';
 import '../map/support/out_and_back.dart';
+import '../trip_planner/test_network.dart';
 
 const _mun = StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 47.5700, stopLon: -52.7300);
 
@@ -460,7 +471,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 600));
       });
       await _frames(tester, 3);
-      expect(surface.layers.keys, hasLength(6));
+      expect(surface.layers.keys, hasLength(9));
       expect(surface.features('bb-my-stop').single['properties']['stopId'], '1150', reason: 'your stop is drawn');
       expect(surface.busSets, isNotEmpty);
       expect(surface.busSets.last.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
@@ -1084,6 +1095,21 @@ void main() {
       expect(surface.routePushes, pushes);
     });
 
+    testWidgets('a follow from a planned trip counts to its boarding stop, not the saved one', (tester) async {
+      await pumpFollow(tester); // the saved stop is s2
+      containerOf(tester).read(followProvider.notifier).follow('2573', stopId: 's3');
+      await _frames(tester, 3);
+      expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s3$')), findsOneWidget);
+      expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s2$')), findsNothing);
+      expect(find.text("Your stop isn't on this trip"), findsNothing);
+    });
+
+    testWidgets('a follow from the Board still counts to the saved stop', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      expect(find.textContaining(RegExp(r'^(\d+ stops?|Next stop:?) .*s2$')), findsOneWidget);
+    });
+
     testWidgets('the Following chip tells screen readers it brings the camera back to the bus', (tester) async {
       final semantics = tester.ensureSemantics();
       await pumpFollow(tester);
@@ -1162,6 +1188,247 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('planning from the map', () {
+    // Real glyph widths, so the 2x text checks measure what a phone shows.
+    setUpAll(loadAppFonts);
+    final eight = DateTime(testDay.year, testDay.month, testDay.day, 8, 1);
+    ProviderContainer container(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
+    String location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+    // The real map tab started its own refresh timers; let them run out after it goes.
+    Future<void> unmount(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(minutes: 1));
+    }
+
+    testWidgets('a long-press on a stop opens a sheet named for it; Plan to here sets the destination', (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
+      map.longPress(47.5700, -52.7500);
+      await tester.pumpAndSettle();
+      expect(find.text('Stop C'), findsOneWidget);
+      expect(find.text('Plan from here'), findsOneWidget);
+      await tester.tap(find.text('Plan to here'));
+      await tester.pumpAndSettle();
+      expect(container(tester).read(planQueryProvider).to, StopPlace(stopId: 'C', name: 'Stop C'));
+      expect(find.text('Plan a trip'), findsOneWidget);
+      expect(location(tester), '/plan');
+      await unmount(tester);
+    });
+
+    testWidgets('a long-press far from any stop drops a pin; Plan from here sets the start to it', (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
+      map.longPress(47.0, -52.0);
+      await tester.pumpAndSettle();
+      expect(find.text('Dropped pin'), findsOneWidget);
+      await tester.tap(find.text('Plan from here'));
+      await tester.pumpAndSettle();
+      final from = container(tester).read(planQueryProvider).from;
+      expect(from, isA<PinPlace>().having((p) => p.label, 'label', 'Dropped pin').having((p) => p.lat, 'lat', 47.0));
+      expect(find.text('Plan a trip'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('a stop 60 m away is too far to count: the press drops a pin', (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
+      map.longPress(47.5700 + 60 / 111320, -52.7500); // 60 m north of C
+      await tester.pumpAndSettle();
+      expect(find.text('Dropped pin'), findsOneWidget);
+      await unmount(tester);
+    });
+
+    testWidgets('pick mode: the banner asks for the start, and a tap at a stop sets it and goes back', (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map?pick=from', mapView: map.build);
+      expect(find.text('Tap the map to choose your starting point'), findsOneWidget);
+      expect(find.bySemanticsLabel('Cancel choosing on the map'), findsOneWidget);
+      map.tap(47.5600, -52.7500);
+      await tester.pumpAndSettle();
+      expect(container(tester).read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
+      expect(location(tester), '/plan');
+      // Back on the map later, the pick is over.
+      await tester.tap(find.descendant(of: find.byType(BBNavBar), matching: find.text('Map')));
+      await tester.pumpAndSettle();
+      expect(find.text('Tap the map to choose your starting point'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('pick mode for the destination says so, and Cancel goes back with nothing set', (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map?pick=to', mapView: map.build);
+      expect(find.text('Tap the map to choose your destination'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(location(tester), '/plan');
+      expect(container(tester).read(planQueryProvider).to, isNull);
+      await unmount(tester);
+    });
+
+    for (final size in const [Size(320, 568), Size(390, 844)]) {
+      testWidgets('at 2x text on ${size.width.toInt()} wide the banner, the sheet and Hide trip read in full', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        void readsInFull(String text) {
+          expect(find.text(text), findsOneWidget);
+          final p = tester.renderObject<RenderParagraph>(find.text(text));
+          expect(p.didExceedMaxLines, isFalse, reason: '"$text" is cut short');
+        }
+
+        final map = StubMap();
+        await pumpPlannerApp(
+          tester,
+          net: TestNetwork(),
+          now: eight,
+          initial: '/map?pick=from',
+          textScale: 2,
+          mapView: map.build,
+        );
+        readsInFull('Tap the map to choose your starting point');
+        readsInFull('Cancel');
+        map.longPress(47.0, -52.0);
+        await tester.pumpAndSettle();
+        for (final t in ['Dropped pin', 'Plan from here', 'Plan to here']) {
+          readsInFull(t);
+        }
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byIcon(BBIcons.close));
+        await tester.pumpAndSettle();
+        final c = container(tester);
+        c.read(journeyOnMapProvider.notifier).show(Journey(serviceDate: testDay, legs: [
+          RideLeg(routeId: '1', tripId: '1-0', boardStopId: 'A', alightStopId: 'C', departs: 8 * 3600, arrives: 8 * 3600 + 600, stopCount: 2),
+        ]));
+        await tester.pumpAndSettle();
+        readsInFull('Hide trip');
+        expect(tester.takeException(), isNull);
+        await unmount(tester);
+      });
+    }
+
+    testWidgets('a new destination picked on the map never shows the old results on the Plan tab', (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, mapView: map.build);
+      container(tester).read(planQueryProvider.notifier)
+        ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
+        ..setTo(StopPlace(stopId: 'C', name: 'Stop C'));
+      await tester.pumpAndSettle();
+      expect(find.byType(JourneyCard), findsWidgets);
+      await tester.tap(find.text('Stop C'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pick on map'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tap the map to choose your destination'), findsOneWidget);
+      map.tap(47.5800, -52.7500); // Stop E
+      void onlyNewResults() {
+        for (final card in tester.widgetList<JourneyCard>(find.byType(JourneyCard, skipOffstage: false))) {
+          final last = card.journey.legs.whereType<RideLeg>().last;
+          expect(last.alightStopId, 'E', reason: 'a card for the old destination is on screen');
+        }
+      }
+
+      await tester.pump();
+      onlyNewResults();
+      await tester.pump();
+      onlyNewResults();
+      await tester.pumpAndSettle();
+      expect(location(tester), '/plan');
+      expect(find.byType(JourneyCard), findsWidgets);
+      onlyNewResults();
+      await unmount(tester);
+    });
+  });
+
+  group('a planned journey on the map', () {
+    String hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+
+    /// Stop A → C on route 1 (with a shape), C → E on route 2 (none), from a pin south of A.
+    GtfsRepository network() {
+      final net = TestNetwork();
+      final t = net.repo.tripsById['1-0']!;
+      net.repo.tripsById['1-0'] = TripInfo(
+        tripId: t.tripId,
+        routeId: t.routeId,
+        serviceId: t.serviceId,
+        tripHeadsign: t.tripHeadsign,
+        directionId: 0,
+        shapeId: 'S1',
+      );
+      final points = [
+        for (var i = 0; i <= 6; i++)
+          ShapePoint(shapeId: 'S1', lat: 47.5550 + i * 0.0050, lon: -52.7500, sequence: i),
+      ];
+      net.repo.shapesById['S1'] = points;
+      net.repo.shapeCumulativeDistances['S1'] = cumulativeFor(points);
+      return net.repo;
+    }
+
+    Journey journey() => Journey(serviceDate: testDay, legs: [
+          WalkLeg(fromStopId: null, toStopId: 'A', seconds: 120, startSeconds: 8 * 3600 - 120),
+          RideLeg(routeId: '1', tripId: '1-0', boardStopId: 'A', alightStopId: 'C', departs: 8 * 3600, arrives: 8 * 3600 + 600, stopCount: 2),
+          RideLeg(routeId: '2', tripId: '2-1', boardStopId: 'C', alightStopId: 'E', departs: 8 * 3600 + 1200, arrives: 8 * 3600 + 1680, stopCount: 2),
+        ]);
+
+    testWidgets('draws each ride cut to its stops in its colour, the walks dotted, fits it, and hides on request', (
+      tester,
+    ) async {
+      final surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(tester, repo: network);
+      final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
+      container.read(planQueryProvider.notifier).setFrom(PinPlace(lat: 47.5590, lon: -52.7500, label: 'Dropped pin'));
+      container.read(journeyOnMapProvider.notifier).show(journey());
+      await tester.runAsync(() => _styleLoaded(surface));
+      await _frames(tester, 2);
+
+      final rides = surface.features(MapLayers.journeySource);
+      expect(rides, hasLength(2));
+      final first = (rides[0]['geometry'] as Map)['coordinates'] as List;
+      expect((first.first as List)[1], closeTo(47.5600, 1e-6), reason: 'cut at the stop the rider gets on at');
+      expect((first.last as List)[1], closeTo(47.5700, 1e-6), reason: 'cut at the stop the rider gets off at');
+      expect((rides[0]['properties'] as Map)['color'], hex(RoutePalette.ofName('1').line));
+      expect((rides[1]['properties'] as Map)['color'], hex(RoutePalette.ofName('2').line));
+      final second = (rides[1]['geometry'] as Map)['coordinates'] as List;
+      expect([for (final p in second) (p as List)[1]], [47.5700, 47.5750, 47.5800],
+          reason: 'with no shape, the line runs stop to stop');
+      final walks = surface.features(MapLayers.journeyWalkSource);
+      expect(walks, hasLength(1));
+      expect((walks.single['geometry'] as Map)['coordinates'], [
+        [-52.7500, 47.5590],
+        [-52.7500, 47.5600],
+      ]);
+      expect(surface.layers[MapLayers.journeyWalkLayer], isA<LineLayerProperties>()
+          .having((p) => p.lineDasharray, 'dashes', isNotNull));
+      expect(surface.fits, isNotEmpty, reason: 'the camera fits the journey');
+      final (a, b, _, _) = surface.fits.last;
+      expect(math.min(a.latitude, b.latitude), closeTo(47.5590, 1e-6));
+      expect(math.max(a.latitude, b.latitude), closeTo(47.5800, 1e-6));
+
+      await tester.tap(find.bySemanticsLabel('Hide the trip from the map'));
+      await _frames(tester, 2);
+      expect(container.read(journeyOnMapProvider), isNull);
+      expect(surface.features(MapLayers.journeySource), isEmpty);
+      expect(surface.features(MapLayers.journeyWalkSource), isEmpty);
+      expect(find.text('Hide trip'), findsNothing);
+    });
+
+    testWidgets('a journey shown before the style loads is drawn once it does', (tester) async {
+      final surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(tester, repo: network, overrides: [
+        journeyOnMapProvider.overrideWith(() => _PresetJourney(journey())),
+      ]);
+      expect(find.text('Hide trip'), findsOneWidget);
+      await tester.runAsync(() => _styleLoaded(surface));
+      await _frames(tester, 2);
+      expect(surface.features(MapLayers.journeySource), hasLength(2));
+      expect(surface.fits, isNotEmpty);
+    });
+  });
 }
 
 /// Holds the route line's redraw until [gate] completes, so a test can end the
@@ -1187,4 +1454,12 @@ class _PresetFollow extends FollowNotifier {
 
   @override
   FollowTarget? build() => FollowTarget(id);
+}
+
+class _PresetJourney extends JourneyOnMapNotifier {
+  _PresetJourney(this.journey);
+  final Journey journey;
+
+  @override
+  Journey? build() => journey;
 }

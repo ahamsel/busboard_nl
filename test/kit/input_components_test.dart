@@ -4,6 +4,7 @@ import 'package:busboard_nl/ui/kit/bb_switch.dart';
 import 'package:busboard_nl/ui/kit/bb_text_field.dart';
 import 'package:busboard_nl/ui/kit/tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'kit_test_helpers.dart';
@@ -86,6 +87,62 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.enterText(find.byType(TextField), 'abc');
     expect(typed.last, 'abc');
+  });
+
+  group('with the app fonts', () {
+    setUpAll(loadAppFonts);
+
+    RenderParagraph paragraph(WidgetTester tester, String label) =>
+        tester.renderObject<RenderParagraph>(find.text(label));
+
+    testWidgets('a BBSegmented label too long for one line wraps to two at 2x text, centred', (tester) async {
+      await tester.pumpWidget(
+        kitHost(
+          BBSegmented<int>(
+            segments: const [
+              BBSegment(value: 0, label: 'Leave now'),
+              BBSegment(value: 1, label: 'Leave by'),
+              BBSegment(value: 2, label: 'Arrive by'),
+            ],
+            selected: 0,
+            onChanged: (_) {},
+          ),
+          textScale: 2,
+          width: 320,
+        ),
+      );
+      final p = paragraph(tester, 'Leave now');
+      expect(p.didExceedMaxLines, isFalse);
+      expect(p.textAlign, TextAlign.center);
+      final lineHeight = p.getFullHeightForCaret(const TextPosition(offset: 0));
+      expect(p.size.height, greaterThan(lineHeight * 1.5), reason: 'two lines');
+      // Every segment takes the tallest one's height, and still at least 44.
+      final heights = {
+        for (final l in ['Leave now', 'Leave by', 'Arrive by'])
+          tester.getSize(find.ancestor(of: find.text(l), matching: find.byType(AnimatedContainer))).height,
+      };
+      expect(heights, hasLength(1));
+      expect(heights.single, greaterThanOrEqualTo(44));
+    });
+
+    testWidgets('a BBSegmented label that fits stays on one line', (tester) async {
+      await tester.pumpWidget(
+        kitHost(
+          BBSegmented<String>(
+            segments: const [
+              BBSegment(value: 'near', label: 'Near me'),
+              BBSegment(value: 'id', label: 'Stop number'),
+            ],
+            selected: 'near',
+            onChanged: (_) {},
+          ),
+        ),
+      );
+      final p = paragraph(tester, 'Stop number');
+      expect(p.size.height, lessThan(p.getFullHeightForCaret(const TextPosition(offset: 0)) * 1.5));
+      final pressable = find.ancestor(of: find.text('Near me'), matching: find.byType(BBPressable));
+      expect(tester.getSize(pressable).height, 44);
+    });
   });
 
   testWidgets('BBSegmented segments are at least 44 tall to tap', (tester) async {

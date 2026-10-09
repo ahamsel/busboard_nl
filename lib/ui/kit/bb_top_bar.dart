@@ -48,7 +48,7 @@ class BBTopBar extends StatelessWidget {
                   ),
                 ),
                 if (subtitle != null)
-                  Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: bb.text.caption),
+                  Text(subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: bb.text.caption),
               ],
             ),
           ),

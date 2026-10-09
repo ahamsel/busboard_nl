@@ -1,0 +1,405 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/realtime/timetrack_api.dart';
+import 'package:busboard_nl/domain/trip_planner/journey.dart';
+import 'package:busboard_nl/domain/trip_planner/live_overlay.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../arrival_alerts/alert_replay_test.dart' show loadCapture, ReplayPoll;
+import '../helpers/feed_fixtures.dart';
+import 'test_network.dart';
+
+/// A feed where each trip in [delays] (seconds late) has a fresh bus and a time at every stop but [omitStops].
+TimeTrackFetchResult feedWith(
+  TestNetwork net,
+  Map<String, int> delays,
+  DateTime now, {
+  Set<String> omitStops = const {},
+}) {
+  final stopTimes = <String, Map<String, List<FeedStopTime>>>{};
+  for (final MapEntry(key: trip, value: delay) in delays.entries) {
+    for (final rows in net.repo.stopTimesByStopId.values) {
+      for (final r in rows.where((r) => r.tripId == trip && !omitStops.contains(r.stopId))) {
+        final scheduled = GtfsTime.parse(r.departureTime).toDateTime(testDay);
+        stopTimes.putIfAbsent(trip, () => {})[r.stopId] = [
+          FeedStopTime(
+            time: scheduled.add(Duration(seconds: delay)),
+            delay: Duration(seconds: delay),
+          ),
+        ];
+      }
+    }
+  }
+  return fakeFeed([
+    for (final MapEntry(key: trip, value: delay) in delays.entries)
+      fakeVehicle(trip: trip, id: 'bus-$trip', diff: -(delay ~/ 60), fix: now),
+  ], stopTimes: stopTimes);
+}
+
+bool noDoubleWalks(Journey j) {
+  for (var i = 1; i < j.legs.length; i++) {
+    if (j.legs[i] is WalkLeg && j.legs[i - 1] is WalkLeg) return false;
+  }
+  return true;
+}
+
+void main() {
+  late TestNetwork net;
+  late TripPlanner planner;
+  final now = DateTime(testDay.year, testDay.month, testDay.day, 8, 0);
+  final query = PlanQuery(
+    from: StopPlace(stopId: 'A', name: 'Stop A'),
+    to: StopPlace(stopId: 'E', name: 'Stop E'),
+    mode: PlanMode.leaveBy,
+    time: now,
+  );
+  setUp(() {
+    net = TestNetwork();
+    planner = TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay));
+  });
+
+  /// 1-0 (A 08:00 → C 08:10), then 2-1 (C 08:20 → E 08:28).
+  Journey firstAtoE() => (planner.plan(query) as PlanFound).journeys.first;
+
+  test('a late bus shifts its leg and marks it live', () {
+    final j = firstAtoE();
+    final ride = j.legs.whereType<RideLeg>().first;
+    final live = overlayLive(j, feedWith(net, {ride.tripId: 120}, now), now).legs.whereType<RideLeg>().first;
+    expect(live.live, isTrue);
+    expect(live.departs, ride.departs + 120);
+    expect(live.arrives, ride.arrives + 120);
+  });
+
+  test('a leg more than 60 minutes away keeps the timetable', () {
+    final early = DateTime(testDay.year, testDay.month, testDay.day, 6, 30);
+    final j = firstAtoE();
+    final out = overlayLive(j, feedWith(net, {j.legs.whereType<RideLeg>().first.tripId: 120}, early), early);
+    expect(out.legs.whereType<RideLeg>().first.live, isFalse);
+  });
+
+  test("a trip in the feed without the leg's board stop keeps the timetable there", () {
+    final j = firstAtoE();
+    final ride = j.legs.whereType<RideLeg>().first;
+    final live = overlayLive(
+      j,
+      feedWith(net, {ride.tripId: 120}, now, omitStops: {ride.boardStopId}),
+      now,
+    ).legs.whereType<RideLeg>().first;
+    expect(live.departs, ride.departs);
+    expect(live.arrives, ride.arrives + 120);
+  });
+
+  test('a stale bus does not count as live', () {
+    final j = firstAtoE();
+    final ride = j.legs.whereType<RideLeg>().first;
+    final stale = feedWith(net, {ride.tripId: 120}, now.subtract(const Duration(minutes: 10)));
+    expect(overlayLive(j, stale, now).legs.whereType<RideLeg>().first.live, isFalse);
+  });
+
+  test('a transfer made too tight is planned again, and flagged', () {
+    // 1-0 ten minutes late reaches C at 08:20, as 2-1 leaves: the rest goes on 2-2 (C 08:35 → E 08:43).
+    final j = firstAtoE();
+    final first = j.legs.whereType<RideLeg>().first;
+    final live = overlayLive(j, feedWith(net, {first.tripId: 600}, now), now);
+    expect(firstTightLeg(live), isNotNull);
+    final shown = planner.applyLive(query, [j], feedWith(net, {first.tripId: 600}, now), now).single;
+    expect(shown.replannedForLiveTimes, isTrue);
+    expect(firstTightLeg(shown), isNull);
+    expect(noDoubleWalks(shown), isTrue);
+    expect(shown.legs.whereType<RideLeg>().last.tripId, '2-2');
+    expect(shown.arrives, 8 * 3600 + 2580);
+  });
+
+  test('an early bus (live before now) is not shown: the journey leaves later, on another trip', () {
+    final j = firstAtoE();
+    final first = j.legs.whereType<RideLeg>().first;
+    final shown = planner.applyLive(query, [j], feedWith(net, {first.tripId: -300}, now), now).single;
+    expect(shown.departs, greaterThanOrEqualTo(8 * 3600));
+    expect(shown.legs.whereType<RideLeg>().map((r) => r.tripId), isNot(contains(first.tripId)));
+    expect(shown.replannedForLiveTimes, isTrue);
+    expect(firstTightLeg(shown, notBefore: 8 * 3600), isNull);
+    expect(noDoubleWalks(shown), isTrue);
+  });
+
+  test('an early first bus gives a ranked list: no repeated journeys, in departure order', () {
+    // The early 1-0 is planned again from A and finds 1-1 → 2-2, which a later search (08:05) also lists.
+    final all = (planner.plan(query) as PlanFound).journeys;
+    final later = (planner.plan(
+      PlanQuery(from: query.from, to: query.to, mode: query.mode, time: now.add(const Duration(minutes: 5))),
+    ) as PlanFound).journeys;
+    final first = all.first.legs.whereType<RideLeg>().first;
+    final feed = feedWith(net, {first.tripId: -300}, now);
+    String key(Journey j) => j.legs.whereType<RideLeg>().map((r) => r.tripId).join(',');
+    final shown = planner.applyLive(query, [...all, ...later], feed, now);
+
+    expect(shown, isNotEmpty);
+    final keys = shown.map(key).toList();
+    expect(keys.toSet().length, keys.length, reason: keys.join(' | '));
+    expect([for (final j in shown) j.departs], orderedEquals([for (final j in shown) j.departs]..sort()));
+    expect(shown.length, lessThanOrEqualTo(5));
+    for (final j in shown) {
+      expect(j.departs, greaterThanOrEqualTo(8 * 3600));
+      expect(noDoubleWalks(j), isTrue);
+      expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), isNot(contains(first.tripId)));
+    }
+  });
+
+  test('a walking transfer onto a bus the live times make too early: planned again from the alight stop', () {
+    // A 08:00 → C 08:10 (1-0), walk C → G (6 min) to 08:16, then 8-0 at 08:17 to H. 8-0 running 5 min early leaves G
+    // at 08:12, before the rider can be there; the next one, 8-1, leaves at 09:00.
+    net.repo.routesById['8'] = RouteInfo(routeId: '8', routeShortName: '8', routeLongName: 'Route 8');
+    net.addTrip('8-0', '8', ['G', 'H'], 8 * 3600 + 17 * 60, 600);
+    net.addTrip('8-1', '8', ['G', 'H'], 9 * 3600, 600);
+    final p = TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay));
+    final toH = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'H', name: 'Stop H'),
+      mode: PlanMode.leaveBy,
+      time: now,
+    );
+    final planned = (p.plan(toH) as PlanFound).journeys.first;
+    expect(planned.legs.map((l) => l.runtimeType), [RideLeg, WalkLeg, RideLeg]);
+    final ride = planned.legs.first as RideLeg;
+    expect((planned.legs.last as RideLeg).tripId, '8-0');
+
+    final feed = feedWith(net, {'8-0': -300}, now);
+    expect(firstTightLeg(overlayLive(planned, feed, now)), 2);
+    final shown = p.applyLive(toH, [planned], feed, now).single;
+
+    expect(shown.replannedForLiveTimes, isTrue);
+    expect(noDoubleWalks(shown), isTrue);
+    expect(firstTightLeg(shown, notBefore: 8 * 3600), isNull);
+    final kept = shown.legs.first as RideLeg;
+    expect((kept.tripId, kept.departs, kept.arrives, kept.live), (ride.tripId, ride.departs, ride.arrives, false));
+    final tailWalk = shown.legs[1] as WalkLeg; // the search starts at C, the kept ride's alight stop
+    expect((tailWalk.fromStopId, tailWalk.toStopId), ('C', 'G'));
+    expect(shown.legs.whereType<RideLeg>().map((r) => r.tripId), [ride.tripId, '8-1']);
+    expect(shown.arrives, 9 * 3600 + 600);
+  });
+
+  test('a leg with only its board stop live, ending before it starts, stays on the timetable', () {
+    // 2-1 (C 08:20 → E 08:28) with C ten minutes late and E unlisted would leave at 08:30, after it arrives.
+    final j = firstAtoE();
+    final ride = j.legs.whereType<RideLeg>().last;
+    final out = overlayLive(j, feedWith(net, {ride.tripId: 600}, now, omitStops: {ride.alightStopId}), now);
+    final leg = out.legs.whereType<RideLeg>().last;
+    expect((leg.live, leg.departs, leg.arrives), (false, ride.departs, ride.arrives));
+    expect(firstTightLeg(out), isNull);
+  });
+
+  test('when the first ride breaks, the re-plan starts from the origin and ends with a single walk', () {
+    final toG = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'G', name: 'Stop G'),
+      mode: PlanMode.leaveBy,
+      time: now,
+    );
+    final j = (planner.plan(toG) as PlanFound).journeys.first;
+    expect(j.legs.last, isA<WalkLeg>());
+    final first = j.legs.whereType<RideLeg>().first;
+    final shown = planner.applyLive(toG, [j], feedWith(net, {first.tripId: -300}, now), now).single;
+    expect(shown.replannedForLiveTimes, isTrue);
+    expect(noDoubleWalks(shown), isTrue);
+    expect(shown.legs.last, isA<WalkLeg>());
+    expect(shown.departs, greaterThanOrEqualTo(8 * 3600));
+  });
+
+  test('the re-planned tail is itself given live times', () {
+    final j = firstAtoE();
+    final first = j.legs.whereType<RideLeg>().first;
+    final feed = feedWith(net, {first.tripId: 600, '2-2': 120}, now);
+    final shown = planner.applyLive(query, [j], feed, now).single;
+    final tail = shown.legs.whereType<RideLeg>().last;
+    expect(tail.tripId, '2-2');
+    expect(tail.live, isTrue);
+    expect(tail.departs, 8 * 3600 + 35 * 60 + 120);
+    expect(shown.arrives, 8 * 3600 + 2580 + 120);
+    expect(shown.replannedForLiveTimes, isTrue);
+  });
+
+  group('arrive by with live times', () {
+    final at830 = DateTime(testDay.year, testDay.month, testDay.day, 8, 30);
+    final by840 = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.arriveBy,
+      time: DateTime(testDay.year, testDay.month, testDay.day, 8, 40),
+    );
+
+    test('a deadline near now: no journey that has already left, and none planned again', () {
+      final js = (planner.plan(by840, now: at830) as PlanFound).journeys;
+      final shown = planner.applyLive(by840, js, feedWith(net, {'1-3': 0}, at830), at830);
+      expect(shown.map((j) => j.departs), [8 * 3600 + 1800]);
+      expect(shown.any((j) => j.replannedForLiveTimes), isFalse);
+    });
+
+    test('a journey the live times make arrive after the deadline is dropped', () {
+      final js = (planner.plan(by840, now: at830) as PlanFound).journeys;
+      expect(planner.applyLive(by840, js, feedWith(net, {'1-3': 120}, at830), at830), isEmpty);
+    });
+  });
+
+  test('a late bus that can still be caught is offered first (look-back)', () {
+    // 1-1 is due at A at 8:10 but runs 6 min late; at 8:12 it is still to come, at 8:16. The 8:00 (1-0) in the
+    // look-back window has gone and must not be offered.
+    final at812 = DateTime(testDay.year, testDay.month, testDay.day, 8, 12);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveNow,
+      time: at812,
+    );
+    final js = (planner.plan(q, now: at812) as PlanFound).journeys;
+    expect(js.first.departs, 8 * 3600 + 1200, reason: 'the timetable alone starts at the 8:20');
+    final shown = planner.applyLive(q, js, feedWith(net, {'1-1': 360}, at812), at812);
+    final first = shown.first.legs.whereType<RideLeg>().single;
+    expect((first.tripId, first.departs, first.live), ('1-1', 8 * 3600 + 960, true));
+    expect(shown.first.replannedForLiveTimes, isFalse);
+    expect(shown.map((j) => j.departs), orderedEquals([...shown.map((j) => j.departs)]..sort()));
+    for (final j in shown) {
+      expect(j.departs, greaterThanOrEqualTo(8 * 3600 + 720));
+      expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), isNot(contains('1-0')));
+    }
+  });
+
+  test('the look-back is for Leave now and Leave by only, and needs a working feed', () {
+    final at812 = DateTime(testDay.year, testDay.month, testDay.day, 8, 12);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveNow,
+      time: at812,
+    );
+    final js = (planner.plan(q, now: at812) as PlanFound).journeys;
+    expect(planner.applyLive(q, js, null, at812).first.departs, 8 * 3600 + 1200);
+  });
+
+  test('a Leave by 60 to 75 minutes ahead still looks back for a late bus', () {
+    // Asked at 8:00 for 9:05: 1-6 is timetabled 8:58 (within the live horizon) and runs 8 min late, so it leaves
+    // A at 9:06; the next timetabled bus is 9:30.
+    net.addTrip('1-6', '1', ['A', 'B', 'C'], 8 * 3600 + 58 * 60, 300);
+    net.addTrip('1-7', '1', ['A', 'B', 'C'], 9 * 3600 + 30 * 60, 300);
+    final p = TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay));
+    final at800 = DateTime(testDay.year, testDay.month, testDay.day, 8, 0);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveBy,
+      time: DateTime(testDay.year, testDay.month, testDay.day, 9, 5),
+    );
+    final js = (p.plan(q, now: at800) as PlanFound).journeys;
+    expect(js.first.departs, 9 * 3600 + 30 * 60);
+    final shown = p.applyLive(q, js, feedWith(net, {'1-6': 480}, at800), at800);
+    final first = shown.first.legs.whereType<RideLeg>().single;
+    expect((first.tripId, first.departs, first.live), ('1-6', 9 * 3600 + 6 * 60, true));
+  });
+
+  test('a Leave by more than an hour ahead: live times change nothing, look-back or not', () {
+    // Asked at 7:30 for 8:40: the 8:40 and 8:50 buses are past the live horizon.
+    final at730 = DateTime(testDay.year, testDay.month, testDay.day, 7, 30);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveBy,
+      time: DateTime(testDay.year, testDay.month, testDay.day, 8, 40),
+    );
+    final js = (planner.plan(q, now: at730) as PlanFound).journeys;
+    final shown = planner.applyLive(q, js, feedWith(net, {'1-3': 360, '1-4': 360}, at730), at730);
+    expect(shown.map((j) => j.departs), js.map((j) => j.departs));
+    expect(shown.any((j) => j.usesLive), isFalse);
+  });
+
+  test('no feed or a failed one: journeys unchanged', () {
+    final j = firstAtoE();
+    expect(planner.applyLive(query, [j], null, now).single.usesLive, isFalse);
+    expect(
+      planner.applyLive(query, [j], const TimeTrackFetchResult.failure(error: 'test'), now).single.usesLive,
+      isFalse,
+    );
+  });
+
+  final capturePath = Platform.environment['ALERT_CAPTURE'];
+  final gtfsDir = Platform.environment['ALERT_GTFS'];
+  test('replayed against a capture: live legs stay near the timetable and no transfer is left tight', () async {
+    final polls = await loadCapture(
+      File(capturePath!).openRead().transform(utf8.decoder).transform(const LineSplitter()),
+    );
+    final poll = polls.firstWhere((ReplayPoll p) => p.feed != null && p.feed!.succeeded);
+    final feed = poll.feed!;
+    final repo = GtfsRepository();
+    await repo.loadFromDirectory(gtfsDir!);
+    final day = DateTime(poll.at.year, poll.at.month, poll.at.day);
+    final index = TimetableIndex.build(repo, day);
+    final replayPlanner = TripPlanner(repo, index);
+    final served = [
+      for (var s = 0; s < index.stopIds.length; s++)
+        if (index.patternsAtStop[s].isNotEmpty) index.stopIds[s],
+    ];
+
+    final rnd = Random(1006);
+    var planned = 0, replanned = 0, liveLegs = 0;
+    var attempts = 0;
+    final earliest = secondsInServiceDay(day, poll.at);
+    while (planned < 20 && attempts++ < 500) {
+      final from = served[rnd.nextInt(served.length)];
+      final to = served[rnd.nextInt(served.length)];
+      if (from == to) continue;
+      final q = PlanQuery(
+        from: StopPlace(stopId: from, name: from),
+        to: StopPlace(stopId: to, name: to),
+        mode: PlanMode.leaveBy,
+        time: poll.at,
+      );
+      final outcome = replayPlanner.plan(q);
+      if (outcome is! PlanFound) continue;
+      planned++;
+      final shown = replayPlanner.applyLive(q, outcome.journeys, feed, poll.at);
+      for (final j in shown) {
+        expect(firstTightLeg(j, notBefore: earliest), isNull, reason: '$from→$to');
+        expect(
+          firstTightLeg(overlayLive(j, feed, poll.at), notBefore: earliest),
+          isNull,
+          reason: '$from→$to overlaid again',
+        );
+        expect(j.departs, greaterThanOrEqualTo(earliest), reason: '$from→$to starts before the poll');
+        expect(noDoubleWalks(j), isTrue, reason: '$from→$to has two walks in a row');
+        for (var i = 0; i < j.legs.length; i++) {
+          final leg = j.legs[i];
+          if (leg is RideLeg) {
+            expect(leg.departs, lessThanOrEqualTo(leg.arrives), reason: '$from→$to ride ${leg.tripId}');
+          }
+          if (i > 0) {
+            expect(leg.startSeconds, greaterThanOrEqualTo(j.legs[i - 1].endSeconds), reason: '$from→$to leg $i');
+          }
+        }
+        if (j.replannedForLiveTimes) replanned++;
+        for (final leg in j.legs) {
+          if (leg is! RideLeg || !leg.live) continue;
+          liveLegs++;
+          // The timetable time of this visit: the trip's row at the board stop nearest the live time.
+          final timetable = [
+            for (final r in repo.stopTimesByStopId[leg.boardStopId]!)
+              if (r.tripId == leg.tripId) GtfsTime.parse(r.departureTime).totalSeconds,
+          ].reduce((a, b) => (a - leg.departs).abs() <= (b - leg.departs).abs() ? a : b);
+          expect(
+            (leg.departs - timetable).abs(),
+            lessThanOrEqualTo(15 * 60),
+            reason: '${leg.tripId} at ${leg.boardStopId}',
+          );
+        }
+      }
+    }
+    expect(planned, 20, reason: 'found 20 plannable queries within 500 attempts');
+    // ignore: avoid_print
+    print('replay: $planned queries, $liveLegs live legs, $replanned journeys planned again');
+    expect(liveLegs, greaterThan(0), reason: 'the capture should make at least one leg live');
+  }, skip: capturePath == null || gtfsDir == null ? 'set ALERT_CAPTURE and ALERT_GTFS to replay a capture' : false);
+}

@@ -19,6 +19,7 @@ class MapViewConfig {
     required this.onReady,
     required this.onStyleLoaded,
     required this.onTap,
+    this.onLongPress,
   });
 
   final String styleString;
@@ -34,6 +35,9 @@ class MapViewConfig {
   final void Function(MapSurface surface, MapCamera camera) onReady;
   final VoidCallback onStyleLoaded;
   final void Function(LatLng coordinates) onTap;
+
+  /// A long press on the map (planning from or to that point).
+  final void Function(LatLng coordinates)? onLongPress;
 }
 
 typedef MapViewBuilder = Widget Function(MapViewConfig config);
@@ -50,6 +54,7 @@ Widget maplibreMapView(MapViewConfig c) => MapLibreMap(
       },
       onStyleLoadedCallback: c.onStyleLoaded,
       onMapClick: (_, coordinates) => c.onTap(coordinates),
+      onMapLongClick: (_, latLng) => c.onLongPress?.call(latLng),
       trackCameraPosition: true,
       myLocationEnabled: c.myLocationEnabled,
       myLocationRenderMode: MyLocationRenderMode.normal,

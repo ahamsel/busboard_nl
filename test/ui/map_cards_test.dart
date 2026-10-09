@@ -3,14 +3,17 @@ import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
 import 'package:busboard_nl/ui/map/my_stop_card.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,6 +69,7 @@ Future<void> _host(
     ),
     GoRoute(path: '/board/:id', builder: (_, s) => Text('BOARD ${s.pathParameters['id']}')),
     GoRoute(path: '/alerts', builder: (_, _) => const Text('ALERTS')),
+    GoRoute(path: '/plan', builder: (_, _) => const Text('PLAN')),
   ]);
   tester.view.physicalSize = Size(width * 3, 2400);
   tester.view.devicePixelRatio = 3;
@@ -108,6 +112,25 @@ void main() {
     await tester.tap(find.text('Open board'));
     await tester.pumpAndSettle();
     expect(find.text('BOARD 1150'), findsOneWidget);
+  });
+
+  testWidgets('stop card: Plan a trip from here starts a plan from this stop on the Plan tab', (tester) async {
+    await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
+    final open = tester.getTopLeft(find.text('Open board')).dy;
+    expect(tester.getTopLeft(find.text('Plan a trip from here')).dy, greaterThan(open), reason: 'under Open board');
+    expect(find.bySemanticsLabel('Plan a trip from here'), findsOneWidget);
+    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
+    await tester.tap(find.text('Plan a trip from here'));
+    await tester.pumpAndSettle();
+    expect(container.read(planQueryProvider).from, StopPlace(stopId: '1150', name: 'MUN Centre'));
+    expect(find.text('PLAN'), findsOneWidget);
+  });
+
+  testWidgets('stop card: at 2x text on 320 pt, Plan a trip from here reads in full', (tester) async {
+    await _host(tester,
+        header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun), textScale: 2, width: 320);
+    expect(tester.renderObject<RenderParagraph>(find.text('Plan a trip from here')).didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('stop card with no arrivals says so', (tester) async {

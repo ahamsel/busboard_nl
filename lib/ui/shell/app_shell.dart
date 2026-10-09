@@ -14,6 +14,8 @@ class AppShell extends ConsumerWidget {
 
   final StatefulNavigationShell navigationShell;
 
+  static const _mapBranch = 1;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeAlertCount =
@@ -40,9 +42,11 @@ class AppShell extends ConsumerWidget {
                     activeIcon: BBIcons.alertsFill,
                     badgeCount: activeAlertCount,
                   ),
+                  const BBNavItem(label: 'Plan', icon: BBIcons.plan, activeIcon: BBIcons.planFill),
                 ],
                 currentIndex: index,
-                onSelect: (i) => navigationShell.goBranch(i, initialLocation: i == index),
+                // The Map tab always opens the plain map: a pick on the map that was left unfinished is over.
+                onSelect: (i) => navigationShell.goBranch(i, initialLocation: i == index || i == _mapBranch),
               ),
             ),
           ],
