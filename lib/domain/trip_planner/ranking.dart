@@ -6,6 +6,18 @@ bool _covers(Journey a, Journey b) =>
 
 String _rideKey(Journey j) => j.legs.whereType<RideLeg>().map((r) => r.tripId).join(',');
 
+/// The same rides, leaving within two minutes of each other.
+bool _nearDuplicate(Journey a, Journey b) => _rideKey(a) == _rideKey(b) && (a.departs - b.departs).abs() <= 120;
+
+/// [a] makes [b] redundant. When each makes the other redundant, the one not changed for live times wins, so an
+/// unchanged option doesn't show "Changed for live times".
+bool _beats(Journey a, Journey b) {
+  if (!_covers(a, b) && !_nearDuplicate(a, b)) return false;
+  final mutual = _covers(b, a) || _nearDuplicate(b, a);
+  if (mutual && a.replannedForLiveTimes != b.replannedForLiveTimes) return !a.replannedForLiveTimes;
+  return true;
+}
+
 /// The shown options (spec §3.1).
 ///
 /// Leave by favours the earliest arrival and fills up with the earliest departures. Arrive by turns that round:
@@ -14,11 +26,8 @@ String _rideKey(Journey j) => j.legs.whereType<RideLeg>().map((r) => r.tripId).j
 List<Journey> rankJourneys(List<Journey> candidates, {int max = 5, bool arriveBy = false}) {
   final kept = <Journey>[];
   for (final j in candidates) {
-    final redundant = kept.any(
-      (u) => _covers(u, j) || _rideKey(u) == _rideKey(j) && (u.departs - j.departs).abs() <= 120,
-    );
-    if (redundant) continue;
-    kept.removeWhere((u) => _covers(j, u));
+    if (kept.any((u) => _beats(u, j))) continue;
+    kept.removeWhere((u) => _beats(j, u));
     kept.add(j);
   }
   if (kept.isEmpty) return const [];

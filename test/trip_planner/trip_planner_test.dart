@@ -135,6 +135,34 @@ void main() {
     expect(rankJourneys([j(400, 1000, 'y'), j(100, 1000, 'x')]).map((r) => r.departs), [400]);
   });
 
+  test('ranking: of two equal options, the one not changed for live times stays', () {
+    Journey j(int dep, int arr, {required bool replanned}) => Journey(
+      serviceDate: testDay,
+      replannedForLiveTimes: replanned,
+      legs: [
+        RideLeg(
+          routeId: '1',
+          tripId: 'x',
+          boardStopId: 'A',
+          alightStopId: 'C',
+          departs: dep,
+          arrives: arr,
+          stopCount: 2,
+        ),
+      ],
+    );
+    // The same journey both ways round, and a near-duplicate (same trip, a minute apart).
+    for (final other in [j(400, 1000, replanned: false), j(460, 1000, replanned: false)]) {
+      for (final list in [
+        [j(400, 1000, replanned: true), other],
+        [other, j(400, 1000, replanned: true)],
+      ]) {
+        final ranked = rankJourneys(list);
+        expect(ranked.map((r) => r.replannedForLiveTimes), [false], reason: '${list.map((r) => r.departs)}');
+      }
+    }
+  });
+
   test('ranking: no duplicates, and the same list twice ranks the same', () {
     final js = (plan(stop('A'), stop('E'), PlanMode.leaveBy, at(8, 0)) as PlanFound).journeys;
     final keys = js.map((j) => j.legs.whereType<RideLeg>().map((r) => r.tripId).join(',')).toSet();
