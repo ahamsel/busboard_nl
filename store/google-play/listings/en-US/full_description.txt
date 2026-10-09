@@ -7,13 +7,20 @@ See what is happening now
 • Follow a bus to your stop: see its route, the stops left, and when it arrives.
 • Filter the map by route, then tap a bus for its vehicle and trip details.
 
-Plan from any stop
+Check any stop
 
 • Enter a four-digit stop ID or choose a nearby stop.
 • Compare Metrobus live predictions with scheduled departures.
 • Set an arrival alert: get a notification when your bus is 3, 5 or 10 minutes away.
 • See run and vehicle details when Metrobus provides them.
 • Pull to refresh for the latest available information.
+
+Plan a trip
+
+• Plan from one place to another, leaving now, leaving by or arriving by any minute you pick.
+• Start or end at a stop, your location, or any spot on the map.
+• Save the trips you take often and see their next buses at a glance.
+• Plans use live bus times for the next hour, all worked out on your phone.
 
 Stay informed
 
