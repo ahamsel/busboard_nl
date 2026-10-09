@@ -282,6 +282,21 @@ void main() {
     expect(planner.applyLive(q, js, null, at812).first.departs, 8 * 3600 + 1200);
   });
 
+  test('a Leave by more than an hour ahead: live times change nothing, look-back or not', () {
+    // Asked at 7:30 for 8:40: the 8:40 and 8:50 buses are past the live horizon.
+    final at730 = DateTime(testDay.year, testDay.month, testDay.day, 7, 30);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveBy,
+      time: DateTime(testDay.year, testDay.month, testDay.day, 8, 40),
+    );
+    final js = (planner.plan(q, now: at730) as PlanFound).journeys;
+    final shown = planner.applyLive(q, js, feedWith(net, {'1-3': 360, '1-4': 360}, at730), at730);
+    expect(shown.map((j) => j.departs), js.map((j) => j.departs));
+    expect(shown.any((j) => j.usesLive), isFalse);
+  });
+
   test('no feed or a failed one: journeys unchanged', () {
     final j = firstAtoE();
     expect(planner.applyLive(query, [j], null, now).single.usesLive, isFalse);
