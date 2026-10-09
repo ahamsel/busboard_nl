@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
+import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/arrival_alert_providers.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/journey_on_map_provider.dart';
@@ -271,6 +276,54 @@ void main() {
     expect(alerts.calls.length, greaterThan(before));
     final (_, liveRows) = alerts.calls.last;
     expect((liveRows.single.tripId, liveRows.single.isLive), ('1-0', true));
+  });
+
+  group('once the rider is past the first ride', () {
+    // 1-0 (A 8:00 → C 8:10), then 2-1 (C 8:20 → E 8:28): the journey a rider set out on at 8:00.
+    Journey planned() {
+      final net = TestNetwork();
+      return (TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay)).plan(
+        PlanQuery(
+          from: StopPlace(stopId: 'A', name: 'Stop A'),
+          to: StopPlace(stopId: 'E', name: 'Stop E'),
+          mode: PlanMode.leaveBy,
+          time: _at(8, 0),
+        ),
+      ) as PlanFound).journeys.first;
+    }
+
+    Future<void> open(WidgetTester tester, DateTime now, TimeTrackFetchResult feed) async {
+      tester.view.physicalSize = const Size(390, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final live = _Feed()..feed = feed;
+      await pumpPlannerApp(tester, net: TestNetwork(), now: now, overrides: [live.override]);
+      final j = planned();
+      expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), ['1-0', '2-1']);
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      await tester.pumpAndSettle();
+      expect(find.byType(JourneyDetailScreen), findsOneWidget);
+    }
+
+    testWidgets('a tight change that has already happened shows no warning', (tester) async {
+      // 1-0 ten minutes late met 2-1 at C at 8:20, with no time to change; at 8:25 that is over.
+      await open(tester, _at(8, 25), feedWith(TestNetwork(), {'1-0': 600}, _at(8, 25)));
+      expect(find.text('8:10 AM → 8:20 AM · 2 stops'), findsOneWidget);
+      expect(find.text(_brokenWarning), findsNothing);
+    });
+
+    testWidgets('a tight change still to come does', (tester) async {
+      // At 8:15 the rider is on 1-0 (left at 8:10, ten minutes late); the change at 8:20 is still ahead.
+      await open(tester, _at(8, 15), feedWith(TestNetwork(), {'1-0': 600}, _at(8, 15)));
+      expect(find.text('8:10 AM → 8:20 AM · 2 stops'), findsOneWidget);
+      expect(find.text(_brokenWarning), findsOneWidget);
+    });
+
+    testWidgets('a first ride that has left on time is not itself a broken trip', (tester) async {
+      await open(tester, _at(8, 5), feedWith(TestNetwork(), {'1-0': 0}, _at(8, 5)));
+      expect(find.text('Live'), findsOneWidget);
+      expect(find.text(_brokenWarning), findsNothing);
+    });
   });
 
   testWidgets('at 2x text on 320x568 the broken-trip warning reads in full', (tester) async {
