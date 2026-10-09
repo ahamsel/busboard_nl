@@ -102,7 +102,17 @@ Future<PlanOutcome> _plan(Ref ref, PlanQuery q, TimeTrackFetchResult? feed, Date
   if (outcome is! PlanFound) return outcome;
   // applyLive ranks its own result.
   final live = planner.applyLive(q, outcome.journeys, feed, now);
-  return live.isEmpty ? PlanNoJourney() : PlanFound(live);
+  if (live.isNotEmpty) return PlanFound(live);
+  if (q.mode != PlanMode.arriveBy) return PlanNoJourney();
+  // Arrive by, with every option past the deadline on live times: when could the rider get there, leaving now?
+  final today = await ref.watch(tripPlannerProvider(_day(now)).future);
+  final leaveNow = PlanQuery(from: q.from, to: q.to, mode: PlanMode.leaveBy, time: now);
+  final soonest = today.plan(leaveNow, now: now);
+  if (soonest is! PlanFound) return PlanNoJourney();
+  final checked = today.applyLive(leaveNow, soonest.journeys, feed, now);
+  if (checked.isEmpty) return PlanNoJourney();
+  final first = checked.reduce((a, b) => a.arrives <= b.arrives ? a : b);
+  return PlanNoJourney(firstArrival: first.at(first.arrives));
 }
 
 final planResultsProvider = FutureProvider.autoDispose<PlanOutcome?>((ref) async {

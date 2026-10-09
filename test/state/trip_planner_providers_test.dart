@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
+import '../trip_planner/live_overlay_test.dart' show feedWith;
 import '../trip_planner/test_network.dart';
 
 void main() {
@@ -97,6 +98,48 @@ void main() {
       ..setTime(at(8, 25));
     final out = await results() as PlanNoJourney;
     expect(out.firstArrival, at(8, 40));
+  });
+
+  group('arrive by where the live times push every option past the deadline', () {
+    Future<PlanOutcome?> arriveBy(TimeTrackFetchResult Function(TestNetwork net) feed) async {
+      final net = TestNetwork();
+      final live = ProviderContainer(
+        overrides: [
+          gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
+          plannerClockProvider.overrideWithValue(() => at(8, 30)),
+          timetableIndexBuilderProvider.overrideWithValue((repo, day) async => TimetableIndex.build(repo, day)),
+          plannerLiveFeedProvider.overrideWith((ref) async => feed(net)),
+        ],
+      );
+      addTearDown(live.dispose);
+      live.read(planQueryProvider.notifier)
+        ..setFrom(stop('A'))
+        ..setTo(stop('C'))
+        ..setMode(PlanMode.arriveBy)
+        ..setTime(at(8, 40));
+      final sub = live.listen(planResultsProvider, (_, _) {});
+      addTearDown(sub.close);
+      // The first answer plans on the timetable; wait for the one with the feed.
+      await live.read(plannerLiveFeedProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      return live.read(planResultsProvider.future);
+    }
+
+    test('the earliest arrival is the live one, from now', () async {
+      // The only bus in time, 1-3 (8:30 → 8:40), runs 2 min late: it gets to C at 8:42.
+      final out = await arriveBy((net) => feedWith(net, {'1-3': 120}, at(8, 30)));
+      expect(out, isA<PlanNoJourney>());
+      expect((out as PlanNoJourney).firstArrival, at(8, 42));
+    });
+
+    test('nothing left to take at all: no earliest arrival', () async {
+      // Every bus still to come, in reach of the timetable, is shown leaving before now: none can be taken.
+      final out = await arriveBy(
+        (net) => feedWith(net, {'1-3': -1500, '1-4': -1500, '1-5': -1500}, at(8, 30)),
+      );
+      expect(out, isA<PlanNoJourney>());
+      expect((out as PlanNoJourney).firstArrival, isNull);
+    });
   });
 
   test('leave by 22:00 with nothing left today: the first bus tomorrow', () async {
