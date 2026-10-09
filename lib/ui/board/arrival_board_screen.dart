@@ -289,8 +289,8 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   /// A live row with a known vehicle follows that bus on the map (spec §3.5);
   /// scheduled-only rows are not tappable.
   VoidCallback? _followable(ArrivalRow a) {
-    final vehicle = a.vehicleNumber;
-    if (!a.isLive || vehicle == null || vehicle.isEmpty) return null;
+    final vehicle = a.followableVehicle;
+    if (vehicle == null) return null;
     return () {
       ref.read(followProvider.notifier).follow(vehicle);
       context.go('/map');
