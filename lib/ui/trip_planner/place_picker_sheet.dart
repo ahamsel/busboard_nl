@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +26,9 @@ class PickedPlace extends PlacePick {
 class PickOnMap extends PlacePick {
   const PickOnMap();
 }
+
+/// How long "My location" waits for a fix before it gives up.
+const locateTimeLimit = Duration(seconds: 10);
 
 /// The most stops the picker lists.
 const maxPlaceMatches = 20;
@@ -81,6 +86,9 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
   bool _locationOff = false;
   bool _locating = false;
 
+  /// The last try got no fix within [locateTimeLimit]; the row can be tapped again.
+  bool _locateFailed = false;
+
   @override
   void initState() {
     super.initState();
@@ -101,7 +109,10 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
 
   /// The same permission handling as the near-me list ([nearestStopsProvider]).
   Future<void> _useMyLocation() async {
-    setState(() => _locating = true);
+    setState(() {
+      _locating = true;
+      _locateFailed = false;
+    });
     try {
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
@@ -110,11 +121,13 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
         return;
       }
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: locateTimeLimit),
       );
       if (!mounted) return;
       Navigator.of(context)
           .pop(PickedPlace(PinPlace(lat: position.latitude, lon: position.longitude, label: myLocationLabel)));
+    } on TimeoutException {
+      if (mounted) setState(() => _locateFailed = true);
     } catch (_) {
       if (mounted) setState(() => _locationOff = true);
     } finally {
@@ -187,7 +200,13 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
                               if (matches.isNotEmpty) const BBDivider(),
                               _PickRow(
                                 icon: BBIcons.nearMe,
-                                label: _locationOff ? 'Location is off' : myLocationLabel,
+                                label: _locationOff
+                                    ? 'Location is off'
+                                    : _locating
+                                    ? 'Finding you…'
+                                    : _locateFailed
+                                    ? "Couldn't find your location"
+                                    : myLocationLabel,
                                 onTap: _locationOff || _locating ? null : _useMyLocation,
                               ),
                               _PickRow(

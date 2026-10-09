@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
@@ -55,6 +57,26 @@ class FixedGeolocator extends GeolocatorPlatform {
     speed: 0,
     speedAccuracy: 0,
   );
+}
+
+/// A phone that lets the app ask but never gets a fix: like the real plugins, it gives up with a
+/// [TimeoutException] once the request's time limit runs out (and never, without one).
+class NoFixGeolocator extends GeolocatorPlatform {
+  final requests = <LocationSettings?>[];
+
+  @override
+  Future<bool> isLocationServiceEnabled() async => true;
+  @override
+  Future<LocationPermission> checkPermission() async => LocationPermission.whileInUse;
+  @override
+  Future<LocationPermission> requestPermission() async => LocationPermission.whileInUse;
+  @override
+  Future<Position> getCurrentPosition({LocationSettings? locationSettings}) {
+    requests.add(locationSettings);
+    final limit = locationSettings?.timeLimit;
+    if (limit == null) return Completer<Position>().future;
+    return Future.delayed(limit, () => throw TimeoutException('no fix', limit));
+  }
 }
 
 /// A stand-in for MapLibre that keeps the config it was last built with, so a test can tap or long-press the "map".
