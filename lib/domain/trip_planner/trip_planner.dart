@@ -13,6 +13,12 @@ import 'walking.dart';
 /// How many times a journey the live times break is planned again before it is dropped.
 const maxLiveReplans = 3;
 
+/// How far before the earliest start live times look for a late bus that can still be caught (spec §3.4).
+const lookBackSeconds = 15 * 60;
+
+/// At most this many look-back searches per refresh.
+const maxLookBackPasses = 4;
+
 enum PlanMode { leaveNow, leaveBy, arriveBy }
 
 class PlanQuery {
@@ -120,7 +126,8 @@ class TripPlanner {
 
   /// Live times for the shown journeys. A ride the live times break (a transfer under a minute, a bus that arrives
   /// before it leaves, a start before now) is dropped and the rest planned again from the ride before it, without
-  /// that trip; the new journey is checked in turn, up to [maxLiveReplans] times (spec §3.4). For Arrive by, a
+  /// that trip; the new journey is checked in turn, up to [maxLiveReplans] times (spec §3.4). For Leave now and Leave
+  /// by, a look-back adds late buses that can still be caught (see [_lookBack]). For Arrive by, a
   /// journey that ends up arriving after [PlanQuery.time] is dropped. The result is ranked again (no repeats, at
   /// most 5, by departure); empty when none can be shown.
   List<Journey> applyLive(PlanQuery q, List<Journey> js, TimeTrackFetchResult? feed, DateTime now) {
@@ -180,7 +187,28 @@ class TripPlanner {
         );
       }
     }
+    if (q.mode != PlanMode.arriveBy) out.addAll(_lookBack(q, feed, now, earliest));
     // Re-planned journeys can repeat one already in the list, or leave later than the one after them.
     return rankJourneys(out, arriveBy: q.mode == PlanMode.arriveBy);
+  }
+
+  /// A late bus the timetable says has gone can still be due: journeys that, on the timetable, start in the
+  /// [lookBackSeconds] before [earliest], kept only when their live times start at or after it and break nothing
+  /// (never re-planned). Up to [maxLookBackPasses] searches, each from a minute after the earliest start found.
+  List<Journey> _lookBack(PlanQuery q, TimeTrackFetchResult feed, DateTime now, int earliest) {
+    final access = offsetsFor(q.from);
+    final egress = offsetsFor(q.to);
+    final kept = <Journey>[];
+    var from = earliest - lookBackSeconds;
+    for (var i = 0; i < maxLookBackPasses && from < earliest; i++) {
+      final found = raptorForward(index, access: access, egress: egress, departAt: from);
+      if (found.isEmpty) break;
+      for (final j in found) {
+        final live = overlayLive(j, feed, now);
+        if (firstTightLeg(live, notBefore: earliest) == null) kept.add(live);
+      }
+      from = found.map((j) => j.departs).reduce(math.min) + 60;
+    }
+    return kept;
   }
 }

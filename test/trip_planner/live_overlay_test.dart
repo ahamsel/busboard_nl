@@ -247,6 +247,41 @@ void main() {
     });
   });
 
+  test('a late bus that can still be caught is offered first (look-back)', () {
+    // 1-1 is due at A at 8:10 but runs 6 min late; at 8:12 it is still to come, at 8:16. The 8:00 (1-0) in the
+    // look-back window has gone and must not be offered.
+    final at812 = DateTime(testDay.year, testDay.month, testDay.day, 8, 12);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveNow,
+      time: at812,
+    );
+    final js = (planner.plan(q, now: at812) as PlanFound).journeys;
+    expect(js.first.departs, 8 * 3600 + 1200, reason: 'the timetable alone starts at the 8:20');
+    final shown = planner.applyLive(q, js, feedWith(net, {'1-1': 360}, at812), at812);
+    final first = shown.first.legs.whereType<RideLeg>().single;
+    expect((first.tripId, first.departs, first.live), ('1-1', 8 * 3600 + 960, true));
+    expect(shown.first.replannedForLiveTimes, isFalse);
+    expect(shown.map((j) => j.departs), orderedEquals([...shown.map((j) => j.departs)]..sort()));
+    for (final j in shown) {
+      expect(j.departs, greaterThanOrEqualTo(8 * 3600 + 720));
+      expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), isNot(contains('1-0')));
+    }
+  });
+
+  test('the look-back is for Leave now and Leave by only, and needs a working feed', () {
+    final at812 = DateTime(testDay.year, testDay.month, testDay.day, 8, 12);
+    final q = PlanQuery(
+      from: StopPlace(stopId: 'A', name: 'Stop A'),
+      to: StopPlace(stopId: 'C', name: 'Stop C'),
+      mode: PlanMode.leaveNow,
+      time: at812,
+    );
+    final js = (planner.plan(q, now: at812) as PlanFound).journeys;
+    expect(planner.applyLive(q, js, null, at812).first.departs, 8 * 3600 + 1200);
+  });
+
   test('no feed or a failed one: journeys unchanged', () {
     final j = firstAtoE();
     expect(planner.applyLive(query, [j], null, now).single.usesLive, isFalse);
