@@ -9,6 +9,7 @@ import 'package:busboard_nl/state/journey_on_map_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_screen.dart';
+import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_detail_screen.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
@@ -123,6 +124,32 @@ void main() {
     expect(find.text('Already saved'), findsOneWidget);
     final trips = _container(tester).read(savedTripsProvider).value!;
     expect(trips.map((t) => t.name), ['Stop A → Stop E']);
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('a "My location" start is saved as near its closest stop, not as My location', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _at(8, 0));
+    // A few metres from Stop A.
+    final here = PinPlace(lat: 47.5601, lon: -52.7501, label: 'My location');
+    _container(tester).read(planQueryProvider.notifier)
+      ..setFrom(here)
+      ..setTo(StopPlace(stopId: 'E', name: 'Stop E'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(JourneyCard).first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save trip'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save trip'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved'), findsOneWidget);
+
+    final trip = _container(tester).read(savedTripsProvider).value!.single;
+    expect(trip.name, 'Near Stop A → Stop E');
+    expect(trip.from, isA<PinPlace>().having((p) => p.label, 'label', 'Near Stop A'));
+    expect(((trip.from as PinPlace).lat, (trip.from as PinPlace).lon), (here.lat, here.lon));
+    expect(trip.to, StopPlace(stopId: 'E', name: 'Stop E'));
+    expect(_container(tester).read(planQueryProvider).from!.label, 'My location', reason: "the planner's own draft");
+    expect(find.byIcon(BBIcons.star), findsOneWidget, reason: 'the saved trip is this one');
     await tester.pump(const Duration(seconds: 4));
   });
 

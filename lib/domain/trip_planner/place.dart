@@ -1,3 +1,6 @@
+/// The label of the pin the place picker makes from the phone's position.
+const myLocationLabel = 'My location';
+
 /// One end of a trip: a stop, or a pin dropped on the map (spec §1).
 sealed class Place {
   String get label;
