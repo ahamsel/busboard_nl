@@ -213,6 +213,49 @@ void main() {
     expect(_textIn(tester, PlanScreen.fromRowKey), contains('My location'));
   });
 
+  testWidgets('My location says it is finding you, and gives up after 10 s so it can be tried again', (tester) async {
+    final handle = tester.ensureSemantics();
+    final geo = NoFixGeolocator();
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, geolocator: geo);
+    await tester.tap(find.text('Choose a starting point'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('My location'));
+    await tester.pump();
+    expect(find.text('Finding you…'), findsOneWidget);
+    expect(find.bySemanticsLabel('Finding you…'), findsOneWidget);
+    expect(geo.requests.single?.timeLimit, const Duration(seconds: 10));
+
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
+    expect(find.text("Couldn't find your location"), findsOneWidget);
+    expect(find.bySemanticsLabel("Couldn't find your location"), findsOneWidget);
+    expect(_container(tester).read(planQueryProvider).from, isNull);
+
+    await tester.tap(find.text("Couldn't find your location"));
+    await tester.pump();
+    expect(find.text('Finding you…'), findsOneWidget, reason: 'the row works again');
+    expect(geo.requests, hasLength(2));
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
+    handle.dispose();
+  });
+
+  testWidgets('at 2x text the finding-you and gave-up rows read in full', (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, geolocator: NoFixGeolocator(), textScale: 2);
+    await tester.tap(find.text('Choose a starting point'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('My location'));
+    await tester.pump();
+    expect(tester.renderObject<RenderParagraph>(find.text('Finding you…')).didExceedMaxLines, isFalse);
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
+    expect(tester.renderObject<RenderParagraph>(find.text("Couldn't find your location")).didExceedMaxLines, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   test('matching takes stop ids that start with the text or names that contain it, 20 at most, by id', () {
     final net = TestNetwork();
     for (var i = 0; i < 30; i++) {
