@@ -58,4 +58,5 @@ abstract final class BBIcons {
   static const IconData swap = IconData(0xe098, fontFamily: 'PhosphorRegular'); // arrowsDownUp
   static const IconData walk = IconData(0xe73a, fontFamily: 'PhosphorRegular'); // personSimpleWalk
   static const IconData calendar = IconData(0xe10a, fontFamily: 'PhosphorRegular'); // calendarBlank
+  static const IconData more = IconData(0xe1fe, fontFamily: 'PhosphorRegular'); // dotsThree
 }

@@ -10,12 +10,14 @@ class BBDialogAction<T> {
   final bool primary;
 }
 
-/// Centred card dialog (replaces AlertDialog).
+/// Centred card dialog (replaces AlertDialog). [content], when given, sits under the message (a text field,
+/// say); it must own any controller it uses, since the dialog is still on screen as it closes.
 abstract final class BBDialog {
   static Future<T?> show<T>(
     BuildContext context, {
     required String title,
     String? message,
+    Widget? content,
     required List<BBDialogAction<T>> actions,
   }) {
     return showGeneralDialog<T>(
@@ -24,7 +26,7 @@ abstract final class BBDialog {
       barrierLabel: 'Dismiss',
       barrierColor: const Color(0x661C2A3A),
       transitionDuration: BBMotion.of(context, BBMotion.standard),
-      pageBuilder: (dialogContext, _, _) => _DialogCard<T>(title: title, message: message, actions: actions),
+      pageBuilder: (dialogContext, _, _) => _DialogCard<T>(title: title, message: message, content: content, actions: actions),
       transitionBuilder: (_, animation, _, child) {
         final curved = CurvedAnimation(parent: animation, curve: BBMotion.curve);
         return FadeTransition(
@@ -37,10 +39,11 @@ abstract final class BBDialog {
 }
 
 class _DialogCard<T> extends StatelessWidget {
-  const _DialogCard({required this.title, required this.message, required this.actions});
+  const _DialogCard({required this.title, required this.message, required this.content, required this.actions});
 
   final String title;
   final String? message;
+  final Widget? content;
   final List<BBDialogAction<T>> actions;
 
   @override
@@ -77,6 +80,10 @@ class _DialogCard<T> extends StatelessWidget {
                               if (message != null) ...[
                                 const SizedBox(height: BBSpace.s),
                                 Text(message!, style: bb.text.body.copyWith(color: bb.colors.muted)),
+                              ],
+                              if (content != null) ...[
+                                const SizedBox(height: BBSpace.m),
+                                content!,
                               ],
                             ],
                           ),
