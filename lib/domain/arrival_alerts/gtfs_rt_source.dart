@@ -48,7 +48,9 @@ bool _delayKnown(TimeTrackVehicle v) => v.gtfsStopSequenceDeviation.isNotEmpty;
 
 /// The trip update's prediction at the given stop, or null when it lists no visit there with a time or delay
 /// within [AlertTracker.sameRunWindow] of the given scheduled time. A loop trip's later visit (once the given one has
-/// left the feed) or an absurd feed time is not this visit.
+/// left the feed) or an absurd feed time is not this visit. A visit dated exactly a day off is this visit on the
+/// wrong date: from midnight on, the feed dates last night's still-running trips a day late (every time +24 h,
+/// recorded 2026-10-10), so its times come back shifted onto [scheduledAt]'s day.
 DateTime? feedTimeAtStop(TimeTrackFetchResult feed, String tripId, String stopId, DateTime scheduledAt) {
   final visits = feed.stopTimes[tripId]?[stopId];
   if (visits == null) return null;
@@ -59,14 +61,21 @@ DateTime? feedTimeAtStop(TimeTrackFetchResult feed, String tripId, String stopId
     if (predicted == null) continue;
     // A visit's own timetable time is its time less its delay; without both, its prediction stands in.
     final scheduled = v.time != null && v.delay != null ? v.time!.subtract(v.delay!) : predicted;
-    final off = scheduled.difference(scheduledAt).abs();
+    final shift = _dayShift(scheduled, scheduledAt);
+    final off = scheduled.subtract(shift).difference(scheduledAt).abs();
     if (off > AlertTracker.sameRunWindow) continue;
     if (bestOff == null || off < bestOff) {
-      best = predicted;
+      best = predicted.subtract(shift);
       bestOff = off;
     }
   }
   return best;
+}
+
+/// The whole day (at most one either way) that [scheduled] sits from [scheduledAt]: zero, or ±24 h.
+Duration _dayShift(DateTime scheduled, DateTime scheduledAt) {
+  final days = (scheduled.difference(scheduledAt).inSeconds / Duration.secondsPerDay).round().clamp(-1, 1);
+  return Duration(days: days);
 }
 
 MetrobusDeparture _departure(ArrivalAlert alert, TimeTrackVehicle v, DateTime? atStop, DateTime now) {
