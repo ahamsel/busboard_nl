@@ -22,16 +22,6 @@ SLIDES = [
     ('08-service-alerts', '04-service-alerts', 'blue', 'Detours and alerts<br>for your routes', 'Official Metrobus service alerts,<br>matched to your stop'),
 ]
 
-# The 1.2.0 set, still used by the Android tablets (no 1.3/1.4 captures for them yet).
-TABLET_SLIDES = [
-    ('01-follow', '03-follow-a-bus', 'blue', 'Follow your bus<br>to your stop', 'See the stops left, the minutes away,<br>and when it arrives'),
-    ('02-arrivals', '01-mun-centre-1150', 'blue', 'Live arrivals<br>at your stop', 'Metrobus predictions next to the schedule,<br>early or late at a glance'),
-    ('03-map', '02-live-map', 'blue', 'Every bus,<br>live on the map', 'Route colours and smooth movement<br>between position updates'),
-    ('04-nearby', '05-nearby-stops', 'blue', 'Stops near you,<br>in a tap', 'Nearby stops with their routes,<br>or enter any stop number'),
-    ('05-alerts', '04-service-alerts', 'blue', 'Detours and alerts<br>for your routes', 'Official Metrobus service alerts,<br>matched to your stop'),
-    ('06-dark', '06-avalon-mall-1600', 'navy', 'Easy on the eyes,<br>day or night', 'Light and dark themes, larger text<br>and screen-reader support'),
-]
-
 SETS = {
     # name: (device, width, height, source dir, slides)
     'iphone': ('iphone', 1320, 2868, 'app-store/screenshots/APP_IPHONE_69', SLIDES),
@@ -39,8 +29,8 @@ SETS = {
     'iphone65': ('iphone', 1284, 2778, 'app-store/screenshots/APP_IPHONE_69', SLIDES),
     'ipad': ('ipad', 2064, 2752, 'app-store/screenshots/APP_IPAD_PRO_3GEN_129', SLIDES),
     'android': ('android', 1080, 2160, 'marketing/clean/phoneScreenshots', SLIDES),
-    'tab7': ('tablet', 1200, 1920, 'marketing/clean/sevenInchScreenshots', TABLET_SLIDES),
-    'tab10': ('tablet', 1600, 2560, 'marketing/clean/tenInchScreenshots', TABLET_SLIDES),
+    'tab7': ('tablet', 1200, 1920, 'marketing/clean/sevenInchScreenshots', SLIDES),
+    'tab10': ('tablet', 1600, 2560, 'marketing/clean/tenInchScreenshots', SLIDES),
 }
 
 def render(name):
