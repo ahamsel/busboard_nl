@@ -14,12 +14,14 @@ import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/saved_place_providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/stop_picker/near_me_list.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -133,6 +135,7 @@ Future<void> _pullUp(WidgetTester tester) async {
 
 void main() {
   testWidgets('at peek: Where to, saved places, alerts for you and your stop, with no taps', (tester) async {
+    final handle = tester.ensureSemantics();
     await _pumpHome(
       tester,
       places: [_home],
@@ -145,6 +148,22 @@ void main() {
     expect(find.textContaining('Detour on 1'), findsOneWidget);
     expect(find.text('Stop C'), findsWidgets);
     expect(find.byType(ArrivalsPreview), findsOneWidget);
+    // Present is not enough: each is on screen and inside the peeking sheet, with no taps.
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    for (final (name, f) in [
+      ('Where to?', find.byKey(HomeSheetContent.whereToKey)),
+      ('the saved place', find.text('Home')),
+      ('the alert for you', find.textContaining('Detour on 1')),
+      ('your stop', find.bySemanticsLabel(RegExp(r'^Your stop, Stop C'))),
+      ('the next bus', find.byType(ArrivalRowTile).first),
+    ]) {
+      final r = tester.getRect(f);
+      expect(r.top, greaterThanOrEqualTo(card.top), reason: name);
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the peeking sheet');
+      expect(r.bottom, lessThanOrEqualTo(screen.height), reason: '$name is on screen');
+    }
+    handle.dispose();
   });
 
   testWidgets('an alert that is not on your stop or its routes stays out of the header', (tester) async {
@@ -194,6 +213,31 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Home'), findsNothing);
     expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+  });
+
+  testWidgets('a saved place offers Remove to a screen reader as a long-press action', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pumpHome(tester, places: [_home]);
+    final chip = find.bySemanticsLabel('Go to Home');
+    expect(tester.getSemantics(chip).getSemanticsData().hasAction(SemanticsAction.longPress), isTrue);
+    tester.semantics.longPress(find.semantics.byLabel('Go to Home'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove'), findsOneWidget);
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(find.text('Home'), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('an alert for you is one line, and opens Alerts', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pumpHome(tester, alerts: [_alertOnRoute1()]);
+    final row = find.bySemanticsLabel('Alert: Detour on 1. Open alerts');
+    expect(row, findsOneWidget);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(find.text('Service alerts'), findsWidgets);
+    handle.dispose();
   });
 
   testWidgets('your stop opens its sheet', (tester) async {

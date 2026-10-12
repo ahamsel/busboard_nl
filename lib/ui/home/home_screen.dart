@@ -98,6 +98,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// detent. Only the follow card's actions may stretch it, up to
   /// [_maxActionsPeek], lifting the half detent above it.
   static const double _maxPeek = 0.45;
+
+  /// The home sheet's own, taller cap.
+  static const double _maxHomePeek = 0.55;
   static const double _maxActionsPeek = 0.8;
   static const _panPauseDistance = 18.0;
   static const _routeInterval = Duration(seconds: 1);
@@ -798,9 +801,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
       // Too tall to peek in full: the follow card moves its actions up, and the
       // peek grows (if it must) to keep them in it.
-      final headerOverflows = peekPx > _maxPeek * sheetArea;
+      // The home sheet peeks taller (Where to?, places, alerts and your stop): spec §3.1.
+      final maxPeek = sheet is HomeSheetHome && !followShowing ? _maxHomePeek : _maxPeek;
+      final headerOverflows = peekPx > maxPeek * sheetArea;
       final actionsPx = !followShowing || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
-      final peek = math.max((peekPx / sheetArea).clamp(0.12, _maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
+      final peek = math.max((peekPx / sheetArea).clamp(0.12, maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
       // Just above the card, but below the chips and the my-location pill. With
       // no room, stay on screen and overlap the card's top edge instead.

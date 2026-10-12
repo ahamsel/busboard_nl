@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/realtime/service_alert_models.dart';
 import '../../data/trip_planner/saved_place_store.dart';
 import '../../state/alerts_for_you_provider.dart';
 import '../../state/home_sheet_provider.dart';
@@ -25,11 +26,11 @@ abstract final class HomeSheetContent {
 }
 
 IconData _iconOf(SavedPlaceIcon i) => switch (i) {
-      SavedPlaceIcon.home => BBIcons.board,
-      SavedPlaceIcon.work => BBIcons.schedule,
-      SavedPlaceIcon.school => BBIcons.info,
-      SavedPlaceIcon.star => BBIcons.star,
-    };
+  SavedPlaceIcon.home => BBIcons.board,
+  SavedPlaceIcon.work => BBIcons.schedule,
+  SavedPlaceIcon.school => BBIcons.info,
+  SavedPlaceIcon.star => BBIcons.star,
+};
 
 class _Header extends ConsumerWidget {
   const _Header({this.onChooseStop});
@@ -55,12 +56,16 @@ class _Header extends ConsumerWidget {
             child: DecoratedBox(
               decoration: bb.card(),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.m),
-                child: Row(children: [
-                  Icon(BBIcons.search, size: 20, color: bb.colors.muted),
-                  const SizedBox(width: BBSpace.s),
-                  Expanded(child: Text('Where to?', style: bb.text.title.copyWith(color: bb.colors.muted))),
-                ]),
+                padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.s),
+                child: Row(
+                  children: [
+                    Icon(BBIcons.search, size: 20, color: bb.colors.muted),
+                    const SizedBox(width: BBSpace.s),
+                    Expanded(
+                      child: Text('Where to?', style: bb.text.title.copyWith(color: bb.colors.muted)),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -70,16 +75,21 @@ class _Header extends ConsumerWidget {
             runSpacing: BBSpace.s,
             children: [
               for (final p in places)
-                GestureDetector(
+                Semantics(
+                  // A screen reader reaches Remove through the long-press action.
                   onLongPress: () => _editPlace(context, ref, p),
-                  child: BBChip(
-                    label: p.name,
-                    icon: _iconOf(p.icon),
-                    semanticLabel: 'Go to ${p.name}',
-                    onTap: () {
-                      ref.read(planQueryProvider.notifier).setDestination(p.place);
-                      ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
-                    },
+                  onLongPressHint: 'Remove',
+                  child: GestureDetector(
+                    onLongPress: () => _editPlace(context, ref, p),
+                    child: BBChip(
+                      label: p.name,
+                      icon: _iconOf(p.icon),
+                      semanticLabel: 'Go to ${p.name}',
+                      onTap: () {
+                        ref.read(planQueryProvider.notifier).setDestination(p.place);
+                        ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
+                      },
+                    ),
                   ),
                 ),
               BBChip(
@@ -90,10 +100,7 @@ class _Header extends ConsumerWidget {
               ),
             ],
           ),
-          for (final a in alerts.take(2)) ...[
-            const SizedBox(height: BBSpace.s),
-            ServiceAlertCard(alert: a, compact: true, onTap: () => context.push('/alerts')),
-          ],
+          for (final a in alerts.take(2)) _AlertRow(alert: a),
           const SizedBox(height: BBSpace.m),
           if (stop == null)
             BBButton(
@@ -107,12 +114,16 @@ class _Header extends ConsumerWidget {
             BBPressable(
               semanticLabel: 'Your stop, ${stop.stopName}. Open its buses',
               onTap: () => ref.read(homeSheetProvider.notifier).open(StopSheet(stop.stopId)),
-              child: Row(children: [
-                Icon(BBIcons.star, size: 18, color: bb.colors.brand),
-                const SizedBox(width: BBSpace.s),
-                Expanded(child: Text(stop.stopName, style: bb.text.headline, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                Text('#${stop.stopId}', style: bb.text.caption),
-              ]),
+              child: Row(
+                children: [
+                  Icon(BBIcons.star, size: 18, color: bb.colors.brand),
+                  const SizedBox(width: BBSpace.s),
+                  Expanded(
+                    child: Text(stop.stopName, style: bb.text.headline, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                  Text('#${stop.stopId}', style: bb.text.caption),
+                ],
+              ),
             ),
             const SizedBox(height: BBSpace.s),
             ArrivalsPreview(stopId: stop.stopId, max: 3),
@@ -123,21 +134,54 @@ class _Header extends ConsumerWidget {
   }
 }
 
+/// One alert for you, on one line (spec §3.1). The whole row opens Alerts.
+class _AlertRow extends StatelessWidget {
+  const _AlertRow({required this.alert});
+
+  final ServiceAlert alert;
+
+  @override
+  Widget build(BuildContext context) {
+    final bb = context.bb;
+    final title = alert.header.isNotEmpty ? alert.header : alert.effect.label;
+    return Padding(
+      padding: const EdgeInsets.only(top: BBSpace.xs),
+      child: BBPressable(
+        semanticLabel: 'Alert: $title. Open alerts',
+        onTap: () => context.push('/alerts'),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Row(
+            children: [
+              BBIconTile(icon: ServiceAlertCard.iconOf(alert), tone: ServiceAlertCard.toneOf(alert), size: 28),
+              const SizedBox(width: BBSpace.s),
+              Expanded(
+                child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: bb.text.label),
+              ),
+              Icon(BBIcons.chevronRight, size: 18, color: bb.colors.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Body extends StatelessWidget {
   const _Body();
 
   @override
   Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.l),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(height: BBSpace.m),
-            SavedTripsSection(),
-            NearMeList(),
-          ],
-        ),
-      );
+    padding: EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.l),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: BBSpace.m),
+        SavedTripsSection(),
+        NearMeList(),
+      ],
+    ),
+  );
 }
 
 /// Long-press on a saved place: remove it. (Rename and the icon choice come with the save flow, spec §3.5.)

@@ -423,7 +423,7 @@ void main() {
     });
   });
 
-  testWidgets("the peek shows your stop's next bus in full, with Where to? above it, and the one after peeking in", (tester) async {
+  testWidgets("the peek shows Where to?, your stop and its next two buses in full", (tester) async {
     ArrivalRow arrival(int minutes) => ArrivalRow(
           routeShortName: '10',
           headsign: 'Downtown',
@@ -437,17 +437,21 @@ void main() {
           isEnhanced: false,
           routeRun: '10-1',
         );
+    final handle = tester.ensureSemantics();
     await _pump(tester, size: const Size(390, 844), prefs: {'selectedStopId': '1150'}, arrivals: [arrival(3), arrival(9), arrival(15)]);
     final card = tester.getRect(find.byKey(BBSheet.cardKey));
     final tiles = find.byType(ArrivalRowTile);
     expect(tiles, findsAtLeastNWidgets(2));
-    // The home header (Where to?, saved places, your stop) takes room: the peek stops at its cap, below the half
-    // detent, so only the first bus is whole and the next shows its top (spec 2026-10-12 §3.1).
+    // Where to?, then your stop's header row, then the next bus: all whole inside the peeking card (spec §3.1).
     expect(tester.getRect(find.byKey(HomeSheetContent.whereToKey)).top, greaterThanOrEqualTo(card.top));
+    final yourStop = tester.getRect(find.bySemanticsLabel(RegExp('^Your stop')));
     final first = tester.getRect(tiles.at(0));
-    expect(first.top, greaterThanOrEqualTo(card.top));
+    expect(yourStop.top, greaterThanOrEqualTo(card.top));
+    expect(yourStop.bottom, lessThanOrEqualTo(first.top), reason: 'your stop is above its first bus');
     expect(first.bottom, lessThanOrEqualTo(card.bottom), reason: 'the next bus fits inside the peeking card');
-    expect(tester.getRect(tiles.at(1)).top, lessThan(card.bottom), reason: 'the one after starts inside it');
+    final second = tester.getRect(tiles.at(1));
+    expect(second.bottom, lessThanOrEqualTo(card.bottom), reason: 'the second bus fits inside the peeking card too');
+    handle.dispose();
   });
 
   testWidgets('choosing a new stop recentres the map on it', (tester) async {
