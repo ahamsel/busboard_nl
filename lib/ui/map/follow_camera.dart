@@ -46,11 +46,11 @@ class FollowCamera {
     final last = _last;
     if (last != null && now.difference(last) < interval) return null;
     _last = now;
-    if (stop == null) return CenterMove(_inWindow(bus, soloZoom, padding), soloZoom);
+    if (stop == null) return CenterMove(inWindow(bus, soloZoom, padding), soloZoom);
     final d = NearestStopService.haversineDistance(bus.latitude, bus.longitude, stop.latitude, stop.longitude);
     if (d < closeMeters) {
       final mid = LatLng((bus.latitude + stop.latitude) / 2, (bus.longitude + stop.longitude) / 2);
-      return CenterMove(_inWindow(mid, nearZoom, padding), nearZoom);
+      return CenterMove(inWindow(mid, nearZoom, padding), nearZoom);
     }
     return FitMove(bus, stop);
   }
@@ -101,7 +101,7 @@ class FollowCamera {
   /// The camera centre that shows [point] in the middle of the padded window
   /// at [zoom] on a north-up map: more padding below moves the centre south,
   /// so the point is drawn higher.
-  static LatLng _inWindow(LatLng point, double zoom, EdgeInsets padding) {
+  static LatLng inWindow(LatLng point, double zoom, EdgeInsets padding) {
     final down = (padding.bottom - padding.top) / 2; // points
     final right = (padding.right - padding.left) / 2;
     if (down == 0 && right == 0) return point;

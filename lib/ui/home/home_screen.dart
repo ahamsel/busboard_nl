@@ -110,6 +110,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The home sheet's half: well above its tall peek.
   static const double _homeHalf = 0.75;
+
+  /// A card's half (a stop, a bus, the options, the follow card): above a card's peek, capped at [_maxPeek].
+  static const double _cardHalf = 0.5;
   static const double _maxActionsPeek = 0.8;
   static const _panPauseDistance = 18.0;
   static const _routeInterval = Duration(seconds: 1);
@@ -174,6 +177,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// The map's size, for the follow camera's fit.
   Size _mapSize = const Size(390, 844);
 
+  /// The part of the map a stop is centred in, refreshed by every layout: below the chips and right of the side
+  /// panel, above the home sheet's peek ([_peekWindow]) or a card at half ([_cardWindow]).
+  EdgeInsets _peekWindow = EdgeInsets.zero;
+  EdgeInsets _cardWindow = EdgeInsets.zero;
+
   // One controller per selection: BBSheet is re-keyed on every selection, and a
   // DraggableScrollableController can be attached to a single sheet at a time.
   // The incoming sheet attaches before the outgoing one is disposed, so they
@@ -214,17 +222,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // A card opened before this screen was built (a link's redirect): the listener in build never saw it open.
       final sheet = ref.read(homeSheetProvider);
       if (sheet is! HomeSheetHome) _onSheetOpened(sheet);
-      // Outside the build, so the first answer may re-time the alert at once.
+      // Outside the build, so the first answer may re-time the alert at once. Only an alert that still waits to
+      // fire is re-timed, and only where the runner does not watch the live feed itself (on iPhone).
+      final watchesLive = ref.read(alertRunnerProvider).watchesLive;
       ref.listenManual<String?>(
-        arrivalAlertProvider.select((a) => a.value?.stopId),
+        arrivalAlertProvider.select((a) {
+          final alert = a.value;
+          return watchesLive || alert == null || alert.firedAt != null ? null : alert.stopId;
+        }),
         (_, stopId) => _feedAlertFrom(stopId),
         fireImmediately: true,
       );
     });
   }
 
-  /// Polls [stopId]'s departures while an arrival alert is armed for it and hands every new list to the alert
-  /// (on iPhone a newer prediction re-times it). The stop's own sheet does the same when it is open: the second
+  /// Polls [stopId]'s departures while an arrival alert is armed for it and has not fired, and hands every new list
+  /// to the alert (on iPhone a newer prediction re-times it; Android's watcher polls by itself). The stop's own sheet does the same when it is open: the second
   /// hand-over of the same list changes nothing, as the alert is already at that time.
   void _feedAlertFrom(String? stopId) {
     _alertRowsSub?.close();
@@ -362,13 +375,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _ticker!.start();
   }
 
-  /// A newly chosen stop, or a stop's card, brings the map to it.
+  /// A newly chosen stop, or a stop's card, brings the map to it: in the middle of the map the sheet leaves (a stop's
+  /// card at half, else the peek), at zoom 15 or closer if the map already is.
   Future<void> _recentreOn(String stopId) async {
     final camera = _camera;
     final stop = ref.read(stopInfoProvider(stopId));
     if (camera == null || stop == null || !mounted) return;
+    final zoom = math.max(camera.zoom, 15.0);
+    final window = ref.read(homeSheetProvider) is StopSheet ? _cardWindow : _peekWindow;
+    final target = FollowCamera.inWindow(LatLng(stop.stopLat, stop.stopLon), zoom, window);
     try {
-      await camera.moveTo(LatLng(stop.stopLat, stop.stopLon), 15, animate: !MediaQuery.disableAnimationsOf(context));
+      await camera.moveTo(target, zoom, animate: !MediaQuery.disableAnimationsOf(context));
     } catch (e) {
       _log('Could not recentre on the new stop: $e');
     }
@@ -703,8 +720,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// Every card opens at half however it was reached (spec §3.2, §3.4): a map tap, a link or notification, a nearby
   /// stop, the search, your stop. A stop's card also brings the map to the stop.
-  void _onSheetOpened(HomeSheet sheet) {
-    if (sheet == _opened) return;
+  /// [again]: the card on top was opened again (a second notification tap), so it comes back to half even though
+  /// it was already open.
+  void _onSheetOpened(HomeSheet sheet, {bool again = false}) {
+    if (sheet == _opened && !again) return;
     _opened = sheet;
     switch (sheet) {
       case HomeSheetHome():
@@ -895,6 +914,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     ref.listen<HomeSheet>(homeSheetProvider, (prev, next) {
       if (prev != next) _onSheetOpened(next);
     });
+    ref.listen<int>(homeSheetReopenedProvider, (_, _) => _onSheetOpened(ref.read(homeSheetProvider), again: true));
     final journey = ref.watch(journeyOnMapProvider);
     final pick = ref.watch(mapPickProvider);
     _syncFollow(ref.watch(followProvider));
@@ -991,6 +1011,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               constraints.maxHeight - creditTextHeight,
             );
       _mapSize = constraints.biggest;
+      final belowChips = media.padding.top + BBSpace.s + _controlsHeight + hideTripExtra;
+      _peekWindow = EdgeInsets.fromLTRB(panelInset, belowChips, 0, wide ? 0 : peekTop);
+      _cardWindow = _peekWindow.copyWith(bottom: wide ? 0 : navInset + BBSpace.s + _cardHalf * sheetArea);
       // The follow camera keeps the bus and your stop clear of the chips, the
       // credit and the card, with room for half a followed marker on each side.
       _fitBase = EdgeInsets.fromLTRB(
@@ -1181,7 +1204,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   controller: sheetController,
                   peekFraction: peek,
                   // The home sheet's half shows most of it (saved trips, nearby stops); a card's half its content.
-                  halfFraction: homeShowing ? math.max(_homeHalf, peek + 0.05) : math.max(0.5, peek + 0.05),
+                  // The follow card's is a card's: it is there to watch the bus, which a tall half would cover.
+                  halfFraction: homeShowing && !followShowing
+                      ? math.max(_homeHalf, peek + 0.05)
+                      : math.max(_cardHalf, peek + 0.05),
                   bottomInset: navInset,
                   semanticLabel: 'Map sheet',
                   // A card swipes down past its peek back to what was under it (spec §3.2); the home sheet, and the
