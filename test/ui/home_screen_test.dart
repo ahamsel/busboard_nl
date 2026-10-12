@@ -181,11 +181,10 @@ Future<void> _pump(
   bool disableAnimations = false,
   List<Override> overrides = const [],
 }) async {
-  if (size != null) {
-    tester.view.physicalSize = size * dpr;
-    tester.view.devicePixelRatio = dpr;
-    addTearDown(tester.view.reset);
-  }
+  // Not flutter_test's 800x600, which is a tablet to the home screen: the tests here are of the phone layout.
+  tester.view.physicalSize = (size ?? const Size(390, 844)) * dpr;
+  tester.view.devicePixelRatio = dpr;
+  addTearDown(tester.view.reset);
   SharedPreferences.setMockInitialValues(prefs);
   useInMemoryAlertStore();
   final router = GoRouter(initialLocation: '/map', routes: [
@@ -822,6 +821,23 @@ void main() {
       expect(padding.bottom, greaterThanOrEqualTo(screenHeight - creditTop + 16), reason: 'above the credit and the peeking sheet');
     });
 
+    testWidgets('on a tablet the camera fit clears the side panel and the follow card is in it', (tester) async {
+      var skew = Duration.zero;
+      await pumpFollow(tester,
+          size: const Size(1024, 768), overrides: [mapClockProvider.overrideWithValue(() => DateTime.now().add(skew))]);
+      await startFollowing(tester);
+      skew = const Duration(milliseconds: 1100);
+      await _frames(tester, 3);
+      expect(find.byType(BBSheet), findsNothing);
+      final panel = tester.getRect(find.byKey(const ValueKey('home-side-panel')));
+      expect(find.descendant(of: find.byKey(const ValueKey('home-side-panel')), matching: find.text('Stop following')), findsOneWidget);
+      final (_, _, padding, _) = surface.fits.last;
+      expect(padding.left, panel.right + 64, reason: 'the panel, then the edge air');
+      expect(padding.right, 64);
+      expect(padding.bottom, 64, reason: 'no sheet to clear');
+      expect(padding.top, greaterThan(16 + 44));
+    });
+
     testWidgets('while following, the route is drawn as a driven and an ahead part', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
@@ -1112,14 +1128,33 @@ void main() {
     });
 
     testWidgets('near your stop the camera centres the bus and stop in the band above the sheet', (tester) async {
-      await pumpFollow(tester, bus: followed(progress: 420));
+      var skew = Duration.zero;
+      await pumpFollow(tester, bus: followed(progress: 420), overrides: [mapClockProvider.overrideWithValue(() => DateTime.now().add(skew))]);
       await startFollowing(tester);
-      final (target, zoom, _) = surface.moves.single;
+      // The first move runs before the follow card has measured its header; the next, a second later, uses the settled layout.
+      skew = const Duration(milliseconds: 1100);
+      await _frames(tester, 3);
+      expect(surface.moves, hasLength(2));
+      final (target, zoom, _) = surface.moves.last;
       expect(zoom, 16.5);
-      const midLat = (47.5600 + 47.560045) / 2;
-      // The chips and the Alerts/Settings/my-location column above, the sheet below: the camera centre is
-      // offset from the pair so it is drawn in the band between them (north now that the top column is taller).
-      expect((target.latitude - midLat).abs(), greaterThan(1e-4), reason: 'the camera centre is offset to clear the controls and the sheet');
+      // Where a point lands on screen with the camera at [target]/[zoom] (north-up, MapLibre's 512-point world).
+      double mercY(double lat) {
+        final r = lat * math.pi / 180;
+        return (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2;
+      }
+
+      final screenH = tester.getBottomLeft(find.byType(HomeScreen)).dy;
+      final world = 512 * math.pow(2, zoom);
+      double screenY(double lat) => screenH / 2 + (mercY(lat) - mercY(target.latitude)) * world;
+      // The band between the chip row (the right-hand buttons sit beside the map, not over the framing) and the peeking sheet.
+      final chipsBottom = tester.getRect(find.widgetWithText(BBChip, 'All routes')).bottom;
+      final sheetTop = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+      final bus = screenY(47.5600);
+      final stop = screenY(47.560045);
+      expect(bus, inInclusiveRange(chipsBottom, sheetTop), reason: 'the bus is drawn between the chips and the sheet');
+      expect(stop, inInclusiveRange(chipsBottom, sheetTop), reason: 'and so is your stop');
+      // Centred in what the chips and the sheet leave: not pushed down by the buttons' column, which is not in the way.
+      expect((bus + stop) / 2, closeTo((chipsBottom + sheetTop) / 2, 40));
     });
 
     testWidgets('the route line is not pushed again while the bus has not moved', (tester) async {

@@ -41,6 +41,12 @@ import 'map_buttons.dart';
 import 'options_sheet.dart';
 import 'sheet_content.dart';
 
+/// From this width the home's sheet is a fixed panel at the left instead of a pull-up sheet (spec §3, tablets).
+const homeSidePanelBreakpoint = 700.0;
+
+/// The side panel's width; the map's controls and camera framing shift right by this plus the edge gap.
+const homeSidePanelWidth = 400.0;
+
 /// What the screen holds while a bus is being followed (spec §3.5): the
 /// tracker and camera, whether a gesture has paused the camera, the card's
 /// latest snapshot and the route line as last drawn.
@@ -118,6 +124,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   // follow is not judged until a poll newer than this snapshot arrives.
   bool _awaitingFreshFeed = false;
   Map<String, BusTrackingState>? _feedAtResume;
+  // The top row of chips (and the map-pick banner above it): the part of the controls the camera and the
+  // credit link keep clear of. The Alerts/Settings/my-location column below it sits at the edge and is cleared
+  // sideways by the fit padding's margin.
   final _controlsKey = GlobalKey();
   // The sheet header's own key and height: one per sheet (a re-keyed sheet's
   // outgoing header is still mounted while the incoming one is built).
@@ -128,7 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   var _actionsKey = GlobalKey();
   double? _actionsBottom;
   bool _headerMeasureScheduled = false;
-  double _controlsHeight = 44 + BBSpace.m + 44;
+  double _controlsHeight = 44;
   bool _measureScheduled = false;
   bool _frameInFlight = false;
   bool _myLocationEnabled = false;
@@ -720,6 +729,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return _sheet;
   }
 
+  /// "Choose your stop": the sheet is pulled up to the nearby stops; the side panel is scrolled down to them.
+  void _chooseStop({required bool wide}) {
+    if (!wide) return unawaited(_sheet.animateToDetent(BBSheetDetent.full));
+    final header = _headerKey.currentContext;
+    final scrollable = header == null ? null : Scrollable.maybeOf(header);
+    final headerHeight = _headerHeight;
+    if (scrollable == null || headerHeight == null) return;
+    final position = scrollable.position;
+    unawaited(position.animateTo(
+      math.min(headerHeight, position.maxScrollExtent),
+      duration: BBMotion.of(context, BBMotion.sheet),
+      curve: BBMotion.curve,
+    ));
+  }
+
   void _openRouteFilter() {
     final tracking = ref.read(busTrackingStreamProvider).value ?? const <String, BusTrackingState>{};
     final routes = {for (final s in tracking.values) if (s.routeNumber > 0) s.routeNumber}.toList()..sort();
@@ -817,6 +841,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     creditPainter.dispose();
 
     return LayoutBuilder(builder: (context, constraints) {
+      // On a tablet the sheet is a fixed panel at the left and everything else is laid out to its right.
+      final wide = constraints.maxWidth >= homeSidePanelBreakpoint;
+      final panelInset = wide ? homeSidePanelWidth + BBSpace.s : 0.0;
       // BBSheet pads top + s above and bottomInset + s below, and its fractions
       // apply to what is left: this is where the peeking card's top really is.
       final sheetArea = math.max(1.0, constraints.maxHeight - (media.padding.top + BBSpace.s) - (navInset + BBSpace.s));
@@ -836,26 +863,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // no room, stay on screen and overlap the card's top edge instead.
       final belowControls =
           constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + BBSpace.s) - creditTextHeight;
-      final creditBottom = math.min(
-        math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
-        constraints.maxHeight - creditTextHeight,
-      );
+      // The panel has no peek: the credit sits in the bottom corner of the map beside it.
+      final creditBottom = wide
+          ? navInset + BBSpace.s
+          : math.min(
+              math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
+              constraints.maxHeight - creditTextHeight,
+            );
       _mapSize = constraints.biggest;
       // The follow camera keeps the bus and your stop clear of the chips, the
       // credit and the card, with room for half a followed marker on each side.
       _fitPadding = EdgeInsets.fromLTRB(
-        _fitMargin,
+        _fitMargin + panelInset,
         media.padding.top + BBSpace.s + _controlsHeight + _fitMargin / 2,
         _fitMargin,
-        math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
+        wide ? _fitMargin : math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
       );
-      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - BBSpace.s));
-      final creditEnd = _creditLeft + creditWidth + BBSpace.s;
+      final creditLeft = _creditLeft + panelInset;
+      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - creditLeft - BBSpace.s));
+      final creditEnd = creditLeft + creditWidth + BBSpace.s;
       // iOS (MLNMapView) measures the attribution margin from the safe area, so
       // the bottom inset is already in it; Android measures from the view edge.
       final attributionBottom = defaultTargetPlatform == TargetPlatform.iOS
           ? math.max(0.0, creditBottom - media.padding.bottom)
           : creditBottom;
+
+      // The same header and body for the pull-up sheet and the side panel. (_sheetFor first: a new selection
+      // gets its own header key and sheet controller.)
+      final sheetController = _sheetFor(sheetKey);
+      final panelHeader = _measuredHeader(followShowing
+          ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
+          : selectionHeader(sheet, onChooseStop: () => _chooseStop(wide: wide)));
+      final panelSlivers = followShowing
+          ? [SliverToBoxAdapter(child: FollowCardBody(snapshot: follow.snapshot))]
+          : selectionSlivers(sheet);
 
       return PopScope(
         canPop: sheet is HomeSheetHome && pick == null,
@@ -891,28 +932,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             ),
             Positioned(
               top: media.padding.top + BBSpace.s,
-              left: BBSpace.s,
+              left: BBSpace.s + panelInset,
               right: BBSpace.s,
               child: Column(
-                key: _controlsKey,
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (pick != null) ...[_pickBanner(pick == MapPick.from), const SizedBox(height: BBSpace.s)],
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Column(
+                    key: _controlsKey,
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      follow != null ? Flexible(flex: 3, child: _followChip(follow)) : const Spacer(flex: 3),
-                      const SizedBox(width: BBSpace.s),
-                      Flexible(
-                        flex: 2,
-                        child: BBChip(
-                          label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
-                          icon: BBIcons.filter,
-                          chevron: true,
-                          selected: filter.isNotEmpty,
-                          onTap: _openRouteFilter,
-                        ),
+                      if (pick != null) ...[_pickBanner(pick == MapPick.from), const SizedBox(height: BBSpace.s)],
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          follow != null ? Flexible(flex: 3, child: _followChip(follow)) : const Spacer(flex: 3),
+                          const SizedBox(width: BBSpace.s),
+                          Flexible(
+                            flex: 2,
+                            child: BBChip(
+                              label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
+                              icon: BBIcons.filter,
+                              chevron: true,
+                              selected: filter.isNotEmpty,
+                              onTap: _openRouteFilter,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -950,7 +997,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               ),
             ),
             Positioned(
-              left: _creditLeft,
+              left: creditLeft,
               right: BBSpace.s,
               bottom: creditBottom,
               // The Align keeps the opaque tap target as wide as the text only: the
@@ -981,26 +1028,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 ),
               ),
             ),
-            Positioned.fill(
-              child: BBSheet(
-                key: ValueKey(sheetKey),
-                controller: _sheetFor(sheetKey),
-                peekFraction: peek,
-                halfFraction: math.max(0.5, peek + 0.05),
-                bottomInset: navInset,
-                semanticLabel: 'Map sheet',
-                header: _measuredHeader(followShowing
-                    ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
-                    : selectionHeader(sheet,
-                        onChooseStop: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)))),
-                slivers: followShowing
-                    ? [SliverToBoxAdapter(child: FollowCardBody(snapshot: follow.snapshot))]
-                    : selectionSlivers(sheet),
+            if (wide)
+              Positioned(
+                key: const ValueKey('home-side-panel'),
+                left: BBSpace.s,
+                top: media.padding.top + BBSpace.s,
+                bottom: media.padding.bottom + BBSpace.s,
+                width: homeSidePanelWidth,
+                child: DecoratedBox(
+                  decoration: bb.floating(radius: BBRadius.sheet),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(BBRadius.sheet),
+                    // A new selection starts at the top of a fresh list.
+                    child: CustomScrollView(
+                      key: ValueKey(sheetKey),
+                      slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
+                    ),
+                  ),
+                ),
+              )
+            else
+              Positioned.fill(
+                child: BBSheet(
+                  key: ValueKey(sheetKey),
+                  controller: sheetController,
+                  peekFraction: peek,
+                  halfFraction: math.max(0.5, peek + 0.05),
+                  bottomInset: navInset,
+                  semanticLabel: 'Map sheet',
+                  header: panelHeader,
+                  slivers: panelSlivers,
+                ),
               ),
-            ),
             if (follow != null && follow.paused)
               Positioned(
-                left: 0,
+                left: panelInset,
                 right: 0,
                 // Last in the stack, so it comes and goes without disturbing the sheet.
                 // Above the credit link, which sits just over the peeking card.
