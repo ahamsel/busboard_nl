@@ -50,6 +50,18 @@ Future<void> _findMun(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// A phone whose location fix is held until the test completes [fix].
+class _HeldGeolocator extends FixedGeolocator {
+  _HeldGeolocator() : super(47.57, -52.73);
+  final fix = Completer<void>();
+
+  @override
+  Future<Position> getCurrentPosition({LocationSettings? locationSettings}) async {
+    await fix.future;
+    return super.getCurrentPosition(locationSettings: locationSettings);
+  }
+}
+
 void main() {
   setUpAll(loadAppFonts);
 
@@ -290,5 +302,80 @@ void main() {
     final c = _c(tester);
     expect(c.read(planQueryProvider).from, StopPlace(stopId: 'C', name: 'Stop C'));
     expect(c.read(planQueryProvider).to, isNull);
+  });
+
+  testWidgets('leaving while the fix is awaited still sets the destination, the start and the options', (tester) async {
+    final geo = _HeldGeolocator();
+    await _openSearch(tester, geolocator: geo);
+    await _findMun(tester);
+    await tester.tap(find.text('Go here'));
+    await tester.pump();
+    final c = _c(tester);
+    expect(c.read(planQueryProvider).to, StopPlace(stopId: '1150', name: 'MUN Centre'));
+    expect(c.read(planQueryProvider).from, isNull);
+
+    GoRouter.of(routerElement(tester)).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen), findsNothing);
+    geo.fix.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(c.read(homeSheetProvider), isA<OptionsSheet>());
+    expect(c.read(planQueryProvider).from, isA<PinPlace>().having((p) => p.label, 'label', myLocationLabel));
+    expect(c.read(planQueryProvider).to, StopPlace(stopId: '1150', name: 'MUN Centre'));
+    expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('while the fix is awaited the screen says so and a second tap does nothing', (tester) async {
+    final geo = _HeldGeolocator();
+    await _openSearch(tester, geolocator: geo);
+    final c = _c(tester);
+    await _findMun(tester);
+    var changes = 0;
+    c.listen(planQueryProvider, (_, _) => changes++);
+    await tester.tap(find.text('Go here'));
+    await tester.pumpAndSettle();
+    expect(find.text('Finding you…'), findsOneWidget);
+
+    await tester.tap(find.textContaining('MUN Centre').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Go here'), findsNothing);
+
+    geo.fix.complete();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(c.read(recentPlacesProvider).value, hasLength(1));
+    // The destination, then the start: once each.
+    expect(changes, 2);
+    expect(find.byType(SearchScreen), findsNothing);
+  });
+
+  testWidgets('Back on a search that is the first page goes home', (tester) async {
+    await pumpPlannerApp(tester, net: _network(), now: _now, appRoutes: true, initial: '/search');
+    expect(find.byType(SearchScreen), findsOneWidget);
+    await tester.tap(find.byIcon(BBIcons.back));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SearchScreen), findsNothing);
+    expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('save=1: a query lists stops but not saved places', (tester) async {
+    await _openSearch(tester, location: '/search?save=1');
+    await _c(tester)
+        .read(savedPlacesProvider.notifier)
+        .put(
+          SavedPlace(
+            id: 'w',
+            name: 'Work',
+            icon: SavedPlaceIcon.work,
+            place: StopPlace(stopId: 'E', name: 'Stop E'),
+          ),
+        );
+    await tester.enterText(find.byKey(SearchScreen.fieldKey), 'work');
+    await tester.pumpAndSettle();
+    expect(find.text('Work'), findsNothing);
+    expect(find.text('No stops match "work"'), findsOneWidget);
   });
 }
