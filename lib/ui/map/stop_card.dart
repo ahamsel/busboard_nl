@@ -131,7 +131,7 @@ class ArrivalsPreview extends ConsumerWidget {
 }
 
 /// A column of arrival rows. Live rows follow their bus on the map, which is
-/// already on screen, so the selection closes and the follow camera takes over.
+/// already on screen, so the sheet goes home and the follow camera takes over.
 class ArrivalsList extends ConsumerWidget {
   const ArrivalsList({super.key, required this.rows});
 

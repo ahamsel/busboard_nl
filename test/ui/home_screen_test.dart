@@ -959,6 +959,20 @@ void main() {
       expect(await sheetTop(tester), open);
     });
 
+    testWidgets('a stop sheet over a follow: tapping another stop replaces it and the follow keeps running', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final container = containerOf(tester);
+      container.read(homeSheetProvider.notifier).open(const StopSheet('s3'));
+      await _frames(tester, 3);
+      expect(find.byType(StopCardHeader), findsOneWidget);
+      _config!.onTap(LatLng(47.560045, lonAt(500)));
+      await settle(tester);
+      expect(container.read(homeSheetProvider.notifier).stack, [const HomeSheetHome(), const StopSheet('s2')]);
+      expect(container.read(followProvider), isNotNull);
+      expect(find.text('Following bus 2573'), findsOneWidget);
+    });
+
     testWidgets('while following, a tap on empty map collapses the sheet to peek', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
