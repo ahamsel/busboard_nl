@@ -582,8 +582,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final radius = tapRadiusMeters(_camera?.zoom ?? _defaultZoom);
     final sheetStack = ref.read(homeSheetProvider.notifier);
     final markers = _lastMarkers.isNotEmpty ? _lastMarkers : _markersFromTracking();
-    if (_follow != null) {
-      // The follow card owns the sheet: a tap on a bus or a stop does nothing;
+    if (_follow != null && ref.read(homeSheetProvider) is HomeSheetHome) {
+      // The follow card is in the sheet: a tap on a bus or a stop does nothing;
       // a tap on empty map brings the sheet back to peek.
       final repo = ref.read(gtfsRepositoryProvider).value;
       final hit = nearestBus(tap, radius, markers) != null ||
@@ -599,7 +599,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (ref.read(homeSheetProvider) is HomeSheetHome) {
       unawaited(_sheet.collapse());
     } else {
-      // Clearing re-keys the sheet, which starts back at peek.
+      // Going back re-keys the sheet, which starts back at peek.
       sheetStack.back();
     }
   }
@@ -762,16 +762,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final followStopId = ref.watch(followProvider)?.stopId ?? settings.selectedStopId;
     final followStop = followStopId == null ? null : ref.watch(stopInfoProvider(followStopId));
     // Minutes to your stop from the live predictions, for the followed bus.
-    final yourStopArrivals = follow == null || followStopId == null
+    final followShowing = follow != null && sheet is HomeSheetHome;
+    final yourStopArrivals = !followShowing || followStopId == null
         ? const <ArrivalRow>[]
         : ref.watch(stopArrivalsProvider(followStopId)).value ?? const <ArrivalRow>[];
     final buildMap = ref.watch(mapViewBuilderProvider);
     final media = MediaQuery.of(context);
     final navInset = BBNavBar.reservedHeight(context);
-    final Object sheetKey = follow != null && sheet is HomeSheetHome ? 'follow:${follow.vehicleId}' : sheet;
+    final Object sheetKey = followShowing ? 'follow:${follow.vehicleId}' : sheet;
     _scheduleControlsMeasure();
     // While following, the actions move without the header changing size.
-    if (_headerHeight == null || follow != null) _scheduleHeaderMeasure();
+    if (_headerHeight == null || followShowing) _scheduleHeaderMeasure();
 
     // The credit link: one line, text size capped, measured so MapLibre's own
     // attribution button can sit right after it.
@@ -797,7 +798,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // Too tall to peek in full: the follow card moves its actions up, and the
       // peek grows (if it must) to keep them in it.
       final headerOverflows = peekPx > _maxPeek * sheetArea;
-      final actionsPx = follow == null || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
+      final actionsPx = !followShowing || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
       final peek = math.max((peekPx / sheetArea).clamp(0.12, _maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
       // Just above the card, but below the chips and the my-location pill. With
@@ -957,12 +958,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 halfFraction: math.max(0.5, peek + 0.05),
                 bottomInset: navInset,
                 semanticLabel: 'Map sheet',
-                header: _measuredHeader(follow != null && sheet is HomeSheetHome
+                header: _measuredHeader(followShowing
                     ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
                     : selectionHeader(sheet, selectedStop)),
                 slivers: [
                   SliverToBoxAdapter(
-                    child: follow != null && sheet is HomeSheetHome
+                    child: followShowing
                         ? FollowCardBody(snapshot: follow.snapshot)
                         : selectionBody(sheet, selectedStop),
                   ),
