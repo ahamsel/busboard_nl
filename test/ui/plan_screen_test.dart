@@ -4,7 +4,7 @@ import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
-import 'package:busboard_nl/ui/trip_planner/place_picker_sheet.dart';
+import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/plan_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';

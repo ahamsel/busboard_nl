@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../state/home_sheet_provider.dart';
+import '../state/map_pick_provider.dart';
 import '../ui/alerts/alerts_screen.dart';
 import '../ui/home/home_screen.dart';
+import '../ui/search/search_screen.dart';
 import '../ui/settings/settings_screen.dart';
 
 /// The app's router.
@@ -36,6 +38,13 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
         path: '/plan',
         redirect: (_, _) => '/',
         routes: [GoRoute(path: 'journey', redirect: (_, _) => '/')],
+      ),
+      GoRoute(
+        path: '/search',
+        builder: (context, state) => SearchScreen(
+          end: state.uri.queryParameters['end'] == 'from' ? MapPick.from : MapPick.to,
+          save: state.uri.queryParameters['save'] == '1',
+        ),
       ),
       GoRoute(
         path: '/alerts',
