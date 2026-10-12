@@ -9,41 +9,6 @@ import '../domain/arrival/arrival_models.dart';
 import '../domain/arrival/arrival_service.dart';
 import 'providers.dart';
 
-/// What the map sheet shows besides your stop: a tapped stop or a tapped bus.
-sealed class MapSelection {
-  const MapSelection();
-}
-
-class StopSelection extends MapSelection {
-  const StopSelection(this.stopId);
-  final String stopId;
-
-  @override
-  bool operator ==(Object other) => other is StopSelection && other.stopId == stopId;
-  @override
-  int get hashCode => Object.hash(StopSelection, stopId);
-}
-
-class BusSelection extends MapSelection {
-  const BusSelection(this.vehicleId);
-  final String vehicleId;
-
-  @override
-  bool operator ==(Object other) => other is BusSelection && other.vehicleId == vehicleId;
-  @override
-  int get hashCode => Object.hash(BusSelection, vehicleId);
-}
-
-class MapSelectionNotifier extends Notifier<MapSelection?> {
-  @override
-  MapSelection? build() => null;
-
-  void select(MapSelection? selection) => state = selection;
-  void clear() => state = null;
-}
-
-final mapSelectionProvider = NotifierProvider<MapSelectionNotifier, MapSelection?>(MapSelectionNotifier.new);
-
 /// The map's frame clock. Tests move it (an app pause of several minutes).
 final mapClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
@@ -117,30 +82,53 @@ final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>,
   ref.listen(appForegroundProvider, (_, foreground) {
     if (foreground) refreshWhenWatched();
   });
-  if (ref.read(appForegroundProvider)) {
+
+  // The next poll is armed once this fetch is over: a fetch slower than the interval (the live client waits up
+  // to 10 s a feed) would otherwise be restarted before it could ever finish, and the rider would see no rows.
+  void armPoll() {
+    if (!ref.mounted || !ref.read(appForegroundProvider)) return;
     final timer = Timer(Duration(seconds: seconds), () {
       if (ref.read(appForegroundProvider)) refreshWhenWatched();
     });
     ref.onDispose(timer.cancel);
   }
 
-  List<TimeTrackVehicle>? liveVehicles;
   try {
-    final result = await ref.read(timetrackApiProvider).fetchVehiclesResult();
-    if (result.succeeded) liveVehicles = result.vehicles;
-  } catch (_) {
-    // Schedule only.
+    List<TimeTrackVehicle>? liveVehicles;
+    try {
+      final result = await ref.read(timetrackApiProvider).fetchVehiclesResult();
+      if (result.succeeded) liveVehicles = result.vehicles;
+    } catch (_) {
+      // Schedule only.
+    }
+    List<MetrobusDeparture>? stopPredictions;
+    try {
+      stopPredictions = (await ref.read(metrobusMobileApiProvider).fetchDeparturesResult(stopId)).departures;
+    } catch (_) {
+      // Schedule and live vehicles only.
+    }
+    final now = DateTime.now();
+    final rows = ArrivalService(repo).getUpcomingArrivals(
+      stopId: stopId,
+      now: now,
+      liveVehicles: liveVehicles,
+      stopPredictions: stopPredictions,
+    );
+    if (ref.mounted) ref.read(stopArrivalsUpdatedAtProvider.notifier).stamp(stopId, now);
+    return rows;
+  } finally {
+    armPoll();
   }
-  List<MetrobusDeparture>? stopPredictions;
-  try {
-    stopPredictions = (await ref.read(metrobusMobileApiProvider).fetchDeparturesResult(stopId)).departures;
-  } catch (_) {
-    // Schedule and live vehicles only.
-  }
-  return ArrivalService(repo).getUpcomingArrivals(
-    stopId: stopId,
-    now: DateTime.now(),
-    liveVehicles: liveVehicles,
-    stopPredictions: stopPredictions,
-  );
 });
+
+/// When each stop's arrivals were last loaded (the sheet's "updated" time). Set by [stopArrivalsProvider] as a
+/// load completes, so callers of that provider need not change.
+class StopArrivalsUpdatedAtNotifier extends Notifier<Map<String, DateTime>> {
+  @override
+  Map<String, DateTime> build() => const {};
+
+  void stamp(String stopId, DateTime at) => state = {...state, stopId: at};
+}
+
+final stopArrivalsUpdatedAtProvider =
+    NotifierProvider<StopArrivalsUpdatedAtNotifier, Map<String, DateTime>>(StopArrivalsUpdatedAtNotifier.new);

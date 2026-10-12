@@ -12,17 +12,24 @@ import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/map/follow_tracker.dart';
 import 'package:busboard_nl/domain/map/route_geometry.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
+import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
+import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/state/saved_place_providers.dart';
+import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
-import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
+import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
-import 'package:busboard_nl/ui/map/my_stop_card.dart';
-import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
-import 'package:busboard_nl/ui/stop_picker/stop_picker_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -32,8 +39,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/planner_app.dart';
 import '../kit/kit_test_helpers.dart';
 import '../helpers/fake_alerts.dart';
+import '../trip_planner/test_network.dart';
 
 /// Large-text guard: every Phase 2 screen is scrolled to its end at 2x text on
 /// the two smallest supported phones, and any layout exception fails the test.
@@ -181,6 +190,55 @@ List<Override> _mapOverrides({List<ArrivalRow> arrivals = const []}) => [
           (ref) => Stream.value(_updates([_alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.')]))),
     ];
 
+class _Places extends SavedPlacesNotifier {
+  @override
+  Future<List<SavedPlace>> build() async => [
+        SavedPlace(
+            id: 'home',
+            name: 'Home',
+            icon: SavedPlaceIcon.home,
+            place: StopPlace(stopId: '1150', name: _longStopName)),
+        SavedPlace(
+            id: 'work',
+            name: 'Memorial University of Newfoundland',
+            icon: SavedPlaceIcon.work,
+            place: StopPlace(stopId: '1150', name: _longStopName)),
+      ];
+}
+
+class _Trips extends SavedTripsNotifier {
+  @override
+  Future<List<SavedTrip>> build() async => [
+        SavedTrip(
+            id: 't1',
+            name: 'To the Avalon Mall and back again',
+            from: StopPlace(stopId: '1150', name: _longStopName),
+            to: StopPlace(stopId: '1150', name: _longStopName)),
+      ];
+}
+
+class _UpdatedAt extends StopArrivalsUpdatedAtNotifier {
+  @override
+  Map<String, DateTime> build() => {'1150': DateTime(2026, 10, 12, 21, 52, 4)};
+}
+
+class _StopCSettings extends SettingsNotifier {
+  @override
+  AppSettings build() => const AppSettings(selectedStopId: 'C');
+}
+
+/// The home sheet with a stop, arrivals, saved places and a trip, an alert on the stop and two nearby stops.
+List<Override> _homeOverrides({List<ArrivalRow> arrivals = const []}) => [
+      ..._mapOverrides(arrivals: arrivals),
+      savedPlacesProvider.overrideWith(_Places.new),
+      savedTripsProvider.overrideWith(_Trips.new),
+      savedTripNextProvider('t1').overrideWith((ref) async => const []),
+      nearestStopsProvider.overrideWith((ref) async => const [
+            NearbyStop(stop: _stop, distanceMeters: 80),
+            NearbyStop(stop: _stop, distanceMeters: 640),
+          ]),
+    ];
+
 Widget _app(Widget screen, List<Override> overrides) {
   final container = ProviderContainer(retry: (_, _) => null, overrides: overrides);
   addTearDown(container.dispose);
@@ -202,27 +260,10 @@ GoRouter _router(Widget screen) => GoRouter(routes: [
     ]);
 
 final _screens = <_Screen>[
-  _Screen('picker (last stop + nearby with 9 routes)', (t) {
-    SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
-    return _app(const StopPickerScreen(), [
-      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
-      nearestStopsProvider.overrideWith((ref) async => const [
-            NearbyStop(stop: _stop, distanceMeters: 80),
-            NearbyStop(stop: _stop, distanceMeters: 640),
-          ]),
-    ]);
-  }),
-  _Screen('picker (schedule failed to load)', (t) {
-    SharedPreferences.setMockInitialValues({});
-    return _app(const StopPickerScreen(), [
-      gtfsRepositoryProvider.overrideWith((ref) async =>
-          throw const SocketException('Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, errno = 8)')),
-    ]);
-  }),
-  _Screen('board (alert + failing live feed)', (t) {
+  _Screen('stop sheet (alert + failing live feed)', (t) {
     SharedPreferences.setMockInitialValues({});
     useInMemoryAlertStore();
-    return _app(const ArrivalBoardScreen(stopId: '1150'), [
+    return _app(_card(StopSheetContent.header('1150'), StopSheetContent.body('1150')), [
       ...fakeAlertOverrides,
       gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
       timetrackApiProvider.overrideWithValue(TimeTrackApi(client: _failing)),
@@ -252,10 +293,10 @@ final _screens = <_Screen>[
           'Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, or not known, errno = 8), address = busboard.example.com, port = 443'))),
     ]);
   }),
-  _Screen('map: stop card (3 arrivals, alert)', (t) {
+  _Screen('stop sheet (3 arrivals, alert)', (t) {
     SharedPreferences.setMockInitialValues({});
     return _app(
-      _card(const StopCardHeader(stop: _stop), const StopCardBody(stop: _stop)),
+      _card(StopSheetContent.header('1150'), StopSheetContent.body('1150')),
       _mapOverrides(arrivals: _arrivals),
     );
   }),
@@ -270,24 +311,24 @@ final _screens = <_Screen>[
     await tester.pumpAndSettle();
     expect(find.text('29 km/h'), findsOneWidget, reason: 'technical details are open');
   }),
-  _Screen('map: your-stop card (2 arrivals)', (t) {
+  _Screen('home: sheet (your stop, 3 arrivals, saved place, alert, saved trip, nearby with 9 routes)', (t) {
     SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
     return _app(
-      _card(MyStopCard.header(), MyStopCard.body()),
-      _mapOverrides(arrivals: _arrivals.take(2).toList()),
+      _card(HomeSheetContent.header(), HomeSheetContent.body()),
+      _homeOverrides(arrivals: _arrivals),
     );
   }),
-  _Screen('map: your-stop card (3 arrivals)', (t) {
+  _Screen('home: sheet (your stop, 2 arrivals)', (t) {
     SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
     return _app(
-      _card(MyStopCard.header(), MyStopCard.body()),
-      _mapOverrides(arrivals: _arrivals),
+      _card(HomeSheetContent.header(), HomeSheetContent.body()),
+      _homeOverrides(arrivals: _arrivals.take(2).toList()),
     );
   }),
-  _Screen('map: your-stop card (no stop chosen)', (t) {
+  _Screen('home: sheet (no stop chosen, nothing saved)', (t) {
     SharedPreferences.setMockInitialValues({});
     return _app(
-      _card(MyStopCard.header(), MyStopCard.body()),
+      _card(HomeSheetContent.header(onChooseStop: () {}), HomeSheetContent.body()),
       _mapOverrides(),
     );
   }),
@@ -335,4 +376,204 @@ void main() {
       });
     }
   }
+
+  // The real app's stop sheet and trip options at 2x text, on a small phone, in both themes (spec §4.5). The stop
+  // sheet's live line puts the "updated" time next to the state, so it also runs with a live list on the narrowest
+  // supported width (the header must wrap rather than overflow).
+  Future<void> scrollSheet(WidgetTester tester) async {
+    final list = find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(Scrollable)).first;
+    for (var i = 0; i < 12; i++) {
+      await tester.drag(list, const Offset(0, -300), warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull, reason: 'after drag ${i + 1}');
+    }
+  }
+
+  for (final dark in [false, true]) {
+    final theme = dark ? 'dark' : 'light';
+    final liveRows = [_arrival(2), _arrival(9), _arrival(17)];
+
+    for (final (size, live) in [(const Size(360, 640), false), (const Size(320, 640), true)]) {
+      testWidgets('the stop sheet at ${size.width.toInt()}x${size.height.toInt()}, 2.0x text, $theme${live ? ', live' : ''}',
+          (tester) async {
+        tester.view.physicalSize = size * 3;
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.reset);
+        await pumpPlannerApp(
+          tester,
+          net: TestNetwork(),
+          now: DateTime(2026, 10, 12, 13, 0),
+          initial: '/board/1150',
+          textScale: 2.0,
+          use24h: false,
+          theme: dark ? BBTheme.dark() : BBTheme.light(),
+          repoFuture: Future.value(_repo()),
+          alerts: [_alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.')],
+          overrides: [
+            metrobusMobileApiProvider.overrideWithValue(MetrobusMobileApi(client: _emptyKiosk)),
+            stopArrivalsProvider.overrideWith((ref, id) async => live ? liveRows : const <ArrivalRow>[]),
+            if (live) stopArrivalsUpdatedAtProvider.overrideWith(_UpdatedAt.new),
+          ],
+        );
+        expect(tester.takeException(), isNull, reason: 'initial layout at peek');
+        if (live) {
+          expect(find.textContaining('updated'), findsOneWidget, reason: 'the live line shows the refresh time');
+          // The state label keeps one line (the time wraps instead of crushing it to a letter a line).
+          expect(tester.getRect(find.text('Live')).height, lessThan(40), reason: 'Live stays on one line');
+        }
+        await tester.drag(find.byType(BBPill).first, const Offset(0, -700));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: 'at full');
+        await scrollSheet(tester);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 11));
+      });
+    }
+
+    testWidgets('the trip options at 360x640, 2.0x text, $theme', (tester) async {
+      tester.view.physicalSize = const Size(360, 640) * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: DateTime(testDay.year, testDay.month, testDay.day, 8, 1),
+        textScale: 2.0,
+        theme: dark ? BBTheme.dark() : BBTheme.light(),
+      );
+      final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      c.read(planQueryProvider.notifier).setTrip(
+            StopPlace(stopId: 'A', name: 'Stop A'),
+            StopPlace(stopId: 'C', name: 'Stop C'),
+          );
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'at peek');
+      final handle = tester.ensureSemantics();
+      await tester.tap(find.bySemanticsLabel('Map sheet'));
+      await tester.pumpAndSettle();
+      handle.dispose();
+      expect(tester.takeException(), isNull, reason: 'at half');
+      await tester.drag(find.byType(BBSheet), const Offset(0, -700));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'at full');
+      expect(find.byType(JourneyCard), findsWidgets);
+      await scrollSheet(tester);
+    });
+  }
+
+  // The home at its peek: the real screen, so the peek is the sheet's own. Where to?, the first saved place and the
+  // top of Your stop must be visible (on screen, inside the peeking sheet) however large the text, with two saved
+  // places and an alert for you (spec §3.1).
+  Future<void> pumpHomeAtPeek(
+    WidgetTester tester, {
+    required Size size,
+    required double textScale,
+    required bool dark,
+    bool tip = false,
+  }) =>
+      pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: DateTime(2026, 10, 12, 13, 0),
+        initial: '/',
+        textScale: textScale,
+        homeTipSeen: !tip,
+        theme: dark ? BBTheme.dark() : BBTheme.light(),
+        alerts: [
+          ServiceAlert(
+            sourceIds: const {'a'},
+            header: 'Water Street detour on routes 1 and 2 between Duckworth Street and Prescott Street',
+            description: 'Routes 1 and 2 use Harbour Drive.',
+            cause: ServiceAlertCause.construction,
+            effect: ServiceAlertEffect.detour,
+            severity: ServiceAlertSeverity.warning,
+            activePeriods: [ServiceAlertPeriod(end: DateTime(2099))],
+            targets: const [ServiceAlertTarget(routeId: '1')],
+          ),
+        ],
+        nearby: const [NearbyStop(stop: _stop, distanceMeters: 80)],
+        overrides: [
+          settingsProvider.overrideWith(_StopCSettings.new),
+          savedPlacesProvider.overrideWith(_Places.new),
+          savedTripsProvider.overrideWith(_Trips.new),
+          savedTripNextProvider('t1').overrideWith((ref) async => const []),
+          stopArrivalsProvider.overrideWith((ref, id) async => _arrivals),
+        ],
+      );
+
+  /// What the rider can see at peek: the sheet card, clipped to the screen.
+  void expectVisibleAtPeek(WidgetTester tester, Finder f, String what, Size size) {
+    expect(f, findsOneWidget, reason: what);
+    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    final r = tester.getRect(f);
+    expect(r.top, greaterThanOrEqualTo(card.top), reason: '$what starts inside the sheet');
+    expect(r.top, lessThan(size.height), reason: '$what starts on screen');
+    expect(r.top, lessThan(card.bottom), reason: '$what starts inside the peeking sheet');
+  }
+
+  for (final dark in [false, true]) {
+    testWidgets('home at peek, 360x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
+      final handle = tester.ensureSemantics();
+      const size = Size(360, 640);
+      tester.view.physicalSize = size * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await pumpHomeAtPeek(tester, size: size, textScale: 2.0, dark: dark);
+      expect(tester.takeException(), isNull, reason: 'initial layout');
+
+      final whereTo = find.byKey(HomeSheetContent.whereToKey);
+      expectVisibleAtPeek(tester, whereTo, 'Where to?', size);
+      expect(whereTo.hitTestable(), findsOneWidget, reason: 'Where to? can be tapped at peek');
+      expectVisibleAtPeek(tester, find.text('Home'), 'the first saved place', size);
+      expectVisibleAtPeek(tester, find.bySemanticsLabel(RegExp('^Your stop')), 'the top of Your stop', size);
+
+      // Pulled up to full, the whole sheet scrolls without overflowing.
+      await tester.drag(whereTo, const Offset(0, -700));
+      await tester.pumpAndSettle();
+      await _scrollThrough(tester);
+      expect(tester.takeException(), isNull);
+      handle.dispose();
+    });
+  }
+
+  testWidgets('home at peek, 390x844, 1.0x text: Your stop and the next bus are whole above the bottom', (tester) async {
+    final handle = tester.ensureSemantics();
+    const size = Size(390, 844);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpHomeAtPeek(tester, size: size, textScale: 1.0, dark: false);
+    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    final yourStop = tester.getRect(find.bySemanticsLabel(RegExp('^Your stop')));
+    final firstBus = tester.getRect(find.byType(ArrivalRowTile).first);
+    for (final (name, r) in [('Your stop', yourStop), ('the first bus', firstBus)]) {
+      expect(r.top, greaterThanOrEqualTo(card.top), reason: name);
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the peeking sheet');
+      expect(r.bottom, lessThanOrEqualTo(size.height), reason: '$name is on screen');
+    }
+    handle.dispose();
+  });
+
+  // The one-time tip sits above Where to?. Your stop may fall below the fold while it shows (it is one-time), but
+  // nothing overflows and the way to dismiss it is on screen.
+  testWidgets('home at peek, 360x640, 1.0x text, with the one-time tip: no overflow, Where to? and Got it on screen',
+      (tester) async {
+    final handle = tester.ensureSemantics();
+    const size = Size(360, 640);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpHomeAtPeek(tester, size: size, textScale: 1.0, dark: false, tip: true);
+    expect(tester.takeException(), isNull, reason: 'initial layout');
+    expect(find.textContaining("Everything's on the map now"), findsOneWidget);
+    expectVisibleAtPeek(tester, find.byKey(HomeSheetContent.whereToKey), 'Where to?', size);
+    expectVisibleAtPeek(tester, find.text('Got it'), 'Got it', size);
+    expect(find.text('Got it').hitTestable(), findsOneWidget, reason: 'Got it can be tapped at peek');
+    expect(tester.takeException(), isNull);
+    handle.dispose();
+  });
 }

@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../domain/map/bus_tracking_state.dart';
 import '../../state/follow_providers.dart';
-import '../../state/map_providers.dart';
+import '../../state/home_sheet_provider.dart';
 import '../../state/providers.dart';
 import '../alerts/service_alert_card.dart';
 import '../kit/kit.dart';
@@ -29,16 +29,28 @@ BusTrackingState? _live(WidgetRef ref, String vehicleId) =>
 class BusCardHeader extends ConsumerWidget {
   const BusCardHeader({super.key, required this.vehicleId});
 
+  static const closeKey = ValueKey('bus-close');
+
   final String vehicleId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bb = context.bb;
     final bus = _live(ref, vehicleId);
+    // The way out for a screen reader, the side panel, and iPhone's missing back button (spec §3.2).
+    final close = BBIconButton(
+      key: BusCardHeader.closeKey,
+      icon: BBIcons.close,
+      semanticLabel: 'Close',
+      onPressed: () => ref.read(homeSheetProvider.notifier).back(),
+    );
     if (bus == null) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.l),
-        child: Text('This bus is no longer reporting', style: bb.text.body),
+        padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.s, BBSpace.l),
+        child: Row(children: [
+          Expanded(child: Text('This bus is no longer reporting', style: bb.text.body)),
+          close,
+        ]),
       );
     }
     // The live feed carries no headsign: take the destination from the trip.
@@ -53,7 +65,7 @@ class BusCardHeader extends ConsumerWidget {
       BusStatus.stale => ('Last seen ${agoText(DateTime.now().difference(bus.lastGpsTime))}', BBPillTone.neutral),
     };
     return Padding(
-      padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.m),
+      padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.s, BBSpace.m),
       child: Row(
         children: [
           RouteBadge.name(busLabel(bus)),
@@ -74,6 +86,7 @@ class BusCardHeader extends ConsumerWidget {
           ),
           const SizedBox(width: BBSpace.s),
           Flexible(child: BBPill(label: pill, tone: tone, leadingDot: bus.status == BusStatus.active, wrap: true)),
+          close,
         ],
       ),
     );
@@ -113,7 +126,7 @@ class _BusCardBodyState extends ConsumerState<BusCardBody> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (alerts.isNotEmpty) ...[
-            ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => context.go('/alerts')),
+            ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => context.push('/alerts')),
             const SizedBox(height: BBSpace.m),
           ],
           BBButton(
@@ -121,7 +134,7 @@ class _BusCardBodyState extends ConsumerState<BusCardBody> {
             icon: BBIcons.bus,
             expand: true,
             onPressed: () {
-              ref.read(mapSelectionProvider.notifier).clear();
+              ref.read(homeSheetProvider.notifier).home();
               ref.read(followProvider.notifier).follow(widget.vehicleId);
             },
           ),

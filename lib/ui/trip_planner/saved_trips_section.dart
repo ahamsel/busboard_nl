@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/trip_planner/saved_trip_store.dart';
 import '../../domain/trip_planner/journey.dart';
+import '../../state/home_sheet_provider.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../kit/kit.dart';
@@ -152,9 +153,10 @@ class _SavedTripCard extends ConsumerWidget {
             Expanded(
               child: BBPressable(
                 semanticLabel: label,
-                onTap: () => ref
-                    .read(planQueryProvider.notifier)
-                    .setTrip(trip.from, trip.to),
+                onTap: () {
+                  ref.read(planQueryProvider.notifier).setTrip(trip.from, trip.to);
+                  ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
+                },
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
                     BBSpace.m,

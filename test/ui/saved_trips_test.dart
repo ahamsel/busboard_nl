@@ -2,10 +2,11 @@ import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
-import 'package:busboard_nl/ui/trip_planner/plan_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/saved_trips_section.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
@@ -29,9 +30,9 @@ final _aToC = SavedTrip(
 );
 
 ProviderContainer _container(WidgetTester tester) =>
-    ProviderScope.containerOf(tester.element(find.byType(PlanScreen)));
+    ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
 
-/// Opens the Plan tab at [now] with [trips] saved.
+/// Opens home at [now] with [trips] saved, its sheet pulled up to the saved trips.
 Future<void> _pump(
   WidgetTester tester, {
   DateTime? now,
@@ -55,6 +56,8 @@ Future<void> _pump(
     await saved.add(t);
   }
   await tester.pumpAndSettle();
+  await tester.drag(find.bySemanticsLabel('Map sheet'), const Offset(0, -600));
+  await tester.pumpAndSettle();
 }
 
 Finder get _more => find.byKey(SavedTripsSection.moreKey(_aToC.id));
@@ -73,7 +76,7 @@ void main() {
     },
   );
 
-  testWidgets('tapping the card fills From and To and shows the plan', (
+  testWidgets('tapping the card fills From and To and opens the trip options', (
     tester,
   ) async {
     await _pump(tester);
@@ -84,6 +87,7 @@ void main() {
     expect(draft.from, StopPlace(stopId: 'A', name: 'Stop A'));
     expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
     expect(draft.mode, PlanMode.leaveNow);
+    expect(_container(tester).read(homeSheetProvider), isA<OptionsSheet>());
     expect(find.byType(JourneyCard), findsWidgets);
   });
 
@@ -112,6 +116,7 @@ void main() {
     expect(find.text('Remove'), findsOneWidget);
     // A long-press doesn't also open the plan.
     expect(_container(tester).read(planQueryProvider).from, isNull);
+    expect(_container(tester).read(homeSheetProvider), isA<HomeSheetHome>());
   });
 
   testWidgets(

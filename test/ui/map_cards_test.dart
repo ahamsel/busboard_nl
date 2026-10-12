@@ -1,19 +1,14 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
-import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
-import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
-import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
-import 'package:busboard_nl/ui/map/my_stop_card.dart';
-import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:flutter/material.dart' show MaterialApp;
-import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -102,105 +97,6 @@ void main() {
     expect(agoText(const Duration(minutes: 3, seconds: 5)), '3 min ago');
   });
 
-  testWidgets('stop card: name, number, and the two actions', (tester) async {
-    await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
-    expect(find.text('MUN Centre'), findsOneWidget);
-    expect(find.text('Stop 1150'), findsOneWidget);
-    await tester.tap(find.text('Set as my stop'));
-    await tester.pumpAndSettle();
-    expect(find.text('Your stop'), findsOneWidget, reason: 'it is now your stop');
-    await tester.tap(find.text('Open board'));
-    await tester.pumpAndSettle();
-    expect(find.text('BOARD 1150'), findsOneWidget);
-  });
-
-  testWidgets('stop card: Plan a trip from here starts a plan from this stop on the Plan tab', (tester) async {
-    await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
-    final open = tester.getTopLeft(find.text('Open board')).dy;
-    expect(tester.getTopLeft(find.text('Plan a trip from here')).dy, greaterThan(open), reason: 'under Open board');
-    expect(find.bySemanticsLabel('Plan a trip from here'), findsOneWidget);
-    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
-    await tester.tap(find.text('Plan a trip from here'));
-    await tester.pumpAndSettle();
-    expect(container.read(planQueryProvider).from, StopPlace(stopId: '1150', name: 'MUN Centre'));
-    expect(find.text('PLAN'), findsOneWidget);
-  });
-
-  testWidgets('stop card: at 2x text on 320 pt, Plan a trip from here reads in full', (tester) async {
-    await _host(tester,
-        header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun), textScale: 2, width: 320);
-    expect(tester.renderObject<RenderParagraph>(find.text('Plan a trip from here')).didExceedMaxLines, isFalse);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('stop card with no arrivals says so', (tester) async {
-    await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
-    expect(find.text('No buses due soon'), findsOneWidget);
-  });
-
-  ArrivalRow row({required String route, required bool live, String? vehicle}) => ArrivalRow(
-        routeShortName: route,
-        headsign: 'Downtown',
-        scheduledTime: GtfsTime.parse('09:52:00'),
-        minutesAway: 4,
-        isLive: live,
-        tripId: 't-$route',
-        vehicleNumber: vehicle,
-      );
-
-  testWidgets('stop card: tapping a live row follows that bus and closes the card', (tester) async {
-    await _host(tester,
-        header: const StopCardHeader(stop: _mun),
-        body: const StopCardBody(stop: _mun),
-        arrivals: [row(route: '21', live: true, vehicle: '2573')]);
-    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
-    container.read(mapSelectionProvider.notifier).select(const StopSelection('1150'));
-    await tester.tap(find.text('Downtown'));
-    await tester.pumpAndSettle();
-    expect(container.read(followProvider), const FollowTarget('2573'));
-    expect(container.read(mapSelectionProvider), isNull);
-    expect(find.text('BOARD 1150'), findsNothing, reason: 'the rider stays on the map');
-  });
-
-  testWidgets('stop card: scheduled-only and vehicle-less rows are inert', (tester) async {
-    await _host(tester,
-        header: const StopCardHeader(stop: _mun),
-        body: const StopCardBody(stop: _mun),
-        arrivals: [
-          row(route: '5', live: false, vehicle: '2574'),
-          row(route: '6', live: true),
-          row(route: '7', live: true, vehicle: ''),
-        ]);
-    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
-    for (final route in ['5', '6', '7']) {
-      await tester.tap(find.bySemanticsLabel(RegExp('^Route $route ')));
-      await tester.pumpAndSettle();
-    }
-    expect(container.read(followProvider), isNull);
-  });
-
-  testWidgets('stop card: only live rows announce the follow hint', (tester) async {
-    final handle = tester.ensureSemantics();
-    await _host(tester,
-        header: const StopCardHeader(stop: _mun),
-        body: const StopCardBody(stop: _mun),
-        arrivals: [row(route: '21', live: true, vehicle: '2573'), row(route: '5', live: false)]);
-    expect(
-      find.semantics.byLabel('Route 21 Downtown, live, 4 minutes'),
-      isSemantics(
-        label: 'Route 21 Downtown, live, 4 minutes',
-        isButton: true,
-        hasTapAction: true,
-        onTapHint: 'follow bus 2573 on the map',
-      ),
-    );
-    expect(
-      find.semantics.byLabel('Route 5 Downtown, scheduled, 4 minutes'),
-      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: false, hasTapAction: false),
-    );
-    handle.dispose();
-  });
-
   testWidgets('bus card: route, destination, bus number and lateness', (tester) async {
     await _host(tester,
         header: const BusCardHeader(vehicleId: '2573'), body: const BusCardBody(vehicleId: '2573'), buses: {'2573': _bus()});
@@ -213,12 +109,12 @@ void main() {
     await _host(tester,
         header: const BusCardHeader(vehicleId: '2573'), body: const BusCardBody(vehicleId: '2573'), buses: {'2573': _bus()});
     final container = ProviderScope.containerOf(tester.element(find.byType(BusCardBody)));
-    container.read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
+    container.read(homeSheetProvider.notifier).open(const BusSheet('2573'));
     expect(find.text('Follow'), findsOneWidget);
     await tester.tap(find.text('Follow'));
     await tester.pumpAndSettle();
     expect(container.read(followProvider), const FollowTarget('2573'));
-    expect(container.read(mapSelectionProvider), isNull);
+    expect(container.read(homeSheetProvider), isA<HomeSheetHome>());
   });
 
   testWidgets('with no headsign in the live feed, the destination comes from its trip', (tester) async {
@@ -259,15 +155,5 @@ void main() {
   testWidgets('a bus that has gone away shows a plain message', (tester) async {
     await _host(tester, header: const BusCardHeader(vehicleId: '9999'), body: const BusCardBody(vehicleId: '9999'));
     expect(find.text('This bus is no longer reporting'), findsOneWidget);
-  });
-
-  testWidgets('your-stop card invites you to choose a stop when there is none', (tester) async {
-    await _host(tester, header: MyStopCard.header(), body: MyStopCard.body());
-    expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
-  });
-
-  testWidgets('your-stop card names your stop', (tester) async {
-    await _host(tester, header: MyStopCard.header(), body: MyStopCard.body(), prefs: {'selectedStopId': '1150'});
-    expect(find.text('MUN Centre'), findsOneWidget);
   });
 }

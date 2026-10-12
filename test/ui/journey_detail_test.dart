@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
@@ -10,18 +8,17 @@ import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/arrival_alert_providers.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/journey_on_map_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
-import 'package:busboard_nl/ui/map/map_screen.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
-import 'package:busboard_nl/ui/trip_planner/journey_detail_screen.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 
 import '../helpers/feed_fixtures.dart';
 import '../helpers/planner_app.dart';
@@ -31,9 +28,42 @@ import '../trip_planner/test_network.dart';
 
 DateTime _at(int h, int m) => DateTime(testDay.year, testDay.month, testDay.day, h, m);
 
-ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
+ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
 
-String _location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+/// Pulls the sheet up to its full height.
+Future<void> _pullUp(WidgetTester tester) async {
+  await tester.drag(find.bySemanticsLabel('Map sheet'), const Offset(0, -600));
+  await tester.pumpAndSettle();
+}
+
+/// The sheet's own scrolling list.
+Finder get _sheetList => find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(Scrollable)).first;
+
+/// The draft as it stands, its options open and pulled up.
+Future<void> _openOptions(WidgetTester tester) async {
+  _container(tester).read(homeSheetProvider.notifier).open(const OptionsSheet());
+  await tester.pumpAndSettle();
+  await _pullUp(tester);
+}
+
+/// Opens [j]'s steps in the sheet, as a card's tap does, pulled up.
+Future<void> _openJourney(WidgetTester tester, Journey j) async {
+  _container(tester).read(homeSheetProvider.notifier).open(JourneySheet(j));
+  await tester.pumpAndSettle();
+  await _pullUp(tester);
+  expect(find.text('Your trip'), findsOneWidget);
+}
+
+/// Taps the result card showing [text] in the options, then pulls the journey's sheet up.
+Future<void> _tapCard(WidgetTester tester, String text) async {
+  final card = find.text(text);
+  await tester.scrollUntilVisible(card, 200, scrollable: _sheetList);
+  await tester.pumpAndSettle();
+  await tester.tap(card);
+  await tester.pumpAndSettle();
+  expect(_container(tester).read(homeSheetProvider), isA<JourneySheet>());
+  await _pullUp(tester);
+}
 
 Finder _badge(String route) => find.byWidgetPredicate((w) => w is RouteBadge && w.label == route);
 
@@ -45,16 +75,13 @@ Future<void> _openAtoE(
   List<Override> overrides = const [],
 }) async {
   await pumpPlannerApp(tester, net: TestNetwork(), now: now ?? _at(8, 0), textScale: textScale, overrides: overrides);
-  _container(tester).read(planQueryProvider.notifier)
-    ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
-    ..setTo(StopPlace(stopId: 'E', name: 'Stop E'));
-  await tester.pumpAndSettle();
-  final card = find.text('8:00 AM → 8:28 AM');
-  await tester.ensureVisible(card);
-  await tester.pumpAndSettle();
-  await tester.tap(card);
-  await tester.pumpAndSettle();
-  expect(find.byType(JourneyDetailScreen), findsOneWidget);
+  _container(tester).read(planQueryProvider.notifier).setTrip(
+        StopPlace(stopId: 'A', name: 'Stop A'),
+        StopPlace(stopId: 'E', name: 'Stop E'),
+      );
+  await _openOptions(tester);
+  await _tapCard(tester, '8:00 AM → 8:28 AM');
+  expect(find.text('Your trip'), findsOneWidget);
 }
 
 const _brokenWarning = 'This trip no longer works with live times. Go back for updated options.';
@@ -77,12 +104,6 @@ class _RecordingAlerts extends ArrivalAlertController {
   Future<ArrivalAlert?> build() async => null;
   @override
   void onBoardArrivals(String stopId, List<ArrivalRow> rows) => calls.add((stopId, rows));
-}
-
-/// Lets the real map tab's timers run out once it is gone.
-Future<void> _unmount(WidgetTester tester) async {
-  await tester.pumpWidget(const SizedBox());
-  await tester.pump(const Duration(minutes: 1));
 }
 
 void main() {
@@ -139,9 +160,10 @@ void main() {
     _container(tester).read(planQueryProvider.notifier)
       ..setFrom(here)
       ..setTo(StopPlace(stopId: 'E', name: 'Stop E'));
-    await tester.pumpAndSettle();
+    await _openOptions(tester);
     await tester.tap(find.byType(JourneyCard).first);
     await tester.pumpAndSettle();
+    await _pullUp(tester);
     await tester.ensureVisible(find.text('Save trip'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save trip'));
@@ -179,19 +201,29 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
   });
 
-  testWidgets('Show on map puts the journey on the map and shows the Map tab', (tester) async {
+  testWidgets('the journey is drawn when its sheet opens', (tester) async {
     await _openAtoE(tester);
-    await tester.ensureVisible(find.text('Show on map'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Show on map'));
-    await tester.pumpAndSettle();
-    final shown = _container(tester).read(journeyOnMapProvider);
-    expect(shown, isNotNull);
+    final c = _container(tester);
+    final shown = c.read(journeyOnMapProvider);
+    expect(shown, same((c.read(homeSheetProvider) as JourneySheet).journey));
     expect(shown!.departs, 8 * 3600);
-    expect(_location(tester), '/map');
-    expect(find.byType(MapScreen), findsOneWidget);
+    expect(find.text('Show on map'), findsNothing, reason: 'it is on the map already');
     expect(find.bySemanticsLabel('Hide the trip from the map'), findsOneWidget);
-    await _unmount(tester);
+  });
+
+  testWidgets('a journey opened straight into the sheet is drawn too', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _at(8, 0));
+    final net = TestNetwork();
+    final j = (TripPlanner(net.repo, TimetableIndex.build(net.repo, testDay)).plan(
+      PlanQuery(
+        from: StopPlace(stopId: 'A', name: 'Stop A'),
+        to: StopPlace(stopId: 'E', name: 'Stop E'),
+        mode: PlanMode.leaveBy,
+        time: _at(8, 0),
+      ),
+    ) as PlanFound).journeys.first;
+    await _openJourney(tester, j);
+    expect(_container(tester).read(journeyOnMapProvider), same(j));
   });
 
   testWidgets('a bus 10 minutes out offers the bell on the first ride; with no live bus there is no Follow', (
@@ -218,8 +250,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(_container(tester).read(followProvider), const FollowTarget('1415', stopId: 'A'),
         reason: "the follow counts to the trip's boarding stop");
-    expect(_location(tester), '/map');
-    await _unmount(tester);
+    expect(_container(tester).read(homeSheetProvider), isA<HomeSheetHome>(), reason: 'the follow card takes the sheet');
+    expect(find.text('Following bus 1415'), findsOneWidget);
   });
 
   testWidgets('a live delay on the first ride moves the detail\'s times, with the Live pill', (tester) async {
@@ -232,7 +264,7 @@ void main() {
     expect(find.text('Live'), findsNothing);
 
     await live.refresh(tester, feedWith(TestNetwork(), {'1-0': 120}, _at(8, 0)));
-    expect(find.byType(JourneyDetailScreen), findsOneWidget);
+    expect(_container(tester).read(homeSheetProvider), isA<JourneySheet>());
     expect(find.text('8:02 AM → 8:12 AM · 2 stops'), findsOneWidget);
     expect(find.text('Leave 8:02 AM · arrive 8:28 AM'), findsOneWidget);
     expect(find.text('Live'), findsOneWidget);
@@ -301,9 +333,7 @@ void main() {
       await pumpPlannerApp(tester, net: TestNetwork(), now: now, overrides: [live.override]);
       final j = planned();
       expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), ['1-0', '2-1']);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
-      await tester.pumpAndSettle();
-      expect(find.byType(JourneyDetailScreen), findsOneWidget);
+      await _openJourney(tester, j);
     }
 
     testWidgets('a tight change that has already happened shows no warning', (tester) async {
@@ -350,9 +380,7 @@ void main() {
       final j = planned();
       expect((j.legs.first as WalkLeg).seconds, 60);
       expect(j.departs, 8 * 3600 + 19 * 60);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
-      await tester.pumpAndSettle();
-      expect(find.byType(JourneyDetailScreen), findsOneWidget);
+      await _openJourney(tester, j);
     }
 
     testWidgets('walking, on time, to an on-time bus is no warning', (tester) async {
@@ -402,22 +430,15 @@ void main() {
         PlanQuery(from: y, to: z, mode: PlanMode.leaveBy, time: DateTime(testDay.year, testDay.month, testDay.day, 23, 55)),
       ) as PlanFound).journeys.first;
       expect((j.serviceDate, j.legs.whereType<RideLeg>().single.tripId), (testDay, '9-1'));
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
-      await tester.pumpAndSettle();
+      await _openJourney(tester, j);
       expectLiveFollowAndBell();
     });
 
     testWidgets('a trip planned at 00:05 has Live, Follow and the bell', (tester) async {
       await pump(tester, network());
-      _container(tester).read(planQueryProvider.notifier)
-        ..setFrom(y)
-        ..setTo(z);
-      await tester.pumpAndSettle();
-      final card = find.text('12:14 AM → 12:44 AM');
-      await tester.ensureVisible(card);
-      await tester.pumpAndSettle();
-      await tester.tap(card);
-      await tester.pumpAndSettle();
+      _container(tester).read(planQueryProvider.notifier).setTrip(y, z);
+      await _openOptions(tester);
+      await _tapCard(tester, '12:14 AM → 12:44 AM');
       expectLiveFollowAndBell();
     });
   });
@@ -444,17 +465,16 @@ void main() {
       addTearDown(tester.view.reset);
       await _openAtoE(tester, now: _at(7, 50), textScale: 2);
       expect(tester.takeException(), isNull);
-      final list = find.descendant(of: find.byType(JourneyDetailScreen), matching: find.byType(Scrollable)).first;
       void checkText() {
         for (final p in tester.renderObjectList<RenderParagraph>(
-          find.descendant(of: find.byType(JourneyDetailScreen), matching: find.byType(RichText)),
+          find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(RichText)),
         )) {
           expect(p.didExceedMaxLines, isFalse, reason: '"${p.text.toPlainText()}" is cut short');
         }
       }
 
       checkText();
-      await tester.scrollUntilVisible(find.text('Save trip'), 200, scrollable: list);
+      await tester.scrollUntilVisible(find.text('Save trip'), 200, scrollable: _sheetList);
       await tester.pumpAndSettle();
       checkText();
       expect(tester.takeException(), isNull);

@@ -3,12 +3,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
-import 'bb_nav_bar.dart';
 import 'tokens.dart';
 
-/// Floating message above the nav bar where it is shown, else above the bottom
-/// safe area (replaces SnackBar). Only one is visible at a time; a new one
-/// replaces the current one.
+/// Floating message above the bottom safe area (replaces SnackBar). Only one is
+/// visible at a time; a new one replaces the current one.
 abstract final class BBToast {
   static const cardKey = ValueKey('bb-toast-card');
 
@@ -17,13 +15,11 @@ abstract final class BBToast {
   static void show(BuildContext context, String message, {Duration duration = const Duration(seconds: 3)}) {
     _dismissCurrent();
     final overlay = Overlay.of(context, rootOverlay: true);
-    final reserveNavBar = BBNavBarScope.isPresent(context);
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _ToastView(
         message: message,
         duration: duration,
-        reserveNavBar: reserveNavBar,
         onDone: () {
           if (identical(_current, entry)) _current = null;
           if (entry.mounted) entry.remove();
@@ -45,13 +41,11 @@ class _ToastView extends StatefulWidget {
   const _ToastView({
     required this.message,
     required this.duration,
-    required this.reserveNavBar,
     required this.onDone,
   });
 
   final String message;
   final Duration duration;
-  final bool reserveNavBar;
   final VoidCallback onDone;
 
   @override
@@ -101,12 +95,9 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
     return Positioned(
       left: BBSpace.l,
       right: BBSpace.l,
-      // Above the nav bar where it is shown (else just above the safe area),
-      // or above the keyboard when that is taller.
+      // Just above the safe area, or above the keyboard when that is taller.
       bottom: math.max(
-            widget.reserveNavBar
-                ? BBNavBar.reservedHeight(context)
-                : MediaQuery.paddingOf(context).bottom + BBSpace.l,
+            MediaQuery.paddingOf(context).bottom + BBSpace.l,
             MediaQuery.viewInsetsOf(context).bottom,
           ) +
           BBSpace.s,
