@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/location/nearest_stop_service.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
@@ -82,8 +83,8 @@ class _NearbyStopTile extends ConsumerWidget {
     final bb = context.bb;
     final stop = nearby.stop;
     final routes =
-        ref.watch(gtfsRepositoryProvider).asData?.value.routeShortNamesForStop(stop.stopId) ?? const <String>[];
-    final routesText = routes.isEmpty ? '' : ', routes ${routes.join(', ')}';
+        ref.watch(gtfsRepositoryProvider).asData?.value.routeDirectionsForStop(stop.stopId) ?? const <RouteDirections>[];
+    final routesText = routes.isEmpty ? '' : ', routes ${routes.map(_spokenDirections).join(', ')}';
     return BBPressable(
       semanticLabel: '${stop.stopName}, stop ${stop.stopId}, ${nearby.distanceDisplay} away$routesText',
       onTap: () {
@@ -101,8 +102,8 @@ class _NearbyStopTile extends ConsumerWidget {
               Text('Stop ${stop.stopId} · ${nearby.distanceDisplay}', style: bb.text.caption),
               if (routes.isNotEmpty) ...[
                 const SizedBox(height: BBSpace.xs),
-                Wrap(spacing: 4, runSpacing: 4, children: [
-                  for (final r in routes) RouteBadge.name(r, size: RouteBadgeSize.compact),
+                Wrap(spacing: BBSpace.m, runSpacing: BBSpace.xs, children: [
+                  for (final r in routes) _RouteDirectionsChip(directions: r),
                 ]),
               ],
             ]),
@@ -111,5 +112,34 @@ class _NearbyStopTile extends ConsumerWidget {
         ]),
       ),
     );
+  }
+}
+
+/// "10 to Downtown or Kelsey Drive"; just "24" when no trip leaves from here.
+String _spokenDirections(RouteDirections r) =>
+    r.destinations.isEmpty ? r.routeShortName : '${r.routeShortName} to ${r.destinations.join(' or ')}';
+
+/// A route chip followed by where the route goes from this stop.
+class _RouteDirectionsChip extends StatelessWidget {
+  const _RouteDirectionsChip({required this.directions});
+
+  final RouteDirections directions;
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = RouteBadge.name(directions.routeShortName, size: RouteBadgeSize.compact);
+    if (directions.destinations.isEmpty) return badge;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      badge,
+      const SizedBox(width: BBSpace.xs),
+      Flexible(
+        child: Text(
+          directions.destinations.join(' · '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: context.bb.text.caption,
+        ),
+      ),
+    ]);
   }
 }

@@ -74,6 +74,33 @@ GtfsRepository _repoWithRoutes(List<String> names) {
   return repo;
 }
 
+/// MUN Centre served by route 10 both ways, route 1 one way and route 24,
+/// whose only trip ends here.
+GtfsRepository _repoWithDirections() {
+  final repo = GtfsRepository();
+  repo.stopsById['1150'] = _mun;
+  for (final r in ['1', '10', '24']) {
+    repo.routesById['r$r'] = RouteInfo(routeId: 'r$r', routeShortName: r, routeLongName: '');
+  }
+  final trips = [
+    ('a', 'r10', 'AVALON MALL - MUN CENTRE - DOWNTOWN'),
+    ('b', 'r10', 'AVALON MALL - MUN CENTRE - DOWNTOWN'),
+    ('c', 'r10', 'MUN CENTRE - AVALON MALL - KELSEY DRIVE'),
+    ('d', 'r1', 'MUN-CNA-MI'),
+  ];
+  for (final (trip, route, headsign) in trips) {
+    repo.tripsById[trip] = TripInfo(tripId: trip, routeId: route, serviceId: 's', tripHeadsign: headsign, directionId: 0);
+    repo.stopTimesByStopId.putIfAbsent('1150', () => []).add(StopTimeRow(
+        tripId: trip, arrivalTime: '08:00:00', departureTime: '08:00:00', stopId: '1150', stopSequence: 1));
+    repo.stopTimesByStopId.putIfAbsent('9000', () => []).add(StopTimeRow(
+        tripId: trip, arrivalTime: '08:10:00', departureTime: '08:10:00', stopId: '9000', stopSequence: 2));
+  }
+  repo.tripsById['e'] = const TripInfo(tripId: 'e', routeId: 'r24', serviceId: 's', tripHeadsign: 'MUN EXPRESS', directionId: 0);
+  repo.stopTimesByStopId['1150']!.add(const StopTimeRow(
+      tripId: 'e', arrivalTime: '08:00:00', departureTime: '08:00:00', stopId: '1150', stopSequence: 5));
+  return repo;
+}
+
 void main() {
   testWidgets('near-me shows a pill for every route serving the stop', (tester) async {
     final names = ['1', '2', '3', '6', '9', '10', '10A', '11', '12'];
@@ -93,6 +120,31 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('MUN Centre, stop 1150, 80m away, routes 10')), findsOneWidget);
     expect(find.byType(RouteBadge), findsOneWidget);
     handle.dispose();
+  });
+
+  testWidgets('near-me shows where each route goes from the stop', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, gtfs: _repoWithDirections, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)]);
+    expect(find.byType(RouteBadge), findsNWidgets(3));
+    expect(find.text('Downtown · Kelsey Drive'), findsOneWidget);
+    expect(find.text('MI'), findsOneWidget);
+    // Route 24 only ends here: chip, no destination.
+    expect(find.text('24'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('MUN Centre, stop 1150, 80m away, routes 1 to MI, 10 to Downtown or Kelsey Drive, 24'),
+      findsOneWidget,
+    );
+    handle.dispose();
+  });
+
+  testWidgets('long destinations fit a 320pt phone at text scale 2.0', (tester) async {
+    tester.view.physicalSize = const Size(320 * 3, 640 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await _pump(tester, gtfs: _repoWithDirections, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)],
+        textScale: 2.0);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Downtown · Kelsey Drive'), findsOneWidget);
   });
 
   testWidgets('stop entry validates and navigates (saving the stop first)', (tester) async {
