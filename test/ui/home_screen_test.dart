@@ -92,6 +92,21 @@ Widget _stubMap(MapViewConfig config) {
 }
 
 
+/// Where [at] is drawn with the camera at [target]/[zoom] (north-up, MapLibre's 512-point world), on [view].
+Offset onScreen(LatLng at, LatLng target, double zoom, Size view) {
+  double mercX(double lon) => (lon + 180) / 360;
+  double mercY(double lat) {
+    final r = lat * math.pi / 180;
+    return (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2;
+  }
+
+  final world = 512 * math.pow(2, zoom);
+  return Offset(
+    view.width / 2 + (mercX(at.longitude) - mercX(target.longitude)) * world,
+    view.height / 2 + (mercY(at.latitude) - mercY(target.latitude)) * world,
+  );
+}
+
 /// Records bus updates and can hold them open.
 class _RecordingSurface extends FakeMapSurface {
   final busSets = <List<Map<String, dynamic>>>[];
@@ -282,7 +297,59 @@ void main() {
     // As a notification, a nearby stop or the search's See its buses does.
     container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, true)]);
+    final (target, zoom, animate) = _surface.moves.single;
+    expect((zoom, animate), (15.0, true));
+    // South of the stop, so the stop is drawn above the card.
+    expect(target.longitude, closeTo(-52.7300, 1e-9));
+    expect(target.latitude, lessThan(47.5700));
+  });
+
+  testWidgets('a stop card at half shows its stop between the chips and the card, not under the card', (tester) async {
+    await _pump(tester);
+    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    final (target, zoom, _) = _surface.moves.single;
+    expect(zoom, 15);
+    final view = tester.getSize(find.byType(HomeScreen));
+    final stop = onScreen(const LatLng(47.5700, -52.7300), target, zoom, view);
+    final chipsBottom = tester.getRect(find.widgetWithText(BBChip, 'All routes')).bottom;
+    final cardTop = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+    expect(stop.dy, inExclusiveRange(chipsBottom, cardTop), reason: 'the stop is drawn above the card at half');
+    expect(stop.dy, closeTo((chipsBottom + cardTop) / 2, 2), reason: 'in the middle of what the chips and card leave');
+    expect(stop.dx, closeTo(view.width / 2, 1));
+  });
+
+  testWidgets('a stop card opened zoomed in keeps the zoom; zoomed out, it comes to 15', (tester) async {
+    await _pump(tester);
+    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    _surface.zoom = 17;
+    container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_surface.moves.last.$2, 17);
+    container.read(homeSheetProvider.notifier).home();
+    await tester.pump(const Duration(milliseconds: 100));
+    _surface.zoom = 12;
+    container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_surface.moves.last.$2, 15);
+  });
+
+  testWidgets('on a tablet a stop card centres its stop on the map beside the panel', (tester) async {
+    await _pump(tester, size: const Size(1024, 768));
+    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+    await tester.pump(const Duration(milliseconds: 100));
+    final (target, zoom, _) = _surface.moves.single;
+    final view = tester.getSize(find.byType(HomeScreen));
+    final stop = onScreen(const LatLng(47.5700, -52.7300), target, zoom, view);
+    final panelRight = tester.getRect(find.byKey(const ValueKey('home-side-panel'))).right;
+    final chipsBottom = tester.getRect(find.widgetWithText(BBChip, 'All routes')).bottom;
+    expect(stop.dx, greaterThan(panelRight), reason: 'the stop is not under the panel');
+    expect(stop.dx, closeTo((panelRight + view.width) / 2, 12), reason: 'it is in the middle of the map beside it');
+    expect(stop.dy, closeTo((chipsBottom + view.height) / 2, 2));
   });
 
   testWidgets('with Reduce Motion the stop sheet\'s camera move jumps', (tester) async {
@@ -290,7 +357,7 @@ void main() {
     final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
     container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, false)]);
+    expect(_surface.moves.single.$3, isFalse);
   });
 
   testWidgets('a bus parked on your stop (a terminal) is still tappable under the star', (tester) async {
@@ -494,7 +561,12 @@ void main() {
     final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
     await container.read(settingsProvider.notifier).setSelectedStop('1150');
     await tester.pump(const Duration(milliseconds: 100));
-    expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, true)]);
+    final (target, zoom, animate) = _surface.moves.single;
+    expect((zoom, animate), (15.0, true));
+    // With no card open the stop is drawn above the home sheet's peek.
+    final stop = onScreen(const LatLng(47.5700, -52.7300), target, zoom, tester.getSize(find.byType(HomeScreen)));
+    expect(stop.dy, lessThan(tester.getRect(find.byKey(BBSheet.cardKey)).top));
+    expect(stop.dy, greaterThan(tester.getRect(find.widgetWithText(BBChip, 'All routes')).bottom));
   });
 
   group('map layers over time', () {
@@ -742,6 +814,17 @@ void main() {
       expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
       expect(find.text('Follow'), findsNothing);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets("the follow card's half is a card's, not the home sheet's tall one: the bus stays in view", (
+      tester,
+    ) async {
+      await pumpFollow(tester);
+      expect(tester.widget<BBSheet>(find.byType(BBSheet)).halfFraction, greaterThanOrEqualTo(0.75));
+      await startFollowing(tester);
+      final card = tester.widget<BBSheet>(find.byType(BBSheet));
+      expect(card.halfFraction, closeTo(math.max(0.5, card.peekFraction + 0.05), 0.0001));
+      expect(card.halfFraction, lessThan(0.75));
     });
 
     for (final scale in [1.0, 1.3, 1.6, 2.0, 2.5, 3.0]) {
