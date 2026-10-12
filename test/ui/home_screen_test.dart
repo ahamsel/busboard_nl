@@ -24,7 +24,7 @@ import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
-import 'package:busboard_nl/ui/map/stop_card.dart';
+import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
@@ -245,11 +245,11 @@ void main() {
     await _pump(tester);
     _config!.onTap(const LatLng(47.5701, -52.7300));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Open board'), findsOneWidget);
-    expect(find.text('Stop 1150'), findsOneWidget);
+    expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
+    expect(find.text('STOP 1150'), findsOneWidget);
     _config!.onTap(const LatLng(47.0, -52.0));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Stop 1150'), findsNothing);
+    expect(find.text('STOP 1150'), findsNothing);
     expect(find.text('Choose your stop'), findsOneWidget);
   });
 
@@ -272,11 +272,11 @@ void main() {
     await _pump(tester, buses: {'2573': _bus()});
     _config!.onTap(const LatLng(47.5701, -52.7300));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Open board'), findsOneWidget);
+    expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
     _config!.onTap(const LatLng(47.5601, -52.7100));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('to Downtown'), findsOneWidget);
-    expect(find.text('Open board'), findsNothing);
+    expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -705,7 +705,7 @@ void main() {
       expect(find.text('Following bus 2573'), findsOneWidget);
       expect(find.textContaining('stops to'), findsOneWidget);
       expect(find.text('Stop following'), findsOneWidget);
-      expect(find.text('Open board'), findsNothing);
+      expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
       expect(find.text('Follow'), findsNothing);
       expect(tester.takeException(), isNull);
     });
@@ -741,12 +741,12 @@ void main() {
       container.read(homeSheetProvider.notifier).open(const StopSheet('s3'));
       await _frames(tester, 3);
       expect(find.text('Following bus 2573'), findsOneWidget); // the chip stays
-      expect(find.byType(StopCardHeader), findsOneWidget);
+      expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
       expect(find.byType(FollowCardHeader), findsNothing);
       container.read(homeSheetProvider.notifier).back();
       await _frames(tester, 3);
       expect(find.byType(FollowCardHeader), findsOneWidget);
-      expect(find.byType(StopCardHeader), findsNothing);
+      expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
     });
 
     testWidgets('a follow set from a selected bus clears the selection', (tester) async {
@@ -950,7 +950,7 @@ void main() {
       final open = await sheetTop(tester);
       _config!.onTap(LatLng(47.560045, lonAt(500)));
       await settle(tester);
-      expect(find.text('Open board'), findsNothing);
+      expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
       expect(await sheetTop(tester), open);
       _config!.onTap(LatLng(47.5601, lonAt(100)));
       await settle(tester);
@@ -965,7 +965,7 @@ void main() {
       final container = containerOf(tester);
       container.read(homeSheetProvider.notifier).open(const StopSheet('s3'));
       await _frames(tester, 3);
-      expect(find.byType(StopCardHeader), findsOneWidget);
+      expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
       _config!.onTap(LatLng(47.560045, lonAt(500)));
       await settle(tester);
       expect(container.read(homeSheetProvider.notifier).stack, [const HomeSheetHome(), const StopSheet('s2')]);

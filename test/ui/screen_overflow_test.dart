@@ -20,13 +20,12 @@ import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/saved_place_providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
-import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
-import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -253,10 +252,10 @@ GoRouter _router(Widget screen) => GoRouter(routes: [
     ]);
 
 final _screens = <_Screen>[
-  _Screen('board (alert + failing live feed)', (t) {
+  _Screen('stop sheet (alert + failing live feed)', (t) {
     SharedPreferences.setMockInitialValues({});
     useInMemoryAlertStore();
-    return _app(const ArrivalBoardScreen(stopId: '1150'), [
+    return _app(_card(StopSheetContent.header('1150'), StopSheetContent.body('1150')), [
       ...fakeAlertOverrides,
       gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
       timetrackApiProvider.overrideWithValue(TimeTrackApi(client: _failing)),
@@ -286,10 +285,10 @@ final _screens = <_Screen>[
           'Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, or not known, errno = 8), address = busboard.example.com, port = 443'))),
     ]);
   }),
-  _Screen('map: stop card (3 arrivals, alert)', (t) {
+  _Screen('stop sheet (3 arrivals, alert)', (t) {
     SharedPreferences.setMockInitialValues({});
     return _app(
-      _card(const StopCardHeader(stop: _stop), const StopCardBody(stop: _stop)),
+      _card(StopSheetContent.header('1150'), StopSheetContent.body('1150')),
       _mapOverrides(arrivals: _arrivals),
     );
   }),
