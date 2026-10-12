@@ -113,7 +113,6 @@ Future<void> _pumpHome(
       tester,
       net: TestNetwork(),
       now: _now,
-     
       initial: '/',
       alerts: alerts,
       nearby: nearby,

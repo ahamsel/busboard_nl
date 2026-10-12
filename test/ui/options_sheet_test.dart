@@ -39,8 +39,11 @@ ProviderContainer _container(WidgetTester tester) =>
 /// The same bus trip: a live refresh plans it again as a new [Journey].
 Matcher _sameTripAs(Journey j) => isA<Journey>()
     .having((x) => x.departs, 'departs', j.departs)
-    .having((x) => x.legs.whereType<RideLeg>().map((r) => r.tripId).toList(), 'rides',
-        j.legs.whereType<RideLeg>().map((r) => r.tripId).toList());
+    .having(
+      (x) => x.legs.whereType<RideLeg>().map((r) => r.tripId).toList(),
+      'rides',
+      j.legs.whereType<RideLeg>().map((r) => r.tripId).toList(),
+    );
 
 /// The sheet's own scrolling list.
 Finder get _sheetList => find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(Scrollable)).first;
@@ -159,7 +162,11 @@ void main() {
 
   testWidgets('a destination no bus reaches says so', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
-    await _openOptions(tester, from: _a, to: StopPlace(stopId: 'H', name: 'Stop H'));
+    await _openOptions(
+      tester,
+      from: _a,
+      to: StopPlace(stopId: 'H', name: 'Stop H'),
+    );
     expect(find.text('No buses get you there at that time'), findsOneWidget);
     expect(find.byType(JourneyCard), findsNothing);
   });
@@ -192,7 +199,11 @@ void main() {
 
   testWidgets('a start far from every stop asks for a closer point', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
-    await _openOptions(tester, from: PinPlace(lat: 47.0, lon: -52.0, label: 'Pin'), to: _c);
+    await _openOptions(
+      tester,
+      from: PinPlace(lat: 47.0, lon: -52.0, label: 'Pin'),
+      to: _c,
+    );
     expect(find.text('Too far from a bus stop'), findsOneWidget);
     expect(find.text('Pick a closer point for your start.'), findsOneWidget);
   });
@@ -470,6 +481,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.bySemanticsLabel('From: Stop A'), findsOneWidget);
     expect(find.bySemanticsLabel('Destination, Stop C. Change'), findsOneWidget);
+    expect(
+      find.semantics.byLabel('Destination, Stop C. Change'),
+      isSemantics(isHeader: true, isButton: true, label: 'Destination, Stop C. Change'),
+    );
     expect(tester.getSemantics(find.byType(JourneyCard).first).label, contains('Leave 8:10'));
     await tester.tap(find.text('Leave by'));
     await tester.pumpAndSettle();
@@ -518,23 +533,118 @@ void main() {
     expect(c.read(journeyOnMapProvider), isNull);
   });
 
-  testWidgets('a tap on empty map with options open only lowers the sheet (Ruling 13)', (tester) async {
+  testWidgets('a tap on empty map with options or a journey on top only lowers the sheet (Ruling 13)', (tester) async {
     final map = StubMap();
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, mapView: map.build);
     await _openOptions(tester, from: _a, to: _c);
     final c = _container(tester);
-    final before = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+    double top() => tester.getRect(find.byKey(BBSheet.cardKey)).top;
+
+    var drawn = c.read(journeyOnMapProvider);
+    expect(drawn, isNotNull);
+    var before = top();
     map.tap(47.0, -52.0); // far from every stop
     await tester.pumpAndSettle();
     expect(c.read(homeSheetProvider), isA<OptionsSheet>());
-    expect(c.read(journeyOnMapProvider), isNotNull);
-    expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, greaterThan(before), reason: 'back to peek');
+    expect(top(), greaterThan(before), reason: 'back to peek');
+    expect(c.read(journeyOnMapProvider), same(drawn), reason: 'the trip stays drawn');
 
-    c.read(homeSheetProvider.notifier).open(JourneySheet((c.read(planResultsProvider).value! as PlanFound).journeys.first));
+    final journey = (c.read(planResultsProvider).value! as PlanFound).journeys[1];
+    c.read(journeyOnMapProvider.notifier).show(journey);
+    c.read(homeSheetProvider.notifier).open(JourneySheet(journey));
     await tester.pumpAndSettle();
+    await _pullUp(tester);
+    drawn = c.read(journeyOnMapProvider);
+    expect(drawn, same(journey));
+    before = top();
     map.tap(47.0, -52.0);
     await tester.pumpAndSettle();
     expect(c.read(homeSheetProvider), isA<JourneySheet>());
+    expect(top(), greaterThan(before), reason: 'back to peek');
+    expect(c.read(journeyOnMapProvider), same(drawn), reason: 'the trip stays drawn');
+  });
+
+  testWidgets('a new destination never draws a trip to the old one, and draws its own once planned', (tester) async {
+    await _openAtoC(tester);
+    final c = _container(tester);
+    expect(c.read(journeyOnMapProvider)!.legs.whereType<RideLeg>().last.alightStopId, 'C');
+    void neverToC() {
+      final drawn = c.read(journeyOnMapProvider);
+      if (drawn == null) return;
+      expect(drawn.legs.whereType<RideLeg>().last.alightStopId, 'E', reason: 'a trip to the old destination is drawn');
+      expect(c.read(journeyOnMapProvider.notifier).to, StopPlace(stopId: 'E', name: 'Stop E'));
+    }
+
+    // As a pick on the map or the search does.
+    c.read(planQueryProvider.notifier).setDestination(StopPlace(stopId: 'E', name: 'Stop E'));
+    neverToC();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+      neverToC();
+    }
+    await tester.pumpAndSettle();
+    neverToC();
+    expect(c.read(journeyOnMapProvider), isNotNull, reason: "the new destination's first trip");
+  });
+
+  testWidgets('a planning failure for a new destination clears the drawn trip', (tester) async {
+    final toC = Journey(
+      serviceDate: testDay,
+      legs: [
+        RideLeg(
+          routeId: '1',
+          tripId: '1-1',
+          boardStopId: 'A',
+          alightStopId: 'C',
+          departs: 8 * 3600 + 600,
+          arrives: 8 * 3600 + 1200,
+          stopCount: 2,
+        ),
+      ],
+    );
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: _now,
+      overrides: [
+        planResultsProvider.overrideWith((ref) async {
+          final to = ref.watch(planQueryProvider).to;
+          if (to == null) return null;
+          if (to == _c) return PlanFound([toC]);
+          throw StateError('broken index');
+        }),
+      ],
+    );
+    await _openOptions(tester, from: _a, to: _c);
+    final c = _container(tester);
+    expect(c.read(journeyOnMapProvider), same(toC));
+    c.read(planQueryProvider.notifier).setDestination(StopPlace(stopId: 'E', name: 'Stop E'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+      expect(c.read(journeyOnMapProvider), isNull);
+    }
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't plan that trip"), findsOneWidget);
+    expect(c.read(journeyOnMapProvider), isNull, reason: 'no old trip under the failure');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('back from a tapped journey to options that no longer find one clears it from the map', (tester) async {
+    await _openAtoC(tester);
+    final c = _container(tester);
+    await tester.tap(find.byType(JourneyCard).at(1));
+    await tester.pumpAndSettle();
+    final tapped = (c.read(homeSheetProvider) as JourneySheet).journey;
+    expect(c.read(journeyOnMapProvider), same(tapped));
+    // While the steps show, the form changes to a destination no bus reaches.
+    c.read(planQueryProvider.notifier).setDestination(StopPlace(stopId: 'H', name: 'Stop H'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Back').first);
+    await tester.pumpAndSettle();
+    expect(c.read(homeSheetProvider), isA<OptionsSheet>());
+    await _pullUp(tester);
+    expect(find.text('No buses get you there at that time'), findsOneWidget);
+    expect(c.read(journeyOnMapProvider), isNull);
   });
 
   testWidgets('★ Save trip saves the options\' ends', (tester) async {
