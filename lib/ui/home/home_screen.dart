@@ -760,7 +760,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final myStop = settings.selectedStopId == null ? null : ref.watch(stopInfoProvider(settings.selectedStopId!));
     final filter = ref.watch(mapRouteFilterProvider);
     final sheet = ref.watch(homeSheetProvider);
-    final selectedStop = sheet is StopSheet ? ref.watch(stopInfoProvider(sheet.stopId)) : null;
     final repo = gtfs.value!;
     // The follow's own stop when it was started for one (a planned trip's boarding stop), else the saved stop.
     final followStopId = ref.watch(followProvider)?.stopId ?? settings.selectedStopId;
@@ -966,13 +965,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 semanticLabel: 'Map sheet',
                 header: _measuredHeader(followShowing
                     ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
-                    : selectionHeader(sheet, selectedStop,
+                    : selectionHeader(sheet,
                         onChooseStop: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)))),
                 slivers: [
                   SliverToBoxAdapter(
                     child: followShowing
                         ? FollowCardBody(snapshot: follow.snapshot)
-                        : selectionBody(sheet, selectedStop),
+                        : selectionBody(sheet),
                   ),
                 ],
               ),

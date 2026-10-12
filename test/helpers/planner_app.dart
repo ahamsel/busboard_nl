@@ -7,11 +7,11 @@ import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
+import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/routing/router.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
-import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
@@ -102,7 +102,7 @@ class StubMap {
   void longPress(double lat, double lon) => config!.onLongPress!(LatLng(lat, lon));
 }
 
-/// The screens that Tasks 6 to 8 of the map-first home replace (Plan, Journey detail, the Board), each on its
+/// The screens that Tasks 7 and 8 of the map-first home replace (Plan, Journey detail), each on its
 /// old path, so their tests keep running while the app's own router sends those paths home. A test of the
 /// home itself uses the app's router (`appRoutes: true`).
 GoRouter plannerTestRouter(String initial) => GoRouter(
@@ -110,7 +110,6 @@ GoRouter plannerTestRouter(String initial) => GoRouter(
   routes: [
     GoRoute(path: '/', builder: (context, state) => HomeScreen(pick: state.uri.queryParameters['pick'])),
     GoRoute(path: '/map', builder: (context, state) => HomeScreen(pick: state.uri.queryParameters['pick'])),
-    GoRoute(path: '/board/:stopId', builder: (context, state) => ArrivalBoardScreen(stopId: state.pathParameters['stopId']!)),
     GoRoute(path: '/alerts', builder: (context, state) => const AlertsScreen()),
     GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
     GoRoute(
@@ -133,6 +132,7 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 
 /// Pumps the planner screens ([plannerTestRouter]), or with [appRoutes] the app's real route tree, on [net] at
 /// [now] ([clock], when given, tells the time instead), starting at [initial].
+/// [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -151,6 +151,7 @@ Future<void> pumpPlannerApp(
   Future<GtfsRepository>? repoFuture,
   ThemeData? theme,
   List<NearbyStop> nearby = const [],
+  AlertRunner? alertRunner,
 }) async {
   SharedPreferences.setMockInitialValues({});
   useInMemoryAlertStore();
@@ -180,7 +181,7 @@ Future<void> pumpPlannerApp(
         mapViewBuilderProvider.overrideWithValue(mapView ?? StubMap().build),
         // Home is the only screen now: no live-bus poll timer outlives the test.
         busTrackingStreamProvider.overrideWith((ref) => Stream.value(const <String, BusTrackingState>{})),
-        ...fakeAlertOverrides,
+        ...fakeAlertOverridesWith(alertRunner),
         ...overrides,
       ],
       child: MaterialApp.router(
