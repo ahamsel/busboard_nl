@@ -36,6 +36,7 @@ import '../map/map_surface.dart';
 import '../map/map_view.dart';
 import '../map/route_filter_card.dart';
 import '../trip_planner/map_plan_sheet.dart';
+import 'map_buttons.dart';
 import 'sheet_content.dart';
 
 /// What the screen holds while a bus is being followed (spec §3.5): the
@@ -768,7 +769,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         : ref.watch(stopArrivalsProvider(followStopId)).value ?? const <ArrivalRow>[];
     final buildMap = ref.watch(mapViewBuilderProvider);
     final media = MediaQuery.of(context);
-    final navInset = BBNavBar.reservedHeight(context);
+    final navInset = media.padding.bottom;
     final Object sheetKey = followShowing ? 'follow:${follow.vehicleId}' : sheet;
     _scheduleControlsMeasure();
     // While following, the actions move without the header changing size.
@@ -826,7 +827,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           ? math.max(0.0, creditBottom - media.padding.bottom)
           : creditBottom;
 
-      return ColoredBox(
+      return PopScope(
+        canPop: sheet is HomeSheetHome,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) ref.read(homeSheetProvider.notifier).back();
+        },
+        child: ColoredBox(
         color: bb.colors.bg,
         child: Stack(
           children: [
@@ -866,19 +872,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        flex: 3,
-                        child: follow != null
-                            ? _followChip(follow)
-                            : BBChip(
-                                label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
-                                icon: myStop == null ? BBIcons.search : BBIcons.star,
-                                chevron: true,
-                                semanticLabel:
-                                    myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
-                                onTap: () => context.go('/'),
-                              ),
-                      ),
+                      follow != null ? Flexible(flex: 3, child: _followChip(follow)) : const Spacer(flex: 3),
                       const SizedBox(width: BBSpace.s),
                       Flexible(
                         flex: 2,
@@ -910,9 +904,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         ),
                       ),
                       const SizedBox(width: BBSpace.s),
-                      BBControlPill(items: [
-                        BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
-                      ]),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const MapButtons(),
+                          const SizedBox(height: BBSpace.s),
+                          BBControlPill(items: [
+                            BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
+                          ]),
+                        ],
+                      ),
                     ],
                   ),
                 ],
@@ -980,6 +981,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 child: Center(child: _backChip(follow)),
               ),
           ],
+        ),
         ),
       );
     });

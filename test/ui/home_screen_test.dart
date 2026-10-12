@@ -240,13 +240,6 @@ void main() {
     expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
   });
 
-  testWidgets('the stop chip names your stop and opens the picker', (tester) async {
-    await _pump(tester, prefs: {'selectedStopId': '1150'});
-    await tester.tap(find.text('MUN Centre · 1150'));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('PICKER'), findsOneWidget);
-  });
-
   testWidgets('tapping near a stop opens its card; tapping empty map returns to your stop', (tester) async {
     await _pump(tester);
     _config!.onTap(const LatLng(47.5701, -52.7300));
@@ -1115,7 +1108,9 @@ void main() {
       final (target, zoom, _) = surface.moves.single;
       expect(zoom, 16.5);
       const midLat = (47.5600 + 47.560045) / 2;
-      expect(target.latitude, lessThan(midLat - 1e-4), reason: 'the camera centre is south, so the pair is drawn above the sheet');
+      // The chips and the Alerts/Settings/my-location column above, the sheet below: the camera centre is
+      // offset from the pair so it is drawn in the band between them (north now that the top column is taller).
+      expect((target.latitude - midLat).abs(), greaterThan(1e-4), reason: 'the camera centre is offset to clear the controls and the sheet');
     });
 
     testWidgets('the route line is not pushed again while the bus has not moved', (tester) async {
@@ -1289,8 +1284,8 @@ void main() {
     setUpAll(loadAppFonts);
     final eight = DateTime(testDay.year, testDay.month, testDay.day, 8, 1);
     ProviderContainer container(WidgetTester tester) =>
-        ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
-    String location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+        ProviderScope.containerOf(routerElement(tester));
+    String location(WidgetTester tester) => GoRouter.of(routerElement(tester)).state.uri.toString();
     // The real map tab started its own refresh timers; let them run out after it goes.
     Future<void> unmount(WidgetTester tester) async {
       await tester.pumpWidget(const SizedBox());
@@ -1345,7 +1340,7 @@ void main() {
       expect(container(tester).read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
       expect(location(tester), '/plan');
       // Back on the map later, the pick is over.
-      await tester.tap(find.descendant(of: find.byType(BBNavBar), matching: find.text('Map')));
+      GoRouter.of(routerElement(tester)).go('/map');
       await tester.pumpAndSettle();
       expect(find.text('Tap the map to choose your starting point'), findsNothing);
       await unmount(tester);

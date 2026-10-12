@@ -113,7 +113,7 @@ class _BusCardBodyState extends ConsumerState<BusCardBody> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (alerts.isNotEmpty) ...[
-            ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => context.go('/alerts')),
+            ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => context.push('/alerts')),
             const SizedBox(height: BBSpace.m),
           ],
           BBButton(
