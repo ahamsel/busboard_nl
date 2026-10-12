@@ -63,6 +63,17 @@ class _HeldGeolocator extends FixedGeolocator {
   }
 }
 
+/// Recent places whose saving is held until the test completes [saved].
+class _HeldRecentStore extends RecentPlaceStore {
+  final saved = Completer<void>();
+
+  @override
+  Future<void> push(Place p) async {
+    await saved.future;
+    return super.push(p);
+  }
+}
+
 void main() {
   setUpAll(loadAppFonts);
 
@@ -341,6 +352,37 @@ void main() {
     expect(c.read(planQueryProvider).from, isA<PinPlace>().having((p) => p.label, 'label', myLocationLabel));
     expect(c.read(planQueryProvider).to, StopPlace(stopId: '1150', name: 'MUN Centre'));
     expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
+  testWidgets('leaving while the recent place is saved still sets the destination, the start and the options', (
+    tester,
+  ) async {
+    late final _HeldRecentStore store;
+    await pumpPlannerApp(
+      tester,
+      net: _network(),
+      now: _now,
+      initial: '/',
+      geolocator: FixedGeolocator(47.57, -52.73),
+      overrides: [recentPlaceStoreProvider.overrideWith((ref) => store = _HeldRecentStore())],
+    );
+    unawaited(GoRouter.of(routerElement(tester)).push('/search'));
+    await tester.pumpAndSettle();
+    await _findMun(tester);
+    await tester.tap(find.text('Go here'));
+    await tester.pump();
+
+    GoRouter.of(routerElement(tester)).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen), findsNothing);
+    store.saved.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    final c = _c(tester);
+    expect(c.read(homeSheetProvider), isA<OptionsSheet>());
+    expect(c.read(planQueryProvider).to, StopPlace(stopId: '1150', name: 'MUN Centre'));
+    expect(c.read(planQueryProvider).from, isA<PinPlace>().having((p) => p.label, 'label', myLocationLabel));
   });
 
   testWidgets('while the fix is awaited the screen says so and a second tap does nothing', (tester) async {
