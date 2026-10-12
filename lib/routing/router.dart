@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../ui/shell/app_shell.dart';
 import '../ui/stop_picker/stop_picker_screen.dart';
 import '../ui/board/arrival_board_screen.dart';
-import '../ui/map/map_screen.dart';
+import '../ui/home/home_screen.dart';
 import '../ui/alerts/alerts_screen.dart';
 import '../ui/settings/settings_screen.dart';
 import '../ui/trip_planner/journey_detail_screen.dart';
@@ -46,7 +46,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
           ),
           // Branch 1: Map
           StatefulShellBranch(
-            routes: [GoRoute(path: '/map', builder: (context, state) => MapScreen(pick: state.uri.queryParameters['pick']))],
+            routes: [GoRoute(path: '/map', builder: (context, state) => HomeScreen(pick: state.uri.queryParameters['pick']))],
           ),
           // Branch 2: Service alerts
           StatefulShellBranch(

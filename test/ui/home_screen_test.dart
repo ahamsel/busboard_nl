@@ -19,7 +19,7 @@ import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
-import 'package:busboard_nl/ui/map/map_screen.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
@@ -186,7 +186,7 @@ Future<void> _pump(
     GoRoute(path: '/', builder: (_, _) => const Text('PICKER')),
     GoRoute(path: '/map', builder: (_, _) => ValueListenableBuilder<bool>(
         valueListenable: _tickerMode,
-        builder: (_, enabled, _) => TickerMode(enabled: enabled, child: const MapScreen()),
+        builder: (_, enabled, _) => TickerMode(enabled: enabled, child: const HomeScreen()),
       ),
     ),
     GoRoute(path: '/board/:id', builder: (_, s) => Text('BOARD ${s.pathParameters['id']}')),
@@ -454,7 +454,7 @@ void main() {
   testWidgets('choosing a new stop recentres the map on it', (tester) async {
     await _pump(tester);
     expect(_surface.moves, isEmpty);
-    final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
+    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
     await container.read(settingsProvider.notifier).setSelectedStop('1150');
     await tester.pump(const Duration(milliseconds: 100));
     expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, true)]);
@@ -556,7 +556,7 @@ void main() {
       expect(surface.busSets.length, greaterThan(1));
       expect(surface.busSets.last.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
 
-      ProviderScope.containerOf(tester.element(find.byType(MapScreen))).read(mapRouteFilterProvider.notifier).toggle(99);
+      ProviderScope.containerOf(tester.element(find.byType(HomeScreen))).read(mapRouteFilterProvider.notifier).toggle(99);
       await _frames(tester, 3);
       expect(surface.busSets.last, isEmpty);
     });
@@ -599,7 +599,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.bySemanticsLabel(RegExp('Route 10')).last);
     await tester.pump(const Duration(milliseconds: 100));
-    final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
+    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
     expect(container.read(mapRouteFilterProvider), {10});
     semantics.dispose();
   });
@@ -650,7 +650,7 @@ void main() {
     late StreamController<Map<String, BusTrackingState>> feed;
     late _RecordingSurface surface;
 
-    ProviderContainer containerOf(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
+    ProviderContainer containerOf(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
 
     Future<void> pumpFollow(
       WidgetTester tester, {
@@ -797,7 +797,7 @@ void main() {
       expect(padding.left, 64);
       expect(padding.right, 64);
       expect(padding.top, greaterThan(16 + 44), reason: 'below the chips');
-      final screenHeight = tester.getBottomLeft(find.byType(MapScreen)).dy;
+      final screenHeight = tester.getBottomLeft(find.byType(HomeScreen)).dy;
       final creditTop = tester.getTopLeft(find.textContaining('OpenStreetMap')).dy;
       expect(padding.bottom, greaterThanOrEqualTo(screenHeight - creditTop + 16), reason: 'above the credit and the peeking sheet');
     });
@@ -1442,7 +1442,7 @@ void main() {
       final surface = _RecordingSurface();
       _surface = surface;
       await _pump(tester, repo: network);
-      final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
+      final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
       container.read(planQueryProvider.notifier).setFrom(PinPlace(lat: 47.5590, lon: -52.7500, label: 'Dropped pin'));
       container.read(journeyOnMapProvider.notifier).show(journey());
       await tester.runAsync(() => _styleLoaded(surface));
