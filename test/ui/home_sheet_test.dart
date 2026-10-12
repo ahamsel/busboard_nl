@@ -30,6 +30,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_alerts.dart';
@@ -455,6 +456,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
       expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.peekFraction * area, 1));
+    });
+
+    testWidgets('collapsed to peek, the same stop opened again (a second notification tap) comes back to half', (
+      tester,
+    ) async {
+      await _pumpHome(tester, arrivals: [_arrival(4)]);
+      _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
+      await tester.pumpAndSettle();
+      final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
+      final area = 844 - 2 * BBSpace.s;
+      final half = tester.getRect(find.byKey(BBSheet.cardKey)).height;
+      await tester.timedDrag(find.text('STOP C'), Offset(0, half - (sheet.peekFraction + 0.02) * area),
+          const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.peekFraction * area, 1));
+
+      // A notification for the stop opens its Board link.
+      GoRouter.of(routerElement(tester)).go('/board/C');
+      await tester.pumpAndSettle();
+      expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+      expect(_c(tester).read(homeSheetProvider.notifier).stack, hasLength(2), reason: 'still one card over home');
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(half, 1));
     });
 
     testWidgets('the home sheet itself never swipes away', (tester) async {
