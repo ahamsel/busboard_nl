@@ -71,7 +71,6 @@ void main() {
       tester,
       net: TestNetwork(),
       now: now,
-     
       initial: '/',
       alerts: [alert],
     );
@@ -104,7 +103,6 @@ void main() {
       tester,
       net: net,
       now: now,
-     
       initial: '/board/C',
       repoFuture: schedule.future,
       settle: false,

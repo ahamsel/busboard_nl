@@ -58,14 +58,14 @@ Place placeForSaving(Place p, GtfsRepository? repo) {
   final nearest = repo == null
       ? null
       : NearestStopService()
-          .findNearestStops(
-            latitude: p.lat,
-            longitude: p.lon,
-            allStops: repo.stopsById.values,
-            maxDistance: double.infinity,
-            maxResults: 1,
-          )
-          .firstOrNull;
+            .findNearestStops(
+              latitude: p.lat,
+              longitude: p.lon,
+              allStops: repo.stopsById.values,
+              maxDistance: double.infinity,
+              maxResults: 1,
+            )
+            .firstOrNull;
   return PinPlace(lat: p.lat, lon: p.lon, label: nearest == null ? 'Dropped pin' : 'Near ${nearest.stop.stopName}');
 }
 
@@ -85,12 +85,14 @@ Future<void> saveTrip(BuildContext context, WidgetRef ref, Place draftFrom, Plac
       BBToast.show(context, 'You can save up to $maxSavedTrips trips');
       return;
     }
-    final added = await store.add(SavedTrip(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          name: '${from.label} → ${to.label}',
-          from: from,
-          to: to,
-        ));
+    final added = await store.add(
+      SavedTrip(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: '${from.label} → ${to.label}',
+        from: from,
+        to: to,
+      ),
+    );
     if (context.mounted) BBToast.show(context, added ? 'Saved' : 'Already saved');
   } catch (_) {
     if (context.mounted) BBToast.show(context, "Couldn't save the trip");
@@ -161,17 +163,20 @@ class _OptionsHeader extends ConsumerWidget {
             children: [
               BBIconButton(icon: BBIcons.back, semanticLabel: 'Back', onPressed: () => leaveOptions(ref)),
               Expanded(
-                child: BBPressable(
-                  key: OptionsSheetContent.toRowKey,
-                  semanticLabel: 'Destination, ${to == null ? 'not chosen' : to.label}. Change',
-                  onTap: () => context.push('/search'),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 44),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        to == null ? 'Choose a destination' : 'To ${to.label}',
-                        style: to == null ? bb.text.headline.copyWith(color: bb.colors.muted) : bb.text.headline,
+                child: Semantics(
+                  header: true,
+                  child: BBPressable(
+                    key: OptionsSheetContent.toRowKey,
+                    semanticLabel: 'Destination, ${to == null ? 'not chosen' : to.label}. Change',
+                    onTap: () => context.push('/search'),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 44),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          to == null ? 'Choose a destination' : 'To ${to.label}',
+                          style: to == null ? bb.text.headline.copyWith(color: bb.colors.muted) : bb.text.headline,
+                        ),
                       ),
                     ),
                   ),
@@ -231,33 +236,41 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
     super.initState();
     // Back from a journey's steps, or results already in: draw the first journey again.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _drawFirst(ref.read(planResultsProvider).value);
+      if (mounted) _onResults(ref.read(planResultsProvider));
     });
   }
 
   static (Place?, Place?, String) _signature(Journey j, PlanDraft draft) => (
-        draft.from,
-        draft.to,
-        [
-          j.serviceDate.toIso8601String(),
-          for (final l in j.legs)
-            switch (l) {
-              RideLeg() => 'ride ${l.tripId} ${l.boardStopId}-${l.alightStopId}',
-              WalkLeg() => 'walk ${l.fromStopId}-${l.toStopId}',
-            },
-        ].join('|'),
-      );
+    draft.from,
+    draft.to,
+    [
+      j.serviceDate.toIso8601String(),
+      for (final l in j.legs)
+        switch (l) {
+          RideLeg() => 'ride ${l.tripId} ${l.boardStopId}-${l.alightStopId}',
+          WalkLeg() => 'walk ${l.fromStopId}-${l.toStopId}',
+        },
+    ].join('|'),
+  );
+
+  /// Settled results only: while they load (a new form, or a live refresh) they still carry the old outcome, which
+  /// must not be drawn for the new form; a failure, which also carries it, counts as no journey.
+  void _onResults(AsyncValue<PlanOutcome?> results) {
+    if (results.isLoading) return;
+    _drawFirst(results.hasError ? null : results.value);
+  }
+
+  /// Whatever the map shows stops standing for this form: the trip this sheet drew, or one tapped before going back.
+  void _clearDrawn() {
+    _drawn = null;
+    if (ref.read(journeyOnMapProvider) != null) ref.read(journeyOnMapProvider.notifier).clear();
+  }
 
   void _drawFirst(PlanOutcome? outcome) {
     if (ref.read(homeSheetProvider) is! OptionsSheet) return;
-    final onMap = ref.read(journeyOnMapProvider.notifier);
     final first = outcome is PlanFound ? outcome.journeys.firstOrNull : null;
-    if (first == null) {
-      // The trip it drew no longer stands for this form.
-      if (_drawn != null) onMap.clear();
-      _drawn = null;
-      return;
-    }
+    if (first == null) return _clearDrawn();
+    final onMap = ref.read(journeyOnMapProvider.notifier);
     final signature = _signature(first, ref.read(planQueryProvider));
     if (signature == _drawn) return;
     _drawn = signature;
@@ -289,8 +302,12 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
     // Watched so the feed is loaded (and kept) for the date range.
     final repo = ref.watch(gtfsRepositoryProvider).value;
     final results = ref.watch(planResultsProvider);
-    ref.listen(planQueryProvider, (_, _) => _formChanged = true);
-    ref.listen<AsyncValue<PlanOutcome?>>(planResultsProvider, (_, next) => _drawFirst(next.value));
+    ref.listen(planQueryProvider, (_, _) {
+      _formChanged = true;
+      // The drawn trip was planned for the old form; the new one's is drawn when its results arrive.
+      if (ref.read(homeSheetProvider) is OptionsSheet) _clearDrawn();
+    });
+    ref.listen<AsyncValue<PlanOutcome?>>(planResultsProvider, (_, next) => _onResults(next));
     if (!results.isLoading) _formChanged = false;
     final now = ref.read(plannerClockProvider)();
     final when = draft.usesDefaultTime ? ref.watch(planDefaultTimeProvider) : draft.time ?? now;
@@ -348,11 +365,7 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
     final replanning = results.isLoading && _formChanged;
     if (results.hasError && !replanning) {
       return [
-        const BBEmptyState(
-          icon: BBIcons.warning,
-          title: "Couldn't plan that trip",
-          message: 'Try again in a moment.',
-        ),
+        const BBEmptyState(icon: BBIcons.warning, title: "Couldn't plan that trip", message: 'Try again in a moment.'),
       ];
     }
     if (replanning || (results.isLoading && !results.hasValue)) {
