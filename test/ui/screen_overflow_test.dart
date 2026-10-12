@@ -21,6 +21,7 @@ import 'package:busboard_nl/state/saved_place_providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
@@ -369,27 +370,23 @@ void main() {
     }
   }
 
-  // The home at its peek: the real screen, so the peek is the sheet's own. Where to? is the first thing in it and
-  // must be on screen and tappable however tall the rest of the header grows.
-  for (final dark in [false, true]) {
-    testWidgets('home at peek, 360x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
-      tester.view.physicalSize = const Size(360 * 3, 640 * 3);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
-
-      await pumpPlannerApp(
+  // The home at its peek: the real screen, so the peek is the sheet's own. Where to?, the first saved place and the
+  // top of Your stop must be visible (on screen, inside the peeking sheet) however large the text, with two saved
+  // places and an alert for you (spec §3.1).
+  Future<void> pumpHomeAtPeek(WidgetTester tester, {required Size size, required double textScale, required bool dark}) =>
+      pumpPlannerApp(
         tester,
         net: TestNetwork(),
         now: DateTime(2026, 10, 12, 13, 0),
         appRoutes: true,
         initial: '/',
-        textScale: 2.0,
+        textScale: textScale,
         theme: dark ? BBTheme.dark() : BBTheme.light(),
         alerts: [
           ServiceAlert(
             sourceIds: const {'a'},
-            header: 'Water Street detour',
-            description: 'Routes 1 and 2 use Harbour Drive between Duckworth Street and Prescott Street.',
+            header: 'Water Street detour on routes 1 and 2 between Duckworth Street and Prescott Street',
+            description: 'Routes 1 and 2 use Harbour Drive.',
             cause: ServiceAlertCause.construction,
             effect: ServiceAlertEffect.detour,
             severity: ServiceAlertSeverity.warning,
@@ -406,22 +403,59 @@ void main() {
           stopArrivalsProvider.overrideWith((ref, id) async => _arrivals),
         ],
       );
+
+  /// What the rider can see at peek: the sheet card, clipped to the screen.
+  void expectVisibleAtPeek(WidgetTester tester, Finder f, String what, Size size) {
+    expect(f, findsOneWidget, reason: what);
+    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    final r = tester.getRect(f);
+    expect(r.top, greaterThanOrEqualTo(card.top), reason: '$what starts inside the sheet');
+    expect(r.top, lessThan(size.height), reason: '$what starts on screen');
+    expect(r.top, lessThan(card.bottom), reason: '$what starts inside the peeking sheet');
+  }
+
+  for (final dark in [false, true]) {
+    testWidgets('home at peek, 360x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
+      final handle = tester.ensureSemantics();
+      const size = Size(360, 640);
+      tester.view.physicalSize = size * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await pumpHomeAtPeek(tester, size: size, textScale: 2.0, dark: dark);
       expect(tester.takeException(), isNull, reason: 'initial layout');
 
       final whereTo = find.byKey(HomeSheetContent.whereToKey);
-      expect(whereTo, findsOneWidget);
+      expectVisibleAtPeek(tester, whereTo, 'Where to?', size);
       expect(whereTo.hitTestable(), findsOneWidget, reason: 'Where to? can be tapped at peek');
-      final card = tester.getRect(find.byKey(BBSheet.cardKey));
-      final rect = tester.getRect(whereTo);
-      expect(rect.top, greaterThanOrEqualTo(card.top), reason: 'inside the sheet');
-      expect(rect.bottom, lessThanOrEqualTo(card.bottom), reason: 'inside the peeking sheet');
-      expect(rect.bottom, lessThanOrEqualTo(640));
+      expectVisibleAtPeek(tester, find.text('Home'), 'the first saved place', size);
+      expectVisibleAtPeek(tester, find.bySemanticsLabel(RegExp('^Your stop')), 'the top of Your stop', size);
 
       // Pulled up to full, the whole sheet scrolls without overflowing.
       await tester.drag(whereTo, const Offset(0, -700));
       await tester.pumpAndSettle();
       await _scrollThrough(tester);
       expect(tester.takeException(), isNull);
+      handle.dispose();
     });
   }
+
+  testWidgets('home at peek, 390x844, 1.0x text: Your stop and the next bus are whole above the bottom', (tester) async {
+    final handle = tester.ensureSemantics();
+    const size = Size(390, 844);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpHomeAtPeek(tester, size: size, textScale: 1.0, dark: false);
+    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    final yourStop = tester.getRect(find.bySemanticsLabel(RegExp('^Your stop')));
+    final firstBus = tester.getRect(find.byType(ArrivalRowTile).first);
+    for (final (name, r) in [('Your stop', yourStop), ('the first bus', firstBus)]) {
+      expect(r.top, greaterThanOrEqualTo(card.top), reason: name);
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the peeking sheet');
+      expect(r.bottom, lessThanOrEqualTo(size.height), reason: '$name is on screen');
+    }
+    handle.dispose();
+  });
 }
