@@ -168,7 +168,8 @@ class _OptionsHeader extends ConsumerWidget {
                   child: BBPressable(
                     key: OptionsSheetContent.toRowKey,
                     semanticLabel: 'Destination, ${to == null ? 'not chosen' : to.label}. Change',
-                    onTap: () => context.push('/search'),
+                    // Only the destination changes: the start, mode and time stay (Ruling 14).
+                    onTap: () => context.push('/search?keep=1'),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(minHeight: 44),
                       child: Align(

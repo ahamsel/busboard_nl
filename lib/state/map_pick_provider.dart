@@ -4,9 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum MapPick { from, to }
 
 class MapPickNotifier extends Notifier<MapPick?> {
+  /// For a destination pick: whether it keeps the trip's start, mode and time (it was started from the trip
+  /// options' own search) rather than starting a fresh trip (from Where to?). Ruling 14.
+  bool keepStart = false;
+
   @override
   MapPick? build() => null;
-  void start(MapPick end) => state = end;
+  void start(MapPick end, {bool keepStart = false}) {
+    this.keepStart = keepStart;
+    state = end;
+  }
+
   void clear() => state = null;
 }
 

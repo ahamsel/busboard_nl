@@ -13,6 +13,7 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/ui/arrival_alerts/alert_strip.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
@@ -486,6 +487,89 @@ void main() {
     final moved = _c(tester).read(arrivalAlertProvider).value!;
     expect(moved.expectedAt, set.expectedAt.add(const Duration(minutes: 3)));
     expect(runner.updated.single.expectedAt, moved.expectedAt);
+    await _unmount(tester);
+  });
+
+  testWidgets('back on the home sheet, an armed alert keeps being re-timed and shows its strip (F4)', (tester) async {
+    final runner = _PhoneRunner();
+    final now = DateTime.now();
+    final nowSeconds = GtfsTime.fromDateTime(now).totalSeconds;
+    var delayMinutes = 0;
+    var loads = 0;
+    ArrivalRow bus() => ArrivalRow(
+          routeShortName: '20',
+          headsign: 'Live Terminal',
+          scheduledTime: GtfsTime.fromSeconds(nowSeconds + 1200),
+          predictedTime: GtfsTime.fromSeconds(nowSeconds + 1200 + delayMinutes * 60),
+          minutesAway: 20 + delayMinutes,
+          isLive: true,
+          tripId: 'trip-20',
+          vehicleNumber: '0859',
+        );
+    await _pump(tester, repo: _repo(), alertRunner: runner, overrides: [
+      stopArrivalsProvider.overrideWith((ref, stopId) async {
+        loads++;
+        final timer = Timer(const Duration(seconds: 5), ref.invalidateSelf);
+        ref.onDispose(timer.cancel);
+        return [bus()];
+      }),
+    ]);
+    final alerts = _c(tester).read(arrivalAlertProvider.notifier);
+    await alerts.set(bus(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+    await tester.pump();
+    final set = _c(tester).read(arrivalAlertProvider).value!;
+
+    // The rider closes the stop's sheet: no sheet for 1150 is on screen any more.
+    _c(tester).read(homeSheetProvider.notifier).home();
+    await tester.pumpAndSettle();
+    expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
+    expect(find.byType(AlertStrip), findsOneWidget, reason: 'the home sheet shows the armed alert');
+    expect(find.textContaining('Alert set · Route 20'), findsOneWidget);
+
+    final before = loads;
+    delayMinutes = 3;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(loads, greaterThan(before), reason: 'the stop is still polled while the alert is armed');
+    expect(runner.updated, hasLength(1));
+    final moved = _c(tester).read(arrivalAlertProvider).value!;
+    expect(moved.expectedAt, set.expectedAt.add(const Duration(minutes: 3)));
+
+    // Cancel from the home sheet's strip.
+    await tester.tap(find.descendant(of: find.byType(AlertStrip), matching: find.text('Cancel')));
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(arrivalAlertProvider).value, isNull);
+    expect(find.byType(AlertStrip), findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('with its own sheet open, a poll re-times the alert once, not twice (F4)', (tester) async {
+    final runner = _PhoneRunner();
+    final nowSeconds = GtfsTime.fromDateTime(DateTime.now()).totalSeconds;
+    var delayMinutes = 0;
+    ArrivalRow bus() => ArrivalRow(
+          routeShortName: '20',
+          headsign: 'Live Terminal',
+          scheduledTime: GtfsTime.fromSeconds(nowSeconds + 1200),
+          predictedTime: GtfsTime.fromSeconds(nowSeconds + 1200 + delayMinutes * 60),
+          minutesAway: 20 + delayMinutes,
+          isLive: true,
+          tripId: 'trip-20',
+          vehicleNumber: '0859',
+        );
+    await _pump(tester, repo: _repo(), alertRunner: runner, overrides: [
+      stopArrivalsProvider.overrideWith((ref, stopId) async {
+        final timer = Timer(const Duration(seconds: 5), ref.invalidateSelf);
+        ref.onDispose(timer.cancel);
+        return [bus()];
+      }),
+    ]);
+    await _c(tester).read(arrivalAlertProvider.notifier).set(bus(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+    await tester.pump();
+    delayMinutes = 3;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(runner.updated, hasLength(1));
     await _unmount(tester);
   });
 }

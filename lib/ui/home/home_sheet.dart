@@ -1,15 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/realtime/service_alert_models.dart';
 import '../../data/trip_planner/saved_place_store.dart';
+import '../../domain/location/locate_me.dart';
 import '../../state/alerts_for_you_provider.dart';
+import '../../state/arrival_alert_providers.dart';
 import '../../state/home_sheet_provider.dart';
 import '../../state/providers.dart';
 import '../../state/saved_place_providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../alerts/service_alert_card.dart';
+import '../arrival_alerts/alert_strip.dart';
 import '../kit/kit.dart';
 import '../map/stop_card.dart';
 import '../stop_picker/near_me_list.dart';
@@ -21,7 +26,8 @@ import 'home_tip.dart';
 abstract final class HomeSheetContent {
   static const whereToKey = ValueKey('where-to');
 
-  /// [onChooseStop] pulls the sheet up to the nearby stops (home_screen.dart passes its sheet's full detent).
+  /// [onChooseStop] pulls the sheet up to the nearby stops (home_screen.dart passes its sheet's full detent). With no
+  /// nearby stops to show (no location, or none near) "Choose your stop" opens a stop search instead (spec §4.4).
   static Widget header({VoidCallback? onChooseStop}) => _Header(onChooseStop: onChooseStop);
   static Widget body() => const _Body();
 }
@@ -46,6 +52,7 @@ class _Header extends ConsumerWidget {
     final alerts = ref.watch(alertsForYouProvider);
     final stopId = ref.watch(settingsProvider.select((s) => s.selectedStopId));
     final stop = stopId == null ? null : ref.watch(stopInfoProvider(stopId));
+    final hasAlert = ref.watch(arrivalAlertProvider.select((a) => a.value != null));
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.s),
       child: Column(
@@ -89,8 +96,12 @@ class _Header extends ConsumerWidget {
                       icon: savedPlaceIconData(p.icon),
                       semanticLabel: 'Go to ${p.name}',
                       onTap: () {
-                        ref.read(planQueryProvider.notifier).setDestination(p.place);
+                        // A new trip to the place, from the phone's position, leaving now (Ruling 14).
+                        final q = ref.read(planQueryProvider.notifier)..startFresh(p.place);
                         ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
+                        unawaited(locateMe().then((here) {
+                          if (here != null) q.fillStart(here);
+                        }));
                       },
                     ),
                   ),
@@ -104,6 +115,8 @@ class _Header extends ConsumerWidget {
             ],
           ),
           for (final a in alerts.take(2)) _AlertRow(alert: a),
+          // An armed arrival alert stays in sight, and can be cancelled, once its stop's sheet is closed.
+          if (hasAlert) ...[const SizedBox(height: BBSpace.s), const AlertStrip()],
           const SizedBox(height: BBSpace.m),
           if (stop == null)
             BBButton(
@@ -111,7 +124,17 @@ class _Header extends ConsumerWidget {
               icon: BBIcons.nearMe,
               kind: BBButtonKind.quiet,
               expand: true,
-              onPressed: onChooseStop,
+              onPressed: () {
+                // Nearby stops to pick from: pull up to them. None (location off or refused, or nothing near): a
+                // search for the stop number on the pole (spec §4.4).
+                final nearby = ref.read(nearestStopsProvider);
+                final none = nearby.hasError || (nearby.hasValue && nearby.value!.isEmpty);
+                if (none) {
+                  context.push('/search?pickStop=1');
+                } else {
+                  onChooseStop?.call();
+                }
+              },
             )
           else ...[
             BBPressable(

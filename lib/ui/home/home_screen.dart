@@ -17,6 +17,7 @@ import '../../domain/map/delayed_track_renderer.dart';
 import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
+import '../../state/arrival_alert_providers.dart';
 import '../../state/follow_providers.dart';
 import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
@@ -106,6 +107,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The home sheet's own, taller cap.
   static const double _maxHomePeek = 0.55;
+
+  /// The home sheet's half: well above its tall peek.
+  static const double _homeHalf = 0.75;
   static const double _maxActionsPeek = 0.8;
   static const _panPauseDistance = 18.0;
   static const _routeInterval = Duration(seconds: 1);
@@ -178,6 +182,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   Object? _sheetKey;
   final _retiredSheets = <BBSheetController>[];
 
+  // A newly opened card goes to half once its sheet is built (it may not be yet: a link opened before the schedule
+  // loaded), and a stop's card brings the camera to its stop once there is a camera.
+  bool _halfPending = false;
+  String? _centrePending;
+
+  // An armed arrival alert's stop, polled while the alert is armed so the alert keeps being re-timed with the stop's
+  // sheet closed (F4).
+  ProviderSubscription<AsyncValue<List<ArrivalRow>>>? _alertRowsSub;
+
+  /// The card [_onSheetOpened] last handled: the first build's check and the listener may both see one card open.
+  HomeSheet _opened = const HomeSheetHome();
+
   void _log(String msg) {
     if (kDebugMode) debugPrint('[Map] $msg');
   }
@@ -191,10 +207,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     // A follow set before the map existed (the Board's live row): its card
     // replaces any selection.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && ref.read(followProvider) != null) {
+      if (!mounted) return;
+      if (ref.read(followProvider) != null) {
         ref.read(homeSheetProvider.notifier).home();
       }
+      // A card opened before this screen was built (a link's redirect): the listener in build never saw it open.
+      final sheet = ref.read(homeSheetProvider);
+      if (sheet is! HomeSheetHome) _onSheetOpened(sheet);
+      // Outside the build, so the first answer may re-time the alert at once.
+      ref.listenManual<String?>(
+        arrivalAlertProvider.select((a) => a.value?.stopId),
+        (_, stopId) => _feedAlertFrom(stopId),
+        fireImmediately: true,
+      );
     });
+  }
+
+  /// Polls [stopId]'s departures while an arrival alert is armed for it and hands every new list to the alert
+  /// (on iPhone a newer prediction re-times it). The stop's own sheet does the same when it is open: the second
+  /// hand-over of the same list changes nothing, as the alert is already at that time.
+  void _feedAlertFrom(String? stopId) {
+    _alertRowsSub?.close();
+    _alertRowsSub = null;
+    if (stopId == null) return;
+    _alertRowsSub = ref.listenManual<AsyncValue<List<ArrivalRow>>>(
+      stopArrivalsProvider(stopId),
+      (_, next) {
+        final rows = next.value;
+        if (rows != null) ref.read(arrivalAlertProvider.notifier).onBoardArrivals(stopId, rows);
+      },
+      fireImmediately: true,
+    );
   }
 
   @override
@@ -253,6 +296,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _surface = surface;
     _camera = camera;
     _fitJourneyIfDue();
+    final centre = _centrePending;
+    _centrePending = null;
+    if (centre != null && ref.read(homeSheetProvider) == StopSheet(centre)) _centreOnStop(centre);
   }
 
   Future<void> _onStyleLoaded() async {
@@ -316,7 +362,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _ticker!.start();
   }
 
-  /// A newly chosen stop brings the map to it.
+  /// A newly chosen stop, or a stop's card, brings the map to it.
   Future<void> _recentreOn(String stopId) async {
     final camera = _camera;
     final stop = ref.read(stopInfoProvider(stopId));
@@ -586,22 +632,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   // ─── Interaction ──────────────────────────────────────────
 
-  /// The tap sets the end being picked. A start keeps the sheet as it is; a destination opens its options, starting
-  /// from the phone's position when there is no start yet. Everything is taken from [ref] before the fix is awaited.
+  /// The tap sets the end being picked. A start keeps the sheet as it is; a destination opens its options: a fresh
+  /// trip from the phone's position when the pick came from Where to?, the same trip's new destination when it came
+  /// from the options (Ruling 14). Everything is taken from [ref] before the fix is awaited.
   void _finishPick(bool forFrom, LatLng tap) {
     final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, tap);
     final q = ref.read(planQueryProvider.notifier);
-    ref.read(mapPickProvider.notifier).clear();
+    final pick = ref.read(mapPickProvider.notifier);
+    final keepStart = pick.keepStart;
+    pick.clear();
     if (forFrom) {
       q.setFrom(place);
       return;
     }
-    q.setDestination(place);
+    if (keepStart) {
+      q.setDestination(place);
+    } else {
+      q.startFresh(place);
+    }
     ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
     if (ref.read(planQueryProvider).from == null) {
+      // A start the rider chose while the fix was awaited wins.
       unawaited(locateMe().then((p) {
-        // A start the rider chose while the fix was awaited wins.
-        if (p != null && mounted && ref.read(planQueryProvider).from == null) q.setFrom(p);
+        if (p != null) q.fillStart(p);
       }));
     }
   }
@@ -645,23 +698,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         now: DateTime.now(),
       );
 
-  void _open(HomeSheet sheet) {
-    ref.read(homeSheetProvider.notifier).open(sheet);
-    _toHalfAfterBuild();
+  /// The listener in build opens the card at half and, for a stop, brings the map to it.
+  void _open(HomeSheet sheet) => ref.read(homeSheetProvider.notifier).open(sheet);
+
+  /// Every card opens at half however it was reached (spec §3.2, §3.4): a map tap, a link or notification, a nearby
+  /// stop, the search, your stop. A stop's card also brings the map to the stop.
+  void _onSheetOpened(HomeSheet sheet) {
+    if (sheet == _opened) return;
+    _opened = sheet;
+    switch (sheet) {
+      case HomeSheetHome():
+        _halfPending = false;
+        _centrePending = null;
+      case StopSheet(:final stopId):
+        _toHalfAfterBuild();
+        _centreOnStop(stopId);
+      case BusSheet() || OptionsSheet() || JourneySheet():
+        _centrePending = null;
+        _toHalfAfterBuild();
+    }
   }
 
-  /// The sheet is re-keyed by what it shows: opens the new card at half once built.
+  /// The camera to [stopId] (zoom 15; a jump with reduce motion), unless the follow camera is driving it: that
+  /// one keeps the bus and your stop in view itself. Before the map is ready, once it is.
+  void _centreOnStop(String stopId) {
+    final f = _follow;
+    if (f != null && !f.paused) return;
+    if (_camera == null) {
+      _centrePending = stopId;
+      return;
+    }
+    _centrePending = null;
+    unawaited(_recentreOn(stopId));
+  }
+
+  /// The sheet is re-keyed by what it shows: opens the new card at half once built. Until a sheet is built (the
+  /// schedule still loading) it stays due, and the next build tries again. The side panel has no detents.
   void _toHalfAfterBuild() {
+    _halfPending = true;
+    _scheduleHalf();
+  }
+
+  void _scheduleHalf() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_sheet.animateToDetent(BBSheetDetent.half));
+      if (!mounted || !_halfPending || !_sheet.isAttached) return;
+      _halfPending = false;
+      unawaited(_sheet.animateToDetent(BBSheetDetent.half));
     });
   }
 
-  /// System back: ends a map pick first, then walks the sheet back (leaving the options takes their drawn trip).
+  /// System back: ends a map pick first, then walks the sheet back.
   void _onBack() {
     if (ref.read(mapPickProvider) != null) {
       ref.read(mapPickProvider.notifier).clear();
-    } else if (ref.read(homeSheetProvider) is OptionsSheet) {
+    } else {
+      _sheetBack();
+    }
+  }
+
+  /// Back one card (leaving the options takes their drawn trip): system back, a card swiped down past its peek.
+  /// A swipe never ends a map pick instead: the swiped card must go, or it would stay mounted at nothing.
+  void _sheetBack() {
+    if (ref.read(homeSheetProvider) is OptionsSheet) {
       leaveOptions(ref);
     } else {
       ref.read(homeSheetProvider.notifier).back();
@@ -793,9 +891,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     ref.listen<Journey?>(journeyOnMapProvider, (prev, next) {
       if (!identical(prev, next)) _onJourneyChanged(next);
     });
-    // Trip options and a journey's steps open at half (spec §3.4), however they were reached.
+    // Every card opens at half, however it was reached; a stop's brings the map to it (spec §3.2, §3.4).
     ref.listen<HomeSheet>(homeSheetProvider, (prev, next) {
-      if (prev != next && (next is OptionsSheet || next is JourneySheet)) _toHalfAfterBuild();
+      if (prev != next) _onSheetOpened(next);
     });
     final journey = ref.watch(journeyOnMapProvider);
     final pick = ref.watch(mapPickProvider);
@@ -819,6 +917,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       );
     }
 
+    // A card opened while the schedule loaded has a sheet now.
+    if (_halfPending) _scheduleHalf();
     final settings = ref.watch(settingsProvider);
     final myStop = settings.selectedStopId == null ? null : ref.watch(stopInfoProvider(settings.selectedStopId!));
     final filter = ref.watch(mapRouteFilterProvider);
@@ -829,6 +929,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final followStop = followStopId == null ? null : ref.watch(stopInfoProvider(followStopId));
     // Minutes to your stop from the live predictions, for the followed bus.
     final followShowing = follow != null && sheet is HomeSheetHome;
+    // The home sheet itself (or the follow card in its place) rather than a card over it.
+    final homeShowing = sheet is HomeSheetHome;
     final yourStopArrivals = !followShowing || followStopId == null
         ? const <ArrivalRow>[]
         : ref.watch(stopArrivalsProvider(followStopId)).value ?? const <ArrivalRow>[];
@@ -856,6 +958,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return LayoutBuilder(builder: (context, constraints) {
       // On a tablet the sheet is a fixed panel at the left and everything else is laid out to its right.
       final wide = constraints.maxWidth >= homeSidePanelBreakpoint;
+      // The panel has no detents: nothing to open at half.
+      if (wide) _halfPending = false;
       // The panel stands clear of a notch on its side, and everything else of the panel.
       final panelLeft = media.padding.left + BBSpace.s;
       final panelInset = wide ? panelLeft + homeSidePanelWidth : 0.0;
@@ -913,6 +1017,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final panelSlivers = followShowing
           ? [SliverToBoxAdapter(child: FollowCardBody(snapshot: follow.snapshot))]
           : selectionSlivers(sheet);
+      final routeChip = BBChip(
+        label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
+        icon: BBIcons.filter,
+        chevron: true,
+        selected: filter.isNotEmpty,
+        onTap: _openRouteFilter,
+      );
 
       return PopScope(
         canPop: sheet is HomeSheetHome && pick == null,
@@ -963,18 +1074,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          follow != null ? Flexible(flex: 3, child: _followChip(follow)) : const Spacer(flex: 3),
-                          const SizedBox(width: BBSpace.s),
-                          Flexible(
-                            flex: 2,
-                            child: BBChip(
-                              label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
-                              icon: BBIcons.filter,
-                              chevron: true,
-                              selected: filter.isNotEmpty,
-                              onTap: _openRouteFilter,
-                            ),
-                          ),
+                          // With no follow chip beside it, the route chip may take the row (large text reads in full).
+                          if (follow != null) ...[
+                            Flexible(flex: 3, child: _followChip(follow)),
+                            const SizedBox(width: BBSpace.s),
+                            Flexible(flex: 2, child: routeChip),
+                          ] else
+                            Expanded(child: Align(alignment: Alignment.centerRight, child: routeChip)),
                         ],
                       ),
                     ],
@@ -1074,9 +1180,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   key: ValueKey(sheetKey),
                   controller: sheetController,
                   peekFraction: peek,
-                  halfFraction: math.max(0.5, peek + 0.05),
+                  // The home sheet's half shows most of it (saved trips, nearby stops); a card's half its content.
+                  halfFraction: homeShowing ? math.max(_homeHalf, peek + 0.05) : math.max(0.5, peek + 0.05),
                   bottomInset: navInset,
                   semanticLabel: 'Map sheet',
+                  // A card swipes down past its peek back to what was under it (spec §3.2); the home sheet, and the
+                  // follow card over it, stay.
+                  dismissible: !homeShowing,
+                  onDismiss: homeShowing ? null : _sheetBack,
                   header: panelHeader,
                   slivers: panelSlivers,
                 ),

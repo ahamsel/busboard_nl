@@ -22,6 +22,7 @@ abstract final class StopSheetContent {
   static const starKey = ValueKey('stop-star');
   static const refreshKey = ValueKey('stop-refresh');
   static const planFromKey = ValueKey('stop-plan-from');
+  static const closeKey = ValueKey('stop-close');
   static Widget header(String stopId) => _StopHeader(stopId: stopId);
   static Widget body(String stopId) => _StopBody(stopId: stopId);
 }
@@ -61,6 +62,14 @@ class _StopHeader extends ConsumerWidget {
               icon: BBIcons.refresh,
               semanticLabel: 'Refresh departures',
               onPressed: () => ref.invalidate(stopArrivalsProvider(stopId)),
+            ),
+            // Back to what was under the sheet: the way out for a screen reader, the side panel (no drag) and
+            // iPhone (no system back), as well as a swipe down (spec §3.2).
+            BBIconButton(
+              key: StopSheetContent.closeKey,
+              icon: BBIcons.close,
+              semanticLabel: 'Close',
+              onPressed: () => ref.read(homeSheetProvider.notifier).back(),
             ),
           ]),
           Semantics(
@@ -104,8 +113,9 @@ class _StopHeader extends ConsumerWidget {
             expand: true,
             wrap: true,
             onPressed: () {
-              ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stopId, name: name));
-              context.push('/search');
+              // A new trip from this stop, leaving now; the search's pick keeps this start (Ruling 14).
+              ref.read(planQueryProvider.notifier).startFrom(StopPlace(stopId: stopId, name: name));
+              context.push('/search?keep=1');
             },
           ),
         ],
