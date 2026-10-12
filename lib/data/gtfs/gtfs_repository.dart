@@ -2,6 +2,7 @@ import 'dart:math';
 import 'gtfs_models.dart';
 import 'gtfs_parser.dart';
 import 'gtfs_downloader.dart';
+import 'headsign.dart';
 
 /// In-memory repository of GTFS data with fast lookup indexes.
 ///
@@ -30,6 +31,56 @@ class GtfsRepository {
     }
     final sorted = names.toList()..sort(compareRouteNames);
     return _routesForStopCache[stopId] = List.unmodifiable(sorted);
+  }
+
+  final Map<String, List<RouteDirections>> _directionsForStopCache = {};
+  Map<String, int>? _lastSequenceByTrip;
+
+  /// Each route serving [stopId] (in [routeShortNamesForStop] order) with
+  /// where its buses go from here: the [headsignDestination] of trips that
+  /// leave this stop, at most two, most frequent first (ties alphabetical).
+  /// Trips that end here are skipped. Memoised; cleared whenever data is
+  /// (re)loaded.
+  List<RouteDirections> routeDirectionsForStop(String stopId) {
+    final cached = _directionsForStopCache[stopId];
+    if (cached != null) return cached;
+    final lastSequence = _lastSequenceByTrip ??= _buildLastSequenceByTrip();
+    final counts = <String, Map<String, int>>{};
+    for (final row in stopTimesByStopId[stopId] ?? const <StopTimeRow>[]) {
+      final trip = tripsById[row.tripId];
+      if (trip == null) continue;
+      final route = routesById[trip.routeId];
+      if (route == null) continue;
+      if (row.stopSequence >= (lastSequence[row.tripId] ?? 0)) continue;
+      final destination = headsignDestination(trip.tripHeadsign);
+      if (destination.isEmpty) continue;
+      final byDestination = counts.putIfAbsent(route.routeShortName, () => {});
+      byDestination[destination] = (byDestination[destination] ?? 0) + 1;
+    }
+    final directions = [
+      for (final name in routeShortNamesForStop(stopId))
+        RouteDirections(
+          routeShortName: name,
+          destinations: List.unmodifiable(
+            ((counts[name] ?? const <String, int>{}).entries.toList()
+                  ..sort((a, b) => a.value != b.value ? b.value - a.value : a.key.compareTo(b.key)))
+                .take(2)
+                .map((e) => e.key),
+          ),
+        ),
+    ];
+    return _directionsForStopCache[stopId] = List.unmodifiable(directions);
+  }
+
+  Map<String, int> _buildLastSequenceByTrip() {
+    final last = <String, int>{};
+    for (final rows in stopTimesByStopId.values) {
+      for (final row in rows) {
+        final seen = last[row.tripId];
+        if (seen == null || row.stopSequence > seen) last[row.tripId] = row.stopSequence;
+      }
+    }
+    return last;
   }
 
   static final RegExp _digitsOnly = RegExp(r'^\d+$');
@@ -80,6 +131,8 @@ class GtfsRepository {
   /// and indexes without forcing a network download or platform cache lookup.
   Future<void> loadFromDirectory(String dirPath) async {
     _routesForStopCache.clear();
+    _directionsForStopCache.clear();
+    _lastSequenceByTrip = null;
     final parser = GtfsParser(dirPath);
 
     // Parse all files
@@ -112,6 +165,8 @@ class GtfsRepository {
     for (final st in stopTimes) {
       stopTimesByStopId.putIfAbsent(st.stopId, () => []).add(st);
     }
+    // Built here rather than on the picker's first frame.
+    _lastSequenceByTrip = _buildLastSequenceByTrip();
 
     calendarsById.clear();
     for (final cal in calendars) {
