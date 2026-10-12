@@ -22,6 +22,7 @@ import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
@@ -439,7 +440,8 @@ void main() {
           routeRun: '10-1',
         );
     final handle = tester.ensureSemantics();
-    await _pump(tester, size: const Size(390, 844), prefs: {'selectedStopId': '1150'}, arrivals: [arrival(3), arrival(9), arrival(15)]);
+    await _pump(tester, size: const Size(390, 844), prefs: {'selectedStopId': '1150'}, arrivals: [arrival(3), arrival(9), arrival(15)],
+        overrides: [homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen())]);
     final card = tester.getRect(find.byKey(BBSheet.cardKey));
     final tiles = find.byType(ArrivalRowTile);
     expect(tiles, findsAtLeastNWidgets(2));

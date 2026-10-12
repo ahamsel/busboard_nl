@@ -372,13 +372,20 @@ void main() {
   // The home at its peek: the real screen, so the peek is the sheet's own. Where to?, the first saved place and the
   // top of Your stop must be visible (on screen, inside the peeking sheet) however large the text, with two saved
   // places and an alert for you (spec §3.1).
-  Future<void> pumpHomeAtPeek(WidgetTester tester, {required Size size, required double textScale, required bool dark}) =>
+  Future<void> pumpHomeAtPeek(
+    WidgetTester tester, {
+    required Size size,
+    required double textScale,
+    required bool dark,
+    bool tip = false,
+  }) =>
       pumpPlannerApp(
         tester,
         net: TestNetwork(),
         now: DateTime(2026, 10, 12, 13, 0),
         initial: '/',
         textScale: textScale,
+        homeTipSeen: !tip,
         theme: dark ? BBTheme.dark() : BBTheme.light(),
         alerts: [
           ServiceAlert(
@@ -454,6 +461,26 @@ void main() {
       expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the peeking sheet');
       expect(r.bottom, lessThanOrEqualTo(size.height), reason: '$name is on screen');
     }
+    handle.dispose();
+  });
+
+  // The one-time tip sits above Where to?. Your stop may fall below the fold while it shows (it is one-time), but
+  // nothing overflows and the way to dismiss it is on screen.
+  testWidgets('home at peek, 360x640, 1.0x text, with the one-time tip: no overflow, Where to? and Got it on screen',
+      (tester) async {
+    final handle = tester.ensureSemantics();
+    const size = Size(360, 640);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await pumpHomeAtPeek(tester, size: size, textScale: 1.0, dark: false, tip: true);
+    expect(tester.takeException(), isNull, reason: 'initial layout');
+    expect(find.textContaining("Everything's on the map now"), findsOneWidget);
+    expectVisibleAtPeek(tester, find.byKey(HomeSheetContent.whereToKey), 'Where to?', size);
+    expectVisibleAtPeek(tester, find.text('Got it'), 'Got it', size);
+    expect(find.text('Got it').hitTestable(), findsOneWidget, reason: 'Got it can be tapped at peek');
+    expect(tester.takeException(), isNull);
     handle.dispose();
   });
 }

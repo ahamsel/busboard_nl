@@ -14,6 +14,7 @@ import '../kit/kit.dart';
 import '../map/stop_card.dart';
 import '../stop_picker/near_me_list.dart';
 import '../trip_planner/saved_trips_section.dart';
+import 'home_tip.dart';
 
 /// The home sheet (spec 2026-10-12 §3.1). The header is what peeks: Where to, saved places, alerts for you,
 /// your stop's next buses. The body: saved trips, then nearby stops.
@@ -50,6 +51,7 @@ class _Header extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const HomeTip(),
           BBPressable(
             key: HomeSheetContent.whereToKey,
             semanticLabel: 'Where to? Search for a place or a stop',

@@ -10,6 +10,7 @@ import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/routing/router.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:flutter/material.dart';
@@ -100,6 +101,7 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 
 /// Pumps the app's route tree on [net] at [now] ([clock], when given, tells the time instead), starting at [initial].
 /// [use24h], when given, sets the device's clock format. [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
+/// The one-time home tip is already seen unless [homeTipSeen] is false (it sits above "Where to?" and moves the peek).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -119,6 +121,7 @@ Future<void> pumpPlannerApp(
   List<NearbyStop> nearby = const [],
   AlertRunner? alertRunner,
   bool? use24h,
+  bool homeTipSeen = true,
 }) async {
   // flutter_test's own 800x600 is a tablet to the home screen (its side panel starts at 700): a test that has not
   // picked a size gets a phone, so the sheet is a pull-up sheet. A test that sets its own size keeps it.
@@ -155,6 +158,7 @@ Future<void> pumpPlannerApp(
         mapViewBuilderProvider.overrideWithValue(mapView ?? StubMap().build),
         // No live buses unless a test overrides this: the real poll's timer would outlive the test.
         busTrackingStreamProvider.overrideWith((ref) => Stream.value(const <String, BusTrackingState>{})),
+        if (homeTipSeen) homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
         ...fakeAlertOverridesWith(alertRunner),
         ...overrides,
       ],
