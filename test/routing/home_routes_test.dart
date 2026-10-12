@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
@@ -81,9 +84,27 @@ void main() {
   testWidgets('a board link before the schedule loads shows the stop sheet loading, then its rows (Review Focus 1)',
       (tester) async {
     // 'C' is a stop of TestNetwork; 1150 is not, and an unknown stop shows no card.
-    await pumpPlannerApp(tester, net: TestNetwork(), now: now, appRoutes: true, initial: '/board/C', settle: false);
+    final net = TestNetwork();
+    final schedule = Completer<GtfsRepository>();
+    await pumpPlannerApp(
+      tester,
+      net: net,
+      now: now,
+      appRoutes: true,
+      initial: '/board/C',
+      repoFuture: schedule.future,
+      settle: false,
+    );
+    await tester.pump();
+    await tester.pump();
+    // The schedule is still pending: the sheet is already the stop's, and the home says it is loading.
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    expect(find.byType(BBLoading), findsOneWidget);
+    expect(find.bySemanticsLabel('Loading the map'), findsOneWidget);
+    expect(find.textContaining('Stop C'), findsNothing);
+    schedule.complete(net.repo);
     await tester.pumpAndSettle();
+    expect(find.byType(BBLoading), findsNothing);
     expect(find.textContaining('Stop C'), findsWidgets);
   });
 }

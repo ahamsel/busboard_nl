@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
@@ -147,6 +148,7 @@ Future<void> pumpPlannerApp(
   bool settle = true,
   bool appRoutes = false,
   List<ServiceAlert> alerts = const [],
+  Future<GtfsRepository>? repoFuture,
 }) async {
   SharedPreferences.setMockInitialValues({});
   useInMemoryAlertStore();
@@ -164,7 +166,8 @@ Future<void> pumpPlannerApp(
           (ref) =>
               Stream.value(ServiceUpdates(alerts: alerts, serviceStatus: null, fetchedAt: now, feedTimestamp: null)),
         ),
-        gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
+        // [repoFuture], when given, holds the schedule (a cold start) until it completes.
+        gtfsRepositoryProvider.overrideWith((ref) => repoFuture ?? Future.value(net.repo)),
         nearestStopsProvider.overrideWith((ref) async => const <NearbyStop>[]),
         plannerClockProvider.overrideWithValue(clock ?? () => now),
         // Isolate.run never finishes under testWidgets' fake async.
