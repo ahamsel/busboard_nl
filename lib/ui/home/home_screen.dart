@@ -18,6 +18,7 @@ import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
 import '../../state/follow_providers.dart';
+import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
@@ -167,7 +168,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     // replaces any selection.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(followProvider) != null) {
-        ref.read(mapSelectionProvider.notifier).clear();
+        ref.read(homeSheetProvider.notifier).home();
       }
     });
   }
@@ -391,7 +392,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (layers != null && !sameBus) {
       unawaited(layers.clearRoute().catchError((Object e) => _log('Could not clear the route line: $e')));
     }
-    if (next != null) ref.read(mapSelectionProvider.notifier).clear();
+    if (next != null) ref.read(homeSheetProvider.notifier).home();
   }
 
   void _followFrame(
@@ -579,7 +580,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final pickFrom = _pickFrom;
     if (pickFrom != null) return _finishPick(pickFrom, tap);
     final radius = tapRadiusMeters(_camera?.zoom ?? _defaultZoom);
-    final selection = ref.read(mapSelectionProvider.notifier);
+    final sheetStack = ref.read(homeSheetProvider.notifier);
     final markers = _lastMarkers.isNotEmpty ? _lastMarkers : _markersFromTracking();
     if (_follow != null) {
       // The follow card owns the sheet: a tap on a bus or a stop does nothing;
@@ -591,15 +592,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       return;
     }
     final bus = nearestBus(tap, radius, markers);
-    if (bus != null) return _select(BusSelection(bus));
+    if (bus != null) return _open(BusSheet(bus));
     final repo = ref.read(gtfsRepositoryProvider).value;
     final stop = repo == null ? null : nearestStop(tap, radius, repo.stopsById.values);
-    if (stop != null) return _select(StopSelection(stop.stopId));
-    if (ref.read(mapSelectionProvider) == null) {
+    if (stop != null) return _open(StopSheet(stop.stopId));
+    if (ref.read(homeSheetProvider) is HomeSheetHome) {
       unawaited(_sheet.collapse());
     } else {
       // Clearing re-keys the sheet, which starts back at peek.
-      selection.clear();
+      sheetStack.back();
     }
   }
 
@@ -612,9 +613,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         now: DateTime.now(),
       );
 
-  void _select(MapSelection selection) {
-    ref.read(mapSelectionProvider.notifier).select(selection);
-    // The sheet is re-keyed by selection; open the new card at half once built.
+  void _open(HomeSheet sheet) {
+    ref.read(homeSheetProvider.notifier).open(sheet);
+    // The sheet is re-keyed by what it shows; open the new card at half once built.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_sheet.animateToDetent(BBSheetDetent.half));
     });
@@ -754,8 +755,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final settings = ref.watch(settingsProvider);
     final myStop = settings.selectedStopId == null ? null : ref.watch(stopInfoProvider(settings.selectedStopId!));
     final filter = ref.watch(mapRouteFilterProvider);
-    final selection = ref.watch(mapSelectionProvider);
-    final selectedStop = selection is StopSelection ? ref.watch(stopInfoProvider(selection.stopId)) : null;
+    final sheet = ref.watch(homeSheetProvider);
+    final selectedStop = sheet is StopSheet ? ref.watch(stopInfoProvider(sheet.stopId)) : null;
     final repo = gtfs.value!;
     // The follow's own stop when it was started for one (a planned trip's boarding stop), else the saved stop.
     final followStopId = ref.watch(followProvider)?.stopId ?? settings.selectedStopId;
@@ -767,7 +768,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final buildMap = ref.watch(mapViewBuilderProvider);
     final media = MediaQuery.of(context);
     final navInset = BBNavBar.reservedHeight(context);
-    final Object? sheetKey = follow == null ? selection : 'follow:${follow.vehicleId}';
+    final Object sheetKey = follow != null && sheet is HomeSheetHome ? 'follow:${follow.vehicleId}' : sheet;
     _scheduleControlsMeasure();
     // While following, the actions move without the header changing size.
     if (_headerHeight == null || follow != null) _scheduleHeaderMeasure();
@@ -956,14 +957,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 halfFraction: math.max(0.5, peek + 0.05),
                 bottomInset: navInset,
                 semanticLabel: 'Map sheet',
-                header: _measuredHeader(follow != null
+                header: _measuredHeader(follow != null && sheet is HomeSheetHome
                     ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
-                    : selectionHeader(selection, selectedStop)),
+                    : selectionHeader(sheet, selectedStop)),
                 slivers: [
                   SliverToBoxAdapter(
-                    child: follow != null
+                    child: follow != null && sheet is HomeSheetHome
                         ? FollowCardBody(snapshot: follow.snapshot)
-                        : selectionBody(selection, selectedStop),
+                        : selectionBody(sheet, selectedStop),
                   ),
                 ],
               ),

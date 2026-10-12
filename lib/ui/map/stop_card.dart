@@ -6,6 +6,7 @@ import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/trip_planner/place.dart';
 import '../../state/follow_providers.dart';
+import '../../state/home_sheet_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
@@ -140,7 +141,7 @@ class ArrivalsList extends ConsumerWidget {
     final vehicle = a.followableVehicle;
     if (vehicle == null) return null;
     return () {
-      ref.read(mapSelectionProvider.notifier).clear();
+      ref.read(homeSheetProvider.notifier).home();
       ref.read(followProvider.notifier).follow(vehicle);
     };
   }

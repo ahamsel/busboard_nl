@@ -5,6 +5,7 @@ import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
@@ -154,11 +155,11 @@ void main() {
         body: const StopCardBody(stop: _mun),
         arrivals: [row(route: '21', live: true, vehicle: '2573')]);
     final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
-    container.read(mapSelectionProvider.notifier).select(const StopSelection('1150'));
+    container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
     await tester.tap(find.text('Downtown'));
     await tester.pumpAndSettle();
     expect(container.read(followProvider), const FollowTarget('2573'));
-    expect(container.read(mapSelectionProvider), isNull);
+    expect(container.read(homeSheetProvider), isA<HomeSheetHome>());
     expect(find.text('BOARD 1150'), findsNothing, reason: 'the rider stays on the map');
   });
 
@@ -213,12 +214,12 @@ void main() {
     await _host(tester,
         header: const BusCardHeader(vehicleId: '2573'), body: const BusCardBody(vehicleId: '2573'), buses: {'2573': _bus()});
     final container = ProviderScope.containerOf(tester.element(find.byType(BusCardBody)));
-    container.read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
+    container.read(homeSheetProvider.notifier).open(const BusSheet('2573'));
     expect(find.text('Follow'), findsOneWidget);
     await tester.tap(find.text('Follow'));
     await tester.pumpAndSettle();
     expect(container.read(followProvider), const FollowTarget('2573'));
-    expect(container.read(mapSelectionProvider), isNull);
+    expect(container.read(homeSheetProvider), isA<HomeSheetHome>());
   });
 
   testWidgets('with no headsign in the live feed, the destination comes from its trip', (tester) async {

@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../domain/map/bus_tracking_state.dart';
 import '../../state/follow_providers.dart';
-import '../../state/map_providers.dart';
+import '../../state/home_sheet_provider.dart';
 import '../../state/providers.dart';
 import '../alerts/service_alert_card.dart';
 import '../kit/kit.dart';
@@ -121,7 +121,7 @@ class _BusCardBodyState extends ConsumerState<BusCardBody> {
             icon: BBIcons.bus,
             expand: true,
             onPressed: () {
-              ref.read(mapSelectionProvider.notifier).clear();
+              ref.read(homeSheetProvider.notifier).home();
               ref.read(followProvider.notifier).follow(widget.vehicleId);
             },
           ),
