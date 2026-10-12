@@ -37,7 +37,7 @@ ProviderContainer _c(WidgetTester t) => ProviderScope.containerOf(routerElement(
 
 /// The real home, then [location] pushed on top of it, as the sheet's buttons do.
 Future<void> _openSearch(WidgetTester tester, {String location = '/search', GeolocatorPlatform? geolocator}) async {
-  await pumpPlannerApp(tester, net: _network(), now: _now, appRoutes: true, initial: '/', geolocator: geolocator);
+  await pumpPlannerApp(tester, net: _network(), now: _now, initial: '/', geolocator: geolocator);
   unawaited(GoRouter.of(routerElement(tester)).push(location));
   await tester.pumpAndSettle();
 }
@@ -66,7 +66,7 @@ void main() {
   setUpAll(loadAppFonts);
 
   testWidgets('a stop number lists that stop first; Go here opens options to it', (tester) async {
-    await pumpPlannerApp(tester, net: _network(), now: _now, appRoutes: true, initial: '/');
+    await pumpPlannerApp(tester, net: _network(), now: _now, initial: '/');
     await tester.tap(find.byKey(HomeSheetContent.whereToKey));
     await tester.pumpAndSettle();
     expect(find.byType(SearchScreen), findsOneWidget);
@@ -91,7 +91,7 @@ void main() {
       stopLat: 47.5,
       stopLon: -52.7,
     );
-    await pumpPlannerApp(tester, net: net, now: _now, appRoutes: true, initial: '/');
+    await pumpPlannerApp(tester, net: net, now: _now, initial: '/');
     unawaited(GoRouter.of(routerElement(tester)).push('/search'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(SearchScreen.fieldKey), '1150');
@@ -292,7 +292,7 @@ void main() {
   });
 
   testWidgets('the stop sheet\'s Plan a trip from here starts the search from that stop', (tester) async {
-    await pumpPlannerApp(tester, net: _network(), now: _now, appRoutes: true, initial: '/board/C');
+    await pumpPlannerApp(tester, net: _network(), now: _now, initial: '/board/C');
     // The sheet's header holds the button; bring the sheet up so it is on screen.
     await tester.drag(find.byType(BBPill).first, const Offset(0, -600));
     await tester.pumpAndSettle();
@@ -352,7 +352,7 @@ void main() {
   });
 
   testWidgets('Back on a search that is the first page goes home', (tester) async {
-    await pumpPlannerApp(tester, net: _network(), now: _now, appRoutes: true, initial: '/search');
+    await pumpPlannerApp(tester, net: _network(), now: _now, initial: '/search');
     expect(find.byType(SearchScreen), findsOneWidget);
     await tester.tap(find.byIcon(BBIcons.back));
     await tester.pumpAndSettle();

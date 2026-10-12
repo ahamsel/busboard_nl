@@ -6,23 +6,16 @@ import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
-import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/routing/router.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
-import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
-import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
-import 'package:busboard_nl/ui/settings/settings_screen.dart';
-import 'package:busboard_nl/ui/trip_planner/journey_detail_screen.dart';
-import 'package:busboard_nl/ui/trip_planner/plan_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -102,36 +95,10 @@ class StubMap {
   void longPress(double lat, double lon) => config!.onLongPress!(LatLng(lat, lon));
 }
 
-/// The screens that Tasks 7 and 8 of the map-first home replace (Plan, Journey detail), each on its
-/// old path, so their tests keep running while the app's own router sends those paths home. A test of the
-/// home itself uses the app's router (`appRoutes: true`).
-GoRouter plannerTestRouter(String initial) => GoRouter(
-  initialLocation: initial,
-  routes: [
-    GoRoute(path: '/', builder: (context, state) => HomeScreen(pick: state.uri.queryParameters['pick'])),
-    GoRoute(path: '/map', builder: (context, state) => HomeScreen(pick: state.uri.queryParameters['pick'])),
-    GoRoute(path: '/alerts', builder: (context, state) => const AlertsScreen()),
-    GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
-    GoRoute(
-      path: '/plan',
-      builder: (context, state) => const PlanScreen(),
-      routes: [
-        GoRoute(
-          path: 'journey',
-          // A deep link or a restored route carries no journey: back to the planner.
-          redirect: (context, state) => state.extra is Journey ? null : '/plan',
-          builder: (context, state) => JourneyDetailScreen(journey: state.extra! as Journey),
-        ),
-      ],
-    ),
-  ],
-);
-
 /// An element under the router and the providers, for `GoRouter.of` and `ProviderScope.containerOf`.
 Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigator).first);
 
-/// Pumps the planner screens ([plannerTestRouter]), or with [appRoutes] the app's real route tree, on [net] at
-/// [now] ([clock], when given, tells the time instead), starting at [initial].
+/// Pumps the app's route tree on [net] at [now] ([clock], when given, tells the time instead), starting at [initial].
 /// [use24h], when given, sets the device's clock format. [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
@@ -139,14 +106,13 @@ Future<void> pumpPlannerApp(
   required TestNetwork net,
   required DateTime now,
   DateTime Function()? clock,
-  String initial = '/plan',
+  String initial = '/',
   double textScale = 1,
   GeolocatorPlatform? geolocator,
   http.Client? liveClient,
   MapViewBuilder? mapView,
   List<Override> overrides = const [],
   bool settle = true,
-  bool appRoutes = false,
   List<ServiceAlert> alerts = const [],
   Future<GtfsRepository>? repoFuture,
   ThemeData? theme,
@@ -160,7 +126,7 @@ Future<void> pumpPlannerApp(
   GeolocatorPlatform.instance = geolocator ?? LocationOffGeolocator();
   addTearDown(() => GeolocatorPlatform.instance = previousGeo);
 
-  final router = appRoutes ? buildAppRouter(initialLocation: initial) : plannerTestRouter(initial);
+  final router = buildAppRouter(initialLocation: initial);
   addTearDown(router.dispose);
   await tester.pumpWidget(
     ProviderScope(
@@ -180,7 +146,7 @@ Future<void> pumpPlannerApp(
           TimeTrackApi(client: liveClient ?? MockClient((_) async => http.Response('', 503))),
         ),
         mapViewBuilderProvider.overrideWithValue(mapView ?? StubMap().build),
-        // Home is the only screen now: no live-bus poll timer outlives the test.
+        // No live buses unless a test overrides this: the real poll's timer would outlive the test.
         busTrackingStreamProvider.overrideWith((ref) => Stream.value(const <String, BusTrackingState>{})),
         ...fakeAlertOverridesWith(alertRunner),
         ...overrides,

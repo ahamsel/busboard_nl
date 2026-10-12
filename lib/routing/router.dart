@@ -28,8 +28,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) =>
-            HomeScreen(pick: state.uri.queryParameters['pick']),
+        builder: (context, state) => const HomeScreen(),
       ),
       GoRoute(path: '/stop/:stopId', redirect: _toStopSheet),
       GoRoute(path: '/board/:stopId', redirect: _toStopSheet),

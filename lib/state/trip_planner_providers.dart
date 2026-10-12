@@ -74,7 +74,7 @@ DateTime defaultPlanTime(DateTime now) {
 }
 
 /// [defaultPlanTime] for now, moved on as the clock passes each 5-minute mark, so a Leave by or Arrive by time the
-/// rider never picked doesn't go stale while the Plan tab stays open.
+/// rider never picked doesn't go stale while the trip options stay open.
 final planDefaultTimeProvider = Provider.autoDispose<DateTime>((ref) {
   final now = ref.read(plannerClockProvider)();
   final at = defaultPlanTime(now);

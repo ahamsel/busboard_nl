@@ -6,12 +6,12 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
 import '../../data/gtfs/gtfs_models.dart';
 import '../../data/gtfs/gtfs_repository.dart';
 import '../../domain/arrival/arrival_models.dart';
+import '../../domain/location/locate_me.dart';
 import '../../domain/map/bus_tracking_state.dart';
 import '../../domain/map/delayed_track_renderer.dart';
 import '../../domain/map/follow_tracker.dart';
@@ -20,6 +20,7 @@ import '../../domain/trip_planner/journey.dart';
 import '../../state/follow_providers.dart';
 import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
+import '../../state/map_pick_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
@@ -37,6 +38,7 @@ import '../map/map_view.dart';
 import '../map/route_filter_card.dart';
 import '../trip_planner/map_plan_sheet.dart';
 import 'map_buttons.dart';
+import 'options_sheet.dart';
 import 'sheet_content.dart';
 
 /// What the screen holds while a bus is being followed (spec §3.5): the
@@ -70,13 +72,10 @@ class _Follow {
 }
 
 /// The app's home (spec 2026-10-12 §3): the map, the floating controls and one sheet whose content
-/// follows the selection. A long-press plans from or to that point; [pick] ('from' or 'to') makes the next
-/// tap choose that end of the trip; a journey shown from the planner is drawn on top.
+/// follows the selection. A long-press plans from or to that point; while [mapPickProvider] is set the next
+/// tap chooses that end of the trip; a journey from the trip options is drawn on top.
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key, this.pick});
-
-  /// 'from' or 'to' while the planner waits for a point on the map; anything else is ignored.
-  final String? pick;
+  const HomeScreen({super.key});
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -566,23 +565,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   // ─── Interaction ──────────────────────────────────────────
 
-  /// True while the next tap chooses the trip's start, false for its destination, null when not picking.
-  bool? get _pickFrom => switch (widget.pick) {
-        'from' => true,
-        'to' => false,
-        _ => null,
-      };
-
+  /// The tap sets the end being picked. A start keeps the sheet as it is; a destination opens its options, starting
+  /// from the phone's position when there is no start yet. Everything is taken from [ref] before the fix is awaited.
   void _finishPick(bool forFrom, LatLng tap) {
     final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, tap);
     final q = ref.read(planQueryProvider.notifier);
-    forFrom ? q.setFrom(place) : q.setTo(place);
-    context.go('/plan');
+    ref.read(mapPickProvider.notifier).clear();
+    if (forFrom) {
+      q.setFrom(place);
+      return;
+    }
+    q.setDestination(place);
+    ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
+    if (ref.read(planQueryProvider).from == null) {
+      unawaited(locateMe().then((p) {
+        // A start the rider chose while the fix was awaited wins.
+        if (p != null && mounted && ref.read(planQueryProvider).from == null) q.setFrom(p);
+      }));
+    }
   }
 
   void _onTap(LatLng tap) {
-    final pickFrom = _pickFrom;
-    if (pickFrom != null) return _finishPick(pickFrom, tap);
+    final pick = ref.read(mapPickProvider);
+    if (pick != null) return _finishPick(pick == MapPick.from, tap);
     final radius = tapRadiusMeters(_camera?.zoom ?? _defaultZoom);
     final sheetStack = ref.read(homeSheetProvider.notifier);
     final markers = _lastMarkers.isNotEmpty ? _lastMarkers : _markersFromTracking();
@@ -600,11 +605,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final repo = ref.read(gtfsRepositoryProvider).value;
     final stop = repo == null ? null : nearestStop(tap, radius, repo.stopsById.values);
     if (stop != null) return _open(StopSheet(stop.stopId));
-    if (ref.read(homeSheetProvider) is HomeSheetHome) {
-      unawaited(_sheet.collapse());
-    } else {
-      // Going back re-keys the sheet, which starts back at peek.
-      sheetStack.back();
+    switch (ref.read(homeSheetProvider)) {
+      // A stop's or a bus's card goes: going back re-keys the sheet, which starts back at peek.
+      case StopSheet() || BusSheet():
+        sheetStack.back();
+      // The trip stays drawn while the rider looks at the map (Ruling 13).
+      case HomeSheetHome() || OptionsSheet() || JourneySheet():
+        unawaited(_sheet.collapse());
     }
   }
 
@@ -619,10 +626,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   void _open(HomeSheet sheet) {
     ref.read(homeSheetProvider.notifier).open(sheet);
-    // The sheet is re-keyed by what it shows; open the new card at half once built.
+    _toHalfAfterBuild();
+  }
+
+  /// The sheet is re-keyed by what it shows: opens the new card at half once built.
+  void _toHalfAfterBuild() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_sheet.animateToDetent(BBSheetDetent.half));
     });
+  }
+
+  /// System back: ends a map pick first, then walks the sheet back (leaving the options takes their drawn trip).
+  void _onBack() {
+    if (ref.read(mapPickProvider) != null) {
+      ref.read(mapPickProvider.notifier).clear();
+    } else if (ref.read(homeSheetProvider) is OptionsSheet) {
+      leaveOptions(ref);
+    } else {
+      ref.read(homeSheetProvider.notifier).back();
+    }
   }
 
   Future<void> _enableMyLocation({required bool request}) async {
@@ -734,8 +756,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     ref.listen<Journey?>(journeyOnMapProvider, (prev, next) {
       if (!identical(prev, next)) _onJourneyChanged(next);
     });
+    // Trip options and a journey's steps open at half (spec §3.4), however they were reached.
+    ref.listen<HomeSheet>(homeSheetProvider, (prev, next) {
+      if (prev != next && (next is OptionsSheet || next is JourneySheet)) _toHalfAfterBuild();
+    });
     final journey = ref.watch(journeyOnMapProvider);
-    final pickFrom = _pickFrom;
+    final pick = ref.watch(mapPickProvider);
     _syncFollow(ref.watch(followProvider));
     final follow = _follow;
     final bb = context.bb;
@@ -832,9 +858,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           : creditBottom;
 
       return PopScope(
-        canPop: sheet is HomeSheetHome,
+        canPop: sheet is HomeSheetHome && pick == null,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) ref.read(homeSheetProvider.notifier).back();
+          if (!didPop) _onBack();
         },
         child: ColoredBox(
         color: bb.colors.bg,
@@ -872,7 +898,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (pickFrom != null) ...[_pickBanner(pickFrom), const SizedBox(height: BBSpace.s)],
+                  if (pick != null) ...[_pickBanner(pick == MapPick.from), const SizedBox(height: BBSpace.s)],
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -967,13 +993,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                     ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
                     : selectionHeader(sheet,
                         onChooseStop: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)))),
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: followShowing
-                        ? FollowCardBody(snapshot: follow.snapshot)
-                        : selectionBody(sheet),
-                  ),
-                ],
+                slivers: followShowing
+                    ? [SliverToBoxAdapter(child: FollowCardBody(snapshot: follow.snapshot))]
+                    : selectionSlivers(sheet),
               ),
             ),
             if (follow != null && follow.paused)
@@ -995,7 +1017,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// What the next tap chooses, and a way out without choosing.
   Widget _pickBanner(bool forFrom) {
     final bb = context.bb;
-    void cancel() => context.go('/plan');
+    void cancel() => ref.read(mapPickProvider.notifier).clear();
     return DecoratedBox(
       decoration: bb.floating(radius: BBRadius.sheet),
       child: Padding(

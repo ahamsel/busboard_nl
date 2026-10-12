@@ -180,7 +180,7 @@ Future<void> _pump(
     tester,
     net: TestNetwork(),
     now: DateTime.now(),
-    appRoutes: true,
+   
     initial: initial,
     alerts: alerts,
     repoFuture: Future.value(repo ?? _repo()),
