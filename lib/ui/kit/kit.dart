@@ -14,6 +14,7 @@ export 'bb_icon_tile.dart';
 export 'bb_icons.dart';
 export 'bb_loading.dart';
 export 'bb_nav_bar.dart';
+export 'bb_pick_row.dart';
 export 'bb_pickers.dart';
 export 'bb_pill.dart';
 export 'bb_pressable.dart';

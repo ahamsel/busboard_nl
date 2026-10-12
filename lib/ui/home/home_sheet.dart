@@ -25,7 +25,8 @@ abstract final class HomeSheetContent {
   static Widget body() => const _Body();
 }
 
-IconData _iconOf(SavedPlaceIcon i) => switch (i) {
+/// The icon for a saved place's kind.
+IconData savedPlaceIconData(SavedPlaceIcon i) => switch (i) {
   SavedPlaceIcon.home => BBIcons.board,
   SavedPlaceIcon.work => BBIcons.schedule,
   SavedPlaceIcon.school => BBIcons.info,
@@ -83,7 +84,7 @@ class _Header extends ConsumerWidget {
                     onLongPress: () => _editPlace(context, ref, p),
                     child: BBChip(
                       label: p.name,
-                      icon: _iconOf(p.icon),
+                      icon: savedPlaceIconData(p.icon),
                       semanticLabel: 'Go to ${p.name}',
                       onTap: () {
                         ref.read(planQueryProvider.notifier).setDestination(p.place);

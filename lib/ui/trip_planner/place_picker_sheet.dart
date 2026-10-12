@@ -6,10 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../data/gtfs/gtfs_models.dart';
-import '../../data/gtfs/gtfs_repository.dart';
+import '../../domain/location/locate_me.dart';
 import '../../domain/trip_planner/place.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
+import '../search/search_screen.dart';
 
 /// What the rider chose in [showPlacePicker].
 sealed class PlacePick {
@@ -25,33 +26,6 @@ class PickedPlace extends PlacePick {
 /// The rider wants to drop a pin on the map.
 class PickOnMap extends PlacePick {
   const PickOnMap();
-}
-
-/// How long "My location" waits for a fix before it gives up.
-const locateTimeLimit = Duration(seconds: 10);
-
-/// The most stops the picker lists.
-const maxPlaceMatches = 20;
-
-/// Stops whose id starts with [query] or whose name contains it (any case), at most [maxPlaceMatches], by stop id.
-List<StopInfo> matchStops(GtfsRepository repo, String query) {
-  final q = query.trim().toLowerCase();
-  if (q.isEmpty) return const [];
-  final out =
-      repo.stopsById.values
-          .where((s) => s.stopId.toLowerCase().startsWith(q) || s.stopName.toLowerCase().contains(q))
-          .toList()
-        ..sort((a, b) => _compareIds(a.stopId, b.stopId));
-  return out.take(maxPlaceMatches).toList();
-}
-
-int _compareIds(String a, String b) {
-  final ai = int.tryParse(a);
-  final bi = int.tryParse(b);
-  if (ai != null && bi != null) return ai.compareTo(bi);
-  if (ai != null) return -1;
-  if (bi != null) return 1;
-  return a.compareTo(b);
 }
 
 /// A sheet for one end of the trip: a stop by number or name, "My location" or "Pick on map".
@@ -191,14 +165,14 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
                             padding: EdgeInsets.zero,
                             children: [
                               for (final s in matches)
-                                _PickRow(
+                                BBPickRow(
                                   icon: BBIcons.stop,
                                   label: '${s.stopName} (${s.stopId})',
                                   semanticLabel: '${s.stopName}, stop ${s.stopId}',
                                   onTap: () => nav.pop(PickedPlace(StopPlace(stopId: s.stopId, name: s.stopName))),
                                 ),
                               if (matches.isNotEmpty) const BBDivider(),
-                              _PickRow(
+                              BBPickRow(
                                 icon: BBIcons.nearMe,
                                 label: _locationOff
                                     ? 'Location is off'
@@ -209,7 +183,7 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
                                     : myLocationLabel,
                                 onTap: _locationOff || _locating ? null : _useMyLocation,
                               ),
-                              _PickRow(
+                              BBPickRow(
                                 icon: BBIcons.map,
                                 label: 'Pick on map',
                                 onTap: () => nav.pop(const PickOnMap()),
@@ -222,40 +196,6 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PickRow extends StatelessWidget {
-  const _PickRow({required this.icon, required this.label, required this.onTap, this.semanticLabel});
-
-  final IconData icon;
-  final String label;
-  final String? semanticLabel;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final bb = context.bb;
-    return BBPressable(
-      onTap: onTap,
-      semanticLabel: semanticLabel ?? label,
-      child: Opacity(
-        opacity: onTap == null ? 0.45 : 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: BBSpace.s),
-            child: Row(
-              children: [
-                Icon(icon, size: 20, color: bb.colors.muted),
-                const SizedBox(width: BBSpace.m),
-                Expanded(child: Text(label, style: bb.text.body)),
-              ],
             ),
           ),
         ),
