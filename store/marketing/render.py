@@ -18,7 +18,7 @@ SLIDES = [
     ('04-arrivals', '01-mun-centre-1150', 'blue', 'Live arrivals<br>at your stop', 'Metrobus predictions next to the schedule,<br>early or late at a glance'),
     ('05-trip-detail', '08-trip-detail', 'blue', 'Save the trips<br>you take often', 'Your next buses, one tap away,<br>worked out on your phone'),
     ('06-map', '02-live-map', 'blue', 'Every bus,<br>live on the map', 'Route colours and smooth movement<br>between position updates'),
-    ('07-nearby', '05-nearby-stops', 'blue', 'Stops near you,<br>in a tap', 'Nearby stops with their routes,<br>or enter any stop number'),
+    ('07-nearby', '05-nearby-stops', 'blue', 'Stops near you,<br>in a tap', 'See where each route goes,<br>or enter any stop number'),
     ('08-service-alerts', '04-service-alerts', 'blue', 'Detours and alerts<br>for your routes', 'Official Metrobus service alerts,<br>matched to your stop'),
 ]
 
