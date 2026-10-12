@@ -132,7 +132,7 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 
 /// Pumps the planner screens ([plannerTestRouter]), or with [appRoutes] the app's real route tree, on [net] at
 /// [now] ([clock], when given, tells the time instead), starting at [initial].
-/// [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
+/// [use24h], when given, sets the device's clock format. [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -152,6 +152,7 @@ Future<void> pumpPlannerApp(
   ThemeData? theme,
   List<NearbyStop> nearby = const [],
   AlertRunner? alertRunner,
+  bool? use24h,
 }) async {
   SharedPreferences.setMockInitialValues({});
   useInMemoryAlertStore();
@@ -188,7 +189,10 @@ Future<void> pumpPlannerApp(
         theme: theme ?? BBTheme.light(),
         routerConfig: router,
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(textScale),
+            alwaysUse24HourFormat: use24h ?? MediaQuery.of(context).alwaysUse24HourFormat,
+          ),
           child: child!,
         ),
       ),

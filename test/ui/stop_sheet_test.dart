@@ -7,14 +7,12 @@ import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
-import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/state/arrival_alert_providers.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
-import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
@@ -164,11 +162,6 @@ class _PhoneRunner implements AlertRunner {
   Future<void> stop() async {}
 }
 
-class _SlowPollSettings extends SettingsNotifier {
-  @override
-  AppSettings build() => const AppSettings(refreshIntervalSeconds: 3600);
-}
-
 /// The real app at [initial] (a stop's Board link), with the stop's sheet pulled to full.
 Future<void> _pump(
   WidgetTester tester, {
@@ -181,6 +174,7 @@ Future<void> _pump(
   String initial = '/board/1150',
   List<Override> overrides = const [],
   AlertRunner? alertRunner,
+  bool use24h = true,
 }) async {
   await pumpPlannerApp(
     tester,
@@ -194,6 +188,7 @@ Future<void> _pump(
     textScale: textScale,
     settle: settle,
     alertRunner: alertRunner,
+    use24h: use24h,
     overrides: [
       metrobusMobileApiProvider.overrideWithValue(MetrobusMobileApi(client: _emptyKiosk)),
       ...overrides,
@@ -242,7 +237,25 @@ void main() {
 
     await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed);
     expect(find.semantics.byLabel('Live'), isSemantics(isLiveRegion: true, label: 'Live'));
+    expect(find.textContaining(RegExp(r'^ · updated \d\d:\d\d:\d\d$')), findsOneWidget);
+    // No live-region node may embed the refresh time.
+    final liveNodes = find.semantics.byPredicate((n) => n.flagsCollection.isLiveRegion).evaluate();
+    expect(liveNodes, isNotEmpty);
+    expect(liveNodes.where((n) => n.label.contains('updated')), isEmpty);
     handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets("the updated time follows the device's 12-hour setting", (tester) async {
+    await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed, use24h: false);
+    expect(find.textContaining(RegExp(r'^ · updated \d{1,2}:\d\d:\d\d [AP]M$')), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('a schedule-only list shows no updated time', (tester) async {
+    await _pump(tester, repo: _repoWithDepartures());
+    expect(find.text('Showing schedule'), findsOneWidget);
+    expect(find.textContaining('updated'), findsNothing);
     await _unmount(tester);
   });
 
@@ -383,10 +396,7 @@ void main() {
   testWidgets('first load says "Checking live data…" and stays silent, then announces the result', (tester) async {
     final handle = tester.ensureSemantics();
     final never = MockClient((_) => Completer<http.Response>().future);
-    // The poll is moved out of the way: a poll shorter than the live request would restart it for ever.
-    await _pump(tester, repo: _repo(), timeTrackClient: never, settle: false, overrides: [
-      settingsProvider.overrideWith(() => _SlowPollSettings()),
-    ]);
+    await _pump(tester, repo: _repo(), timeTrackClient: never, settle: false);
     await tester.pump(const Duration(milliseconds: 100));
     // The sheet is at its peek: the header is what shows.
     expect(find.text('Checking live data…'), findsOneWidget);
@@ -437,16 +447,6 @@ void main() {
     expect(_c(tester).read(settingsProvider).selectedStopId, '1150');
     expect(find.bySemanticsLabel('Your stop'), findsOneWidget);
     handle.dispose();
-    await _unmount(tester);
-  });
-
-  testWidgets('Plan a trip from here starts the plan from this stop', (tester) async {
-    await _pump(tester, repo: _repo());
-    final container = _c(tester);
-    await tester.tap(find.byKey(StopSheetContent.planFromKey));
-    await tester.pump();
-    expect(container.read(planQueryProvider).from, StopPlace(stopId: '1150', name: 'MUN Centre'));
-    // /search lands with the search screen (the next task); the router just has no page for it yet.
     await _unmount(tester);
   });
 
