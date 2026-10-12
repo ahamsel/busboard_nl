@@ -74,7 +74,7 @@ DateTime defaultPlanTime(DateTime now) {
 }
 
 /// [defaultPlanTime] for now, moved on as the clock passes each 5-minute mark, so a Leave by or Arrive by time the
-/// rider never picked doesn't go stale while the Plan tab stays open.
+/// rider never picked doesn't go stale while the trip options stay open.
 final planDefaultTimeProvider = Provider.autoDispose<DateTime>((ref) {
   final now = ref.read(plannerClockProvider)();
   final at = defaultPlanTime(now);
@@ -97,6 +97,23 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
 
   /// A saved trip opened from its card: its ends, leaving now.
   void setTrip(Place from, Place to) => state = PlanDraft(from: from, to: to);
+
+  /// A new destination for the trip being planned (the options' own "To", or the search after "Plan a trip from
+  /// here"): the start, mode and time stay as they were.
+  void setDestination(Place to) => state = PlanDraft(from: state.from, to: to, mode: state.mode, time: state.time);
+
+  /// A new trip from home to [to] (Where to?, a saved place, Plan to here, a destination picked on the map): no
+  /// start yet, leaving now (Ruling 14). Callers then give it the phone's position with [fillStart].
+  void startFresh(Place to) => state = PlanDraft(to: to);
+
+  /// A new trip from [from] ("Plan a trip from here", the long-press "Plan from here"), leaving now; its
+  /// destination comes next, from a search that keeps this start.
+  void startFrom(Place from) => state = PlanDraft(from: from);
+
+  /// The phone's position as the start, unless one was chosen while the fix was awaited.
+  void fillStart(Place here) {
+    if (state.from == null) setFrom(here);
+  }
 }
 
 final planQueryProvider = NotifierProvider<PlanQueryNotifier, PlanDraft>(PlanQueryNotifier.new);

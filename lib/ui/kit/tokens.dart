@@ -241,7 +241,7 @@ class BBTokens extends ThemeExtension<BBTokens> {
 
   bool get isDark => brightness == Brightness.dark;
 
-  /// Floating elements: nav bar, chips, sheets, dialogs, toasts. The one
+  /// Floating elements: chips, sheets, dialogs, toasts. The one
   /// shadow in light mode; a hairline border instead in dark mode.
   BoxDecoration floating({double radius = BBRadius.card, BorderRadius? borderRadius}) {
     return BoxDecoration(
