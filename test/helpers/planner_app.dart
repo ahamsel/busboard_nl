@@ -120,6 +120,13 @@ Future<void> pumpPlannerApp(
   AlertRunner? alertRunner,
   bool? use24h,
 }) async {
+  // flutter_test's own 800x600 is a tablet to the home screen (its side panel starts at 700): a test that has not
+  // picked a size gets a phone, so the sheet is a pull-up sheet. A test that sets its own size keeps it.
+  if (tester.view.physicalSize == const Size(2400, 1800) && tester.view.devicePixelRatio == 3) {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
   SharedPreferences.setMockInitialValues({});
   useInMemoryAlertStore();
   final previousGeo = GeolocatorPlatform.instance;
