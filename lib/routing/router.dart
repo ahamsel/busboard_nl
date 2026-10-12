@@ -40,9 +40,14 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
       ),
       GoRoute(
         path: '/search',
+        // ?end=from chooses the start; ?save=1 saves a place; ?keep=1 changes the destination of the trip being
+        // planned (its start, mode and time stay) where a plain search starts a fresh trip; ?pickStop=1 chooses
+        // your stop.
         builder: (context, state) => SearchScreen(
           end: state.uri.queryParameters['end'] == 'from' ? MapPick.from : MapPick.to,
           save: state.uri.queryParameters['save'] == '1',
+          keepStart: state.uri.queryParameters['keep'] == '1',
+          pickStop: state.uri.queryParameters['pickStop'] == '1',
         ),
       ),
       GoRoute(

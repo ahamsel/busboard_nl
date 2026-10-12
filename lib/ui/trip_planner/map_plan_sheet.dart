@@ -23,8 +23,9 @@ Place mapPlaceAt(GtfsRepository? repo, LatLng at) {
       : StopPlace(stopId: stop.stopId, name: stop.stopName);
 }
 
-/// The long-press sheet (spec §2.1): "Plan from here" sets the start and opens the search for where to; "Plan to
-/// here" sets the destination and opens its options, from the phone's position when there is no start yet.
+/// The long-press sheet (spec §2.1): "Plan from here" starts a trip from the press and opens the search for where
+/// to (which keeps that start); "Plan to here" starts a fresh trip to it and opens its options, from the phone's
+/// position (Ruling 14).
 Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) async {
   final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, at);
   final fromHere = await showGeneralDialog<bool>(
@@ -40,16 +41,14 @@ Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) as
   if (fromHere == null || !context.mounted) return;
   final q = ref.read(planQueryProvider.notifier);
   if (fromHere) {
-    q.setFrom(place);
-    await GoRouter.of(context).push('/search');
+    q.startFrom(place);
+    await GoRouter.of(context).push('/search?keep=1');
   } else {
-    q.setDestination(place);
+    q.startFresh(place);
     ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
-    if (ref.read(planQueryProvider).from == null) {
-      final here = await locateMe();
-      // A start the rider chose while the fix was awaited wins.
-      if (here != null && context.mounted && ref.read(planQueryProvider).from == null) q.setFrom(here);
-    }
+    final here = await locateMe();
+    // A start the rider chose while the fix was awaited wins.
+    if (here != null) q.fillStart(here);
   }
 }
 

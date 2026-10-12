@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_pick_provider.dart';
 import 'package:busboard_nl/state/saved_place_providers.dart';
@@ -133,14 +134,29 @@ void main() {
     expect(c.read(planQueryProvider).from, isA<PinPlace>().having((p) => p.label, 'label', myLocationLabel));
   });
 
-  testWidgets('a start that is already chosen is kept', (tester) async {
-    await _openSearch(tester, geolocator: FixedGeolocator(47.57, -52.73));
+  testWidgets('with keep=1 (the options\' title, Plan a trip from here) a start already chosen is kept', (tester) async {
+    await _openSearch(tester, location: '/search?keep=1', geolocator: FixedGeolocator(47.57, -52.73));
     final start = StopPlace(stopId: 'A', name: 'Stop A');
     _c(tester).read(planQueryProvider.notifier).setFrom(start);
     await _findMun(tester);
     await tester.tap(find.text('Go here'));
     await tester.pumpAndSettle();
     expect(_c(tester).read(planQueryProvider).from, start);
+  });
+
+  testWidgets('a plain search (Where to?) starts a fresh trip from My location (F3, Ruling 14)', (tester) async {
+    await _openSearch(tester, geolocator: FixedGeolocator(47.57, -52.73));
+    _c(tester).read(planQueryProvider.notifier)
+      ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
+      ..setMode(PlanMode.arriveBy)
+      ..setTime(_now.add(const Duration(hours: 2)));
+    await _findMun(tester);
+    await tester.tap(find.text('Go here'));
+    await tester.pumpAndSettle();
+    final draft = _c(tester).read(planQueryProvider);
+    expect(draft.from, isA<PinPlace>().having((p) => p.label, 'label', myLocationLabel));
+    expect(draft.mode, PlanMode.leaveNow);
+    expect(draft.time, isNull);
   });
 
   testWidgets('empty query shows Choose on map, saved places and recent; end=from adds My location', (tester) async {

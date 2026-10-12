@@ -37,25 +37,29 @@ class MapButtons extends ConsumerWidget {
                 Positioned(
                   top: 4,
                   right: 4,
-                  child: IgnorePointer(
-                    child: Container(
-                      constraints: const BoxConstraints(minWidth: 16),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: bb.colors.dangerInk,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: ExcludeSemantics(
-                        child: Text(
-                          '$count',
-                          textAlign: TextAlign.center,
-                          style: bb.text.caption.copyWith(
-                            color: bb.colors.surface,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
+                  // The count grows with the text only so far: at large sizes it would cover the bell.
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: IgnorePointer(
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 16),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: bb.colors.dangerInk,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ExcludeSemantics(
+                          child: Text(
+                            '$count',
+                            textAlign: TextAlign.center,
+                            style: bb.text.caption.copyWith(
+                              color: bb.colors.surface,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                         ),
                       ),

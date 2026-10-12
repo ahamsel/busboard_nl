@@ -57,7 +57,14 @@ void main() {
     tester.view.physicalSize = const Size(1024, 768);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
+    final net = TestNetwork();
+    await pumpPlannerApp(
+      tester,
+      net: net,
+      now: _now,
+      initial: '/',
+      nearby: [NearbyStop(stop: net.repo.stopsById['A']!, distanceMeters: 80)],
+    );
     final panel = find.byKey(const ValueKey('home-side-panel'));
     await tester.tap(find.text('Choose your stop'));
     await tester.pumpAndSettle();
@@ -101,6 +108,23 @@ void main() {
     final nearest = tester.getRect(find.text('Stop A · 80m'));
     expect(nearest.top, greaterThanOrEqualTo(tester.getRect(panel).top));
     expect(nearest.bottom, lessThanOrEqualTo(tester.getRect(panel).bottom), reason: 'the nearest stop is in view');
+  });
+
+  testWidgets("the panel's stop sheet has a Close button back to the home sheet (F2)", (tester) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
+    final panel = find.byKey(const ValueKey('home-side-panel'));
+    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    container.read(homeSheetProvider.notifier).open(const StopSheet('C'));
+    await tester.pumpAndSettle();
+    final close = find.descendant(of: panel, matching: find.bySemanticsLabel('Close'));
+    expect(close, findsOneWidget);
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(container.read(homeSheetProvider), isA<HomeSheetHome>());
+    expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
   });
 
   testWidgets('the panel stands clear of a notch at the left', (tester) async {

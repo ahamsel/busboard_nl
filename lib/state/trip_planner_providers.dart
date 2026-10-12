@@ -98,8 +98,22 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
   /// A saved trip opened from its card: its ends, leaving now.
   void setTrip(Place from, Place to) => state = PlanDraft(from: from, to: to);
 
-  /// A destination from home (a saved place, a search result): the start stays as it was, or empty.
+  /// A new destination for the trip being planned (the options' own "To", or the search after "Plan a trip from
+  /// here"): the start, mode and time stay as they were.
   void setDestination(Place to) => state = PlanDraft(from: state.from, to: to, mode: state.mode, time: state.time);
+
+  /// A new trip from home to [to] (Where to?, a saved place, Plan to here, a destination picked on the map): no
+  /// start yet, leaving now (Ruling 14). Callers then give it the phone's position with [fillStart].
+  void startFresh(Place to) => state = PlanDraft(to: to);
+
+  /// A new trip from [from] ("Plan a trip from here", the long-press "Plan from here"), leaving now; its
+  /// destination comes next, from a search that keeps this start.
+  void startFrom(Place from) => state = PlanDraft(from: from);
+
+  /// The phone's position as the start, unless one was chosen while the fix was awaited.
+  void fillStart(Place here) {
+    if (state.from == null) setFrom(here);
+  }
 }
 
 final planQueryProvider = NotifierProvider<PlanQueryNotifier, PlanDraft>(PlanQueryNotifier.new);

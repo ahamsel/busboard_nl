@@ -46,13 +46,19 @@ const _recentShown = 10;
 
 /// "Where to?" (spec 2026-10-12 §3.3): find a stop or a place to go to, to start from, or to save.
 /// [end] is the end being chosen; [save] saves the pick as a named place instead of planning to it.
+///
+/// A destination starts a fresh trip, from My location and leaving now, unless [keepStart]: then it only
+/// changes the destination of the trip being planned (Ruling 14). [pickStop] chooses your stop instead
+/// (spec §4.4, "Choose your stop" with no location): the stop becomes yours and its sheet opens.
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key, this.end = MapPick.to, this.save = false});
+  const SearchScreen({super.key, this.end = MapPick.to, this.save = false, this.keepStart = false, this.pickStop = false});
 
   static const fieldKey = ValueKey('search-field');
 
   final MapPick end;
   final bool save;
+  final bool keepStart;
+  final bool pickStop;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -67,7 +73,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
-  String get _title => widget.save
+  String get _title => widget.pickStop
+      ? 'Choose your stop'
+      : widget.save
       ? 'Save a place'
       : widget.end == MapPick.from
       ? 'Choose a start'
@@ -104,12 +112,20 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (_busy) return;
     final router = GoRouter.of(context);
     final query = ref.read(planQueryProvider.notifier);
-    final hasStart = ref.read(planQueryProvider).from != null;
     final recent = ref.read(recentPlacesProvider.notifier);
     final sheet = ref.read(homeSheetProvider.notifier);
     _busy = true;
     try {
       if (widget.save) return await _saveFlow(place);
+      if (widget.pickStop) {
+        if (place is! StopPlace) return;
+        final settings = ref.read(settingsProvider.notifier);
+        sheet.open(StopSheet(place.stopId));
+        _leave(router);
+        await recent.push(place);
+        await settings.setSelectedStop(place.stopId);
+        return;
+      }
       if (widget.end == MapPick.from) {
         query.setFrom(place);
         _leave(router);
@@ -132,10 +148,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         }
       }
       await recent.push(place);
-      query.setDestination(place);
-      if (!hasStart) {
+      // A new trip (Where to?) starts afresh; the trip being planned keeps its start, mode and time.
+      if (widget.keepStart) {
+        query.setDestination(place);
+      } else {
+        query.startFresh(place);
+      }
+      if (ref.read(planQueryProvider).from == null) {
         final here = await _locate();
-        if (here != null) query.setFrom(here);
+        if (here != null) query.fillStart(here);
       }
       sheet.open(const OptionsSheet());
       if (mounted) _leave(router);
@@ -197,7 +218,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _chooseOnMap() {
     if (_busy) return;
-    ref.read(mapPickProvider.notifier).start(widget.end);
+    ref.read(mapPickProvider.notifier).start(widget.end, keepStart: widget.keepStart);
     _leave(GoRouter.of(context));
   }
 
@@ -220,7 +241,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               controller: _controller,
               autofocus: true,
               leadingIcon: BBIcons.search,
-              hint: 'Search for a stop or a place',
+              hint: widget.pickStop ? 'Type the stop number on the pole' : 'Search for a stop or a place',
               textInputAction: TextInputAction.search,
               onChanged: (_) => setState(() {}),
             ),
@@ -244,6 +265,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   List<Widget> _emptyRows(List<SavedPlace> saved, List<Place> recent) {
+    if (widget.pickStop) {
+      final stops = recent.whereType<StopPlace>().take(_recentShown).toList();
+      return [
+        if (stops.isNotEmpty) ...[
+          const SizedBox(height: BBSpace.m),
+          const BBSectionHeader(title: 'Recent'),
+          const SizedBox(height: BBSpace.xs),
+          for (final p in stops)
+            BBPickRow(
+              icon: BBIcons.history,
+              label: p.label,
+              semanticLabel: '${p.label}, stop ${p.stopId}',
+              onTap: () => _pick(p),
+            ),
+        ],
+      ];
+    }
     return [
       // A saved place is a stop or a pin the rider names, not a spot on the map to be picked later.
       if (!widget.save) BBPickRow(icon: BBIcons.map, label: 'Choose on map', onTap: _chooseOnMap),
@@ -286,7 +324,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // Saving a place is for a stop, not for one already saved.
     final places = [
       for (final p in saved)
-        if (!widget.save && p.name.toLowerCase().contains(lower)) p,
+        if (!widget.save && !widget.pickStop && p.name.toLowerCase().contains(lower)) p,
     ];
     if (stops.isEmpty && places.isEmpty) {
       return [

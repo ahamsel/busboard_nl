@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
@@ -18,6 +19,9 @@ import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/options_sheet.dart';
+import 'package:busboard_nl/ui/search/search_screen.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/stop_picker/near_me_list.dart';
@@ -221,13 +225,103 @@ void main() {
     expect(draft.from, isNull);
   });
 
-  testWidgets('a saved place keeps the start that was already chosen', (tester) async {
+  testWidgets('a saved place starts a fresh trip: an old start, mode and time are dropped (F3, Ruling 14)',
+      (tester) async {
     await _pumpHome(tester, places: [_home]);
+    _c(tester).read(planQueryProvider.notifier)
+      ..setFrom(StopPlace(stopId: 'G', name: 'Stop G'))
+      ..setMode(PlanMode.arriveBy)
+      ..setTime(_now.add(const Duration(hours: 1)));
+    await tester.tap(find.text('Home'));
+    await tester.pumpAndSettle();
+    final draft = _c(tester).read(planQueryProvider);
+    expect(draft.from, isNull, reason: 'location is off: no start, not the old one');
+    expect(draft.to, StopPlace(stopId: 'A', name: 'Stop A'));
+    expect(draft.mode, PlanMode.leaveNow);
+    expect(draft.time, isNull);
+  });
+
+  testWidgets('a saved place starts from My location when the phone knows where it is (F3)', (tester) async {
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: _now,
+      initial: '/',
+      geolocator: FixedGeolocator(47.57, -52.73),
+      overrides: [savedPlacesProvider.overrideWith(() => _FixedPlaces([_home]))],
+    );
     _c(tester).read(planQueryProvider.notifier).setFrom(StopPlace(stopId: 'G', name: 'Stop G'));
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
-    expect(_c(tester).read(planQueryProvider).from, StopPlace(stopId: 'G', name: 'Stop G'));
-    expect(_c(tester).read(planQueryProvider).to, StopPlace(stopId: 'A', name: 'Stop A'));
+    expect(_c(tester).read(planQueryProvider).from, isA<PinPlace>().having((p) => p.label, 'label', myLocationLabel));
+  });
+
+  testWidgets('after a saved trip, Where to? plans from no start, leaving now (F3)', (tester) async {
+    await _pumpHome(tester, trips: [_toWork]);
+    await _pullUp(tester);
+    await tester.tap(find.text('To work'));
+    await tester.pumpAndSettle();
+    _c(tester).read(planQueryProvider.notifier).setMode(PlanMode.arriveBy);
+    // Back home, then a new trip.
+    _c(tester).read(homeSheetProvider.notifier).home();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(HomeSheetContent.whereToKey));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop C');
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Stop C').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Go here'));
+    await tester.pumpAndSettle();
+    final draft = _c(tester).read(planQueryProvider);
+    expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
+    expect(draft.from, isNull, reason: 'not the saved trip\'s start');
+    expect(draft.mode, PlanMode.leaveNow);
+    expect(draft.time, isNull);
+  });
+
+  testWidgets("Plan a trip from here starts from that stop, leaving now, and the search's pick keeps it (F3)",
+      (tester) async {
+    await _pumpHome(tester, arrivals: [_arrival(4)]);
+    _c(tester).read(planQueryProvider.notifier)
+      ..setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'E', name: 'Stop E'))
+      ..setMode(PlanMode.arriveBy);
+    await tester.tap(find.bySemanticsLabel(RegExp(r'^Your stop, Stop C')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Plan a trip from here'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop E');
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Stop E').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Go here'));
+    await tester.pumpAndSettle();
+    final draft = _c(tester).read(planQueryProvider);
+    expect(_c(tester).read(homeSheetProvider), isA<OptionsSheet>());
+    expect(draft.from, StopPlace(stopId: 'C', name: 'Stop C'));
+    expect(draft.to, StopPlace(stopId: 'E', name: 'Stop E'));
+    expect(draft.mode, PlanMode.leaveNow);
+  });
+
+  testWidgets("changing the options' destination through their title keeps the start (F3)", (tester) async {
+    await _pumpHome(tester);
+    _c(tester).read(planQueryProvider.notifier)
+      ..setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'C', name: 'Stop C'))
+      ..setMode(PlanMode.arriveBy);
+    _c(tester).read(homeSheetProvider.notifier).open(const OptionsSheet());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(OptionsSheetContent.toRowKey));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop E');
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Stop E').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Go here'));
+    await tester.pumpAndSettle();
+    final draft = _c(tester).read(planQueryProvider);
+    expect(draft.from, StopPlace(stopId: 'A', name: 'Stop A'));
+    expect(draft.to, StopPlace(stopId: 'E', name: 'Stop E'));
+    expect(draft.mode, PlanMode.arriveBy);
   });
 
   testWidgets('a long-press on a saved place offers Remove, and Cancel keeps it', (tester) async {
@@ -295,6 +389,98 @@ void main() {
     await tester.pumpAndSettle();
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
     expect(_c(tester).read(settingsProvider).selectedStopId, isNull, reason: 'the star on the stop sheet does that');
+  });
+
+  testWidgets('a nearby stop opens its sheet at half (F1, spec §3.2)', (tester) async {
+    await _pumpHome(tester, stopId: null, nearby: const [NearbyStop(stop: _stopC, distanceMeters: 80)]);
+    await _pullUp(tester);
+    await tester.tap(find.text('Stop C · 80m'));
+    await tester.pumpAndSettle();
+    final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
+    final area = 844 - 2 * BBSpace.s;
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * area, 1));
+  });
+
+  testWidgets('the home sheet has a tall half; other sheets a half of their own (F1 minor)', (tester) async {
+    await _pumpHome(tester, arrivals: [_arrival(4)]);
+    expect(tester.widget<BBSheet>(find.byType(BBSheet)).halfFraction, greaterThanOrEqualTo(0.75));
+    _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
+    await tester.pumpAndSettle();
+    final stop = tester.widget<BBSheet>(find.byType(BBSheet));
+    expect(stop.halfFraction, closeTo(math.max(0.5, stop.peekFraction + 0.05), 0.0001));
+  });
+
+  group('a stop sheet closes (F2, spec §3.2)', () {
+    testWidgets('with its Close button', (tester) async {
+      await _pumpHome(tester, arrivals: [_arrival(4)]);
+      _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.pumpAndSettle();
+      expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+    });
+
+    testWidgets('swiped down past its peek', (tester) async {
+      await _pumpHome(tester, arrivals: [_arrival(4)]);
+      _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('STOP C'), const Offset(0, 800));
+      await tester.pumpAndSettle();
+      expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+      expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
+    });
+
+    testWidgets('swiped down, it goes back to the sheet under it', (tester) async {
+      await _pumpHome(tester, arrivals: [_arrival(4)]);
+      final sheets = _c(tester).read(homeSheetProvider.notifier);
+      _c(tester).read(planQueryProvider.notifier).setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'C', name: 'Stop C'));
+      sheets.open(const OptionsSheet());
+      sheets.open(const StopSheet('C'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('STOP C'), const Offset(0, 800));
+      await tester.pumpAndSettle();
+      expect(_c(tester).read(homeSheetProvider), isA<OptionsSheet>());
+    });
+
+    testWidgets('a drag down from half stops at peek first', (tester) async {
+      await _pumpHome(tester, arrivals: [_arrival(4)]);
+      _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
+      await tester.pumpAndSettle();
+      final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
+      final area = 844 - 2 * BBSpace.s;
+      final half = tester.getRect(find.byKey(BBSheet.cardKey)).height;
+      // A short, slow drag: from half to a little above peek, where it snaps to peek and stays open.
+      await tester.timedDrag(find.text('STOP C'), Offset(0, half - (sheet.peekFraction + 0.02) * area),
+          const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.peekFraction * area, 1));
+    });
+
+    testWidgets('the home sheet itself never swipes away', (tester) async {
+      await _pumpHome(tester, arrivals: [_arrival(4)]);
+      expect(tester.widget<BBSheet>(find.byType(BBSheet)).dismissible, isFalse);
+      await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, 800));
+      await tester.pumpAndSettle();
+      expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
+    });
+  });
+
+  testWidgets('no stop and no location: "Choose your stop" opens a stop search with a stop-number hint (F5, §4.4)',
+      (tester) async {
+    await _pumpHome(tester, stopId: null);
+    await tester.tap(find.text('Choose your stop'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen), findsOneWidget);
+    expect(find.text('Type the stop number on the pole'), findsOneWidget);
+    expect(find.text('Choose on map'), findsNothing, reason: 'this search is for a stop, not a place to go');
+    await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop C');
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Stop C').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen), findsNothing);
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    expect(_c(tester).read(settingsProvider).selectedStopId, 'C', reason: 'the chosen stop becomes your stop');
   });
 
   testWidgets('no stop chosen: "Choose your stop" pulls the sheet up to the nearby stops', (tester) async {
