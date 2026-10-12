@@ -14,13 +14,16 @@ import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
+import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
@@ -731,13 +734,28 @@ void main() {
       expect(surface.features('bb-route'), hasLength(2));
     });
 
+    testWidgets('a follow sits under any sheet: open a stop, back returns to the follow card', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final container = containerOf(tester);
+      container.read(homeSheetProvider.notifier).open(const StopSheet('s3'));
+      await _frames(tester, 3);
+      expect(find.text('Following bus 2573'), findsOneWidget); // the chip stays
+      expect(find.byType(StopCardHeader), findsOneWidget);
+      expect(find.byType(FollowCardHeader), findsNothing);
+      container.read(homeSheetProvider.notifier).back();
+      await _frames(tester, 3);
+      expect(find.byType(FollowCardHeader), findsOneWidget);
+      expect(find.byType(StopCardHeader), findsNothing);
+    });
+
     testWidgets('a follow set from a selected bus clears the selection', (tester) async {
       await pumpFollow(tester);
-      containerOf(tester).read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
+      containerOf(tester).read(homeSheetProvider.notifier).open(const BusSheet('2573'));
       await tester.pump(const Duration(milliseconds: 100));
       containerOf(tester).read(followProvider.notifier).follow('2573');
       await _frames(tester, 2);
-      expect(containerOf(tester).read(mapSelectionProvider), isNull);
+      expect(containerOf(tester).read(homeSheetProvider), isA<HomeSheetHome>());
       expect(find.text('Following bus 2573'), findsOneWidget);
     });
 
@@ -936,7 +954,7 @@ void main() {
       expect(await sheetTop(tester), open);
       _config!.onTap(LatLng(47.5601, lonAt(100)));
       await settle(tester);
-      expect(containerOf(tester).read(mapSelectionProvider), isNull);
+      expect(containerOf(tester).read(homeSheetProvider), isA<HomeSheetHome>());
       expect(find.text('Following bus 2573'), findsOneWidget);
       expect(await sheetTop(tester), open);
     });

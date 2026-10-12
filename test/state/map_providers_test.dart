@@ -1,6 +1,7 @@
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,16 +42,16 @@ void main() {
     expect(c.read(mapRouteFilterProvider), isEmpty);
   });
 
-  test('selection holds a stop or a bus, by value', () {
+  test('the sheet holds a stop or a bus, by value', () {
     final c = ProviderContainer();
     addTearDown(c.dispose);
-    c.read(mapSelectionProvider.notifier).select(const StopSelection('1150'));
-    expect(c.read(mapSelectionProvider), const StopSelection('1150'));
-    c.read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
-    expect(c.read(mapSelectionProvider), const BusSelection('2573'));
-    expect(const BusSelection('2573') == const BusSelection('2574'), isFalse);
-    c.read(mapSelectionProvider.notifier).clear();
-    expect(c.read(mapSelectionProvider), isNull);
+    c.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+    expect(c.read(homeSheetProvider), const StopSheet('1150'));
+    c.read(homeSheetProvider.notifier).open(const BusSheet('2573'));
+    expect(c.read(homeSheetProvider), const BusSheet('2573'));
+    expect(const BusSheet('2573') == const BusSheet('2574'), isFalse);
+    c.read(homeSheetProvider.notifier).home();
+    expect(c.read(homeSheetProvider), const HomeSheetHome());
   });
 
   test('stop arrivals ask the stop-prediction feed for that stop', () async {

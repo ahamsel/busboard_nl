@@ -9,41 +9,6 @@ import '../domain/arrival/arrival_models.dart';
 import '../domain/arrival/arrival_service.dart';
 import 'providers.dart';
 
-/// What the map sheet shows besides your stop: a tapped stop or a tapped bus.
-sealed class MapSelection {
-  const MapSelection();
-}
-
-class StopSelection extends MapSelection {
-  const StopSelection(this.stopId);
-  final String stopId;
-
-  @override
-  bool operator ==(Object other) => other is StopSelection && other.stopId == stopId;
-  @override
-  int get hashCode => Object.hash(StopSelection, stopId);
-}
-
-class BusSelection extends MapSelection {
-  const BusSelection(this.vehicleId);
-  final String vehicleId;
-
-  @override
-  bool operator ==(Object other) => other is BusSelection && other.vehicleId == vehicleId;
-  @override
-  int get hashCode => Object.hash(BusSelection, vehicleId);
-}
-
-class MapSelectionNotifier extends Notifier<MapSelection?> {
-  @override
-  MapSelection? build() => null;
-
-  void select(MapSelection? selection) => state = selection;
-  void clear() => state = null;
-}
-
-final mapSelectionProvider = NotifierProvider<MapSelectionNotifier, MapSelection?>(MapSelectionNotifier.new);
-
 /// The map's frame clock. Tests move it (an app pause of several minutes).
 final mapClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
