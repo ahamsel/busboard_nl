@@ -12,6 +12,7 @@ import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/map/follow_tracker.dart';
 import 'package:busboard_nl/domain/map/route_geometry.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
@@ -21,7 +22,9 @@ import 'package:busboard_nl/state/saved_place_providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
@@ -214,6 +217,11 @@ class _Trips extends SavedTripsNotifier {
       ];
 }
 
+class _UpdatedAt extends StopArrivalsUpdatedAtNotifier {
+  @override
+  Map<String, DateTime> build() => {'1150': DateTime(2026, 10, 12, 21, 52, 4)};
+}
+
 class _StopCSettings extends SettingsNotifier {
   @override
   AppSettings build() => const AppSettings(selectedStopId: 'C');
@@ -367,6 +375,91 @@ void main() {
         await tester.pump(const Duration(seconds: 11));
       });
     }
+  }
+
+  // The real app's stop sheet and trip options at 2x text, on a small phone, in both themes (spec §4.5). The stop
+  // sheet's live line puts the "updated" time next to the state, so it also runs with a live list on the narrowest
+  // supported width (the header must wrap rather than overflow).
+  Future<void> scrollSheet(WidgetTester tester) async {
+    final list = find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(Scrollable)).first;
+    for (var i = 0; i < 12; i++) {
+      await tester.drag(list, const Offset(0, -300), warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(tester.takeException(), isNull, reason: 'after drag ${i + 1}');
+    }
+  }
+
+  for (final dark in [false, true]) {
+    final theme = dark ? 'dark' : 'light';
+    final liveRows = [_arrival(2), _arrival(9), _arrival(17)];
+
+    for (final (size, live) in [(const Size(360, 640), false), (const Size(320, 640), true)]) {
+      testWidgets('the stop sheet at ${size.width.toInt()}x${size.height.toInt()}, 2.0x text, $theme${live ? ', live' : ''}',
+          (tester) async {
+        tester.view.physicalSize = size * 3;
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.reset);
+        await pumpPlannerApp(
+          tester,
+          net: TestNetwork(),
+          now: DateTime(2026, 10, 12, 13, 0),
+          initial: '/board/1150',
+          textScale: 2.0,
+          use24h: false,
+          theme: dark ? BBTheme.dark() : BBTheme.light(),
+          repoFuture: Future.value(_repo()),
+          alerts: [_alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.')],
+          overrides: [
+            metrobusMobileApiProvider.overrideWithValue(MetrobusMobileApi(client: _emptyKiosk)),
+            stopArrivalsProvider.overrideWith((ref, id) async => live ? liveRows : const <ArrivalRow>[]),
+            if (live) stopArrivalsUpdatedAtProvider.overrideWith(_UpdatedAt.new),
+          ],
+        );
+        expect(tester.takeException(), isNull, reason: 'initial layout at peek');
+        if (live) {
+          expect(find.textContaining('updated'), findsOneWidget, reason: 'the live line shows the refresh time');
+          // The state label keeps one line (the time wraps instead of crushing it to a letter a line).
+          expect(tester.getRect(find.text('Live')).height, lessThan(40), reason: 'Live stays on one line');
+        }
+        await tester.drag(find.byType(BBPill).first, const Offset(0, -700));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: 'at full');
+        await scrollSheet(tester);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 11));
+      });
+    }
+
+    testWidgets('the trip options at 360x640, 2.0x text, $theme', (tester) async {
+      tester.view.physicalSize = const Size(360, 640) * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: DateTime(testDay.year, testDay.month, testDay.day, 8, 1),
+        textScale: 2.0,
+        theme: dark ? BBTheme.dark() : BBTheme.light(),
+      );
+      final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      c.read(planQueryProvider.notifier).setTrip(
+            StopPlace(stopId: 'A', name: 'Stop A'),
+            StopPlace(stopId: 'C', name: 'Stop C'),
+          );
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'at peek');
+      final handle = tester.ensureSemantics();
+      await tester.tap(find.bySemanticsLabel('Map sheet'));
+      await tester.pumpAndSettle();
+      handle.dispose();
+      expect(tester.takeException(), isNull, reason: 'at half');
+      await tester.drag(find.byType(BBSheet), const Offset(0, -700));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'at full');
+      expect(find.byType(JourneyCard), findsWidgets);
+      await scrollSheet(tester);
+    });
   }
 
   // The home at its peek: the real screen, so the peek is the sheet's own. Where to?, the first saved place and the

@@ -952,7 +952,7 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      // Full is 90% of the area under the status bar and above the nav bar.
+      // Full is 90% of the area under the status bar.
       expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, lessThan(before - 400));
     });
 

@@ -23,7 +23,6 @@ void main() {
       await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: path);
       expect(find.byType(HomeScreen), findsOneWidget);
       expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
-      expect(find.byType(BBNavBar), findsNothing);
     });
   }
 
