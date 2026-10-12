@@ -73,44 +73,81 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ? 'Choose a start'
       : 'Where to?';
 
-  Future<void> _pick(Place place, {bool askAboutStop = false}) async {
-    if (widget.save) return _saveFlow(place);
-    final router = GoRouter.of(context);
-    final q = ref.read(planQueryProvider.notifier);
-    if (widget.end == MapPick.from) {
-      q.setFrom(place);
+  /// A pick or a location fix is being worked out: further taps are ignored until it ends.
+  var _busy = false;
+
+  /// Waiting for a location fix (the rows show "Finding you…").
+  var _locating = false;
+
+  /// Leaves the screen: back to the page below, or home when this is the first page.
+  void _leave(GoRouter router) {
+    if (router.canPop()) {
       router.pop();
-      return;
+    } else {
+      router.go('/');
     }
-    if (askAboutStop && place is StopPlace) {
-      final goHere = await BBDialog.show<bool>(
-        context,
-        title: place.label,
-        actions: const [
-          BBDialogAction(label: 'See its buses', value: false),
-          BBDialogAction(label: 'Go here', value: true, primary: true),
-        ],
-      );
-      if (goHere == null || !mounted) return;
-      if (!goHere) {
-        ref.read(homeSheetProvider.notifier).open(StopSheet(place.stopId));
-        router.pop();
+  }
+
+  /// One fix, with the "Finding you…" row showing while it is awaited.
+  Future<PinPlace?> _locate() async {
+    if (mounted) setState(() => _locating = true);
+    try {
+      return await locateMe();
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  /// Everything this needs from [ref] and [context] is taken before the first await: the fix can take a while,
+  /// and the rider may leave meanwhile. The destination is still set then, since the rider asked to go there.
+  Future<void> _pick(Place place, {bool askAboutStop = false}) async {
+    if (_busy) return;
+    final router = GoRouter.of(context);
+    final query = ref.read(planQueryProvider.notifier);
+    final hasStart = ref.read(planQueryProvider).from != null;
+    final recent = ref.read(recentPlacesProvider.notifier);
+    final sheet = ref.read(homeSheetProvider.notifier);
+    _busy = true;
+    try {
+      if (widget.save) return await _saveFlow(place);
+      if (widget.end == MapPick.from) {
+        query.setFrom(place);
+        _leave(router);
         return;
       }
+      if (askAboutStop && place is StopPlace) {
+        final goHere = await BBDialog.show<bool>(
+          context,
+          title: place.label,
+          actions: const [
+            BBDialogAction(label: 'See its buses', value: false),
+            BBDialogAction(label: 'Go here', value: true, primary: true),
+          ],
+        );
+        if (goHere == null) return;
+        if (!goHere) {
+          sheet.open(StopSheet(place.stopId));
+          if (mounted) _leave(router);
+          return;
+        }
+      }
+      await recent.push(place);
+      query.setDestination(place);
+      if (!hasStart) {
+        final here = await _locate();
+        if (here != null) query.setFrom(here);
+      }
+      sheet.open(const OptionsSheet());
+      if (mounted) _leave(router);
+    } finally {
+      _busy = false;
     }
-    await ref.read(recentPlacesProvider.notifier).push(place);
-    q.setDestination(place);
-    if (ref.read(planQueryProvider).from == null) {
-      final here = await locateMe();
-      if (here != null) q.setFrom(here);
-    }
-    ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
-    if (mounted) router.pop();
   }
 
   /// Asks for a name and an icon, then saves [place].
   Future<void> _saveFlow(Place place) async {
     final router = GoRouter.of(context);
+    final places = ref.read(savedPlacesProvider.notifier);
     var name = place.label;
     var icon = SavedPlaceIcon.star;
     final save = await BBDialog.show<bool>(
@@ -122,41 +159,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         BBDialogAction(label: 'Save', value: true, primary: true),
       ],
     );
-    if (save != true || !mounted) return;
-    final saved = await ref
-        .read(savedPlacesProvider.notifier)
-        .put(
-          SavedPlace(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            name: name.trim().isEmpty ? place.label : name.trim(),
-            icon: icon,
-            place: place,
-          ),
-        );
+    if (save != true) return;
+    final saved = await places.put(
+      SavedPlace(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: name.trim().isEmpty ? place.label : name.trim(),
+        icon: icon,
+        place: place,
+      ),
+    );
     if (!mounted) return;
     if (!saved) {
       BBToast.show(context, 'You can save up to $maxSavedPlaces places. Remove one first.');
       return;
     }
-    router.pop();
+    _leave(router);
   }
 
   /// "My location" as the start.
   Future<void> _useMyLocation() async {
+    if (_busy) return;
     final router = GoRouter.of(context);
-    final here = await locateMe();
-    if (!mounted) return;
-    if (here == null) {
-      BBToast.show(context, "Couldn't find your location");
-      return;
+    final query = ref.read(planQueryProvider.notifier);
+    _busy = true;
+    try {
+      final here = await _locate();
+      if (here != null) {
+        query.setFrom(here);
+        if (mounted) _leave(router);
+      } else if (mounted) {
+        BBToast.show(context, "Couldn't find your location");
+      }
+    } finally {
+      _busy = false;
     }
-    ref.read(planQueryProvider.notifier).setFrom(here);
-    router.pop();
   }
 
   void _chooseOnMap() {
+    if (_busy) return;
     ref.read(mapPickProvider.notifier).start(widget.end);
-    GoRouter.of(context).pop();
+    _leave(GoRouter.of(context));
   }
 
   @override
@@ -170,7 +212,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          BBTopBar(title: _title, onBack: () => context.pop()),
+          BBTopBar(title: _title, onBack: () => _leave(GoRouter.of(context))),
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.s),
             child: BBTextField(
@@ -186,7 +228,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.xxl),
-              children: query.isEmpty ? _emptyRows(saved, recent) : _resultRows(bb, repo, query, saved),
+              children: [
+                if (_locating)
+                  Semantics(
+                    liveRegion: true,
+                    child: const BBPickRow(icon: BBIcons.nearMe, label: 'Finding you…', onTap: null),
+                  ),
+                ...(query.isEmpty ? _emptyRows(saved, recent) : _resultRows(bb, repo, query, saved)),
+              ],
             ),
           ),
         ],
@@ -234,9 +283,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ..insert(0, exact);
     }
     final lower = query.toLowerCase();
+    // Saving a place is for a stop, not for one already saved.
     final places = [
       for (final p in saved)
-        if (p.name.toLowerCase().contains(lower)) p,
+        if (!widget.save && p.name.toLowerCase().contains(lower)) p,
     ];
     if (stops.isEmpty && places.isEmpty) {
       return [
