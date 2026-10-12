@@ -160,6 +160,18 @@ class CalendarDate {
   });
 }
 
+/// A route serving a stop and where its buses head from there: up to two
+/// destinations, most frequent first; empty when every trip ends at the stop.
+class RouteDirections {
+  final String routeShortName;
+  final List<String> destinations;
+
+  const RouteDirections({required this.routeShortName, required this.destinations});
+
+  @override
+  String toString() => 'RouteDirections($routeShortName → ${destinations.join(' / ')})';
+}
+
 /// Lightweight entry linking a route's short name to a trip's shape.
 /// Used for fallback shape matching when gtfsTripId is unavailable.
 class TripShapeEntry {
