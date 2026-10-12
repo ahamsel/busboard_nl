@@ -21,6 +21,7 @@ import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
@@ -235,9 +236,9 @@ void main() {
   testWidgets('with no stop chosen, the chip and sheet invite you to choose one', (tester) async {
     await _pump(tester);
     expect(find.byKey(const ValueKey('stub-map')), findsOneWidget);
-    expect(find.text('Choose a stop'), findsWidgets);
+    expect(find.text('Choose your stop'), findsOneWidget);
     expect(find.text('All routes'), findsOneWidget);
-    expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
+    expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
   });
 
   testWidgets('tapping near a stop opens its card; tapping empty map returns to your stop', (tester) async {
@@ -249,7 +250,7 @@ void main() {
     _config!.onTap(const LatLng(47.0, -52.0));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Stop 1150'), findsNothing);
-    expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
+    expect(find.text('Choose your stop'), findsOneWidget);
   });
 
   testWidgets('tapping near a bus opens its card', (tester) async {
@@ -422,7 +423,7 @@ void main() {
     });
   });
 
-  testWidgets("the peek is tall enough for your stop's two arrivals", (tester) async {
+  testWidgets("the peek shows your stop's next bus in full, with Where to? above it, and the one after peeking in", (tester) async {
     ArrivalRow arrival(int minutes) => ArrivalRow(
           routeShortName: '10',
           headsign: 'Downtown',
@@ -440,11 +441,13 @@ void main() {
     final card = tester.getRect(find.byKey(BBSheet.cardKey));
     final tiles = find.byType(ArrivalRowTile);
     expect(tiles, findsAtLeastNWidgets(2));
-    for (final i in [0, 1]) {
-      final r = tester.getRect(tiles.at(i));
-      expect(r.top, greaterThanOrEqualTo(card.top));
-      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: 'arrival ${i + 1} fits inside the peeking card');
-    }
+    // The home header (Where to?, saved places, your stop) takes room: the peek stops at its cap, below the half
+    // detent, so only the first bus is whole and the next shows its top (spec 2026-10-12 §3.1).
+    expect(tester.getRect(find.byKey(HomeSheetContent.whereToKey)).top, greaterThanOrEqualTo(card.top));
+    final first = tester.getRect(tiles.at(0));
+    expect(first.top, greaterThanOrEqualTo(card.top));
+    expect(first.bottom, lessThanOrEqualTo(card.bottom), reason: 'the next bus fits inside the peeking card');
+    expect(tester.getRect(tiles.at(1)).top, lessThan(card.bottom), reason: 'the one after starts inside it');
   });
 
   testWidgets('choosing a new stop recentres the map on it', (tester) async {

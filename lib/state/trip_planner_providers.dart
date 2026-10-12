@@ -97,6 +97,9 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
 
   /// A saved trip opened from its card: its ends, leaving now.
   void setTrip(Place from, Place to) => state = PlanDraft(from: from, to: to);
+
+  /// A destination from home (a saved place, a search result): the start stays as it was, or empty.
+  void setDestination(Place to) => state = PlanDraft(from: state.from, to: to, mode: state.mode, time: state.time);
 }
 
 final planQueryProvider = NotifierProvider<PlanQueryNotifier, PlanDraft>(PlanQueryNotifier.new);

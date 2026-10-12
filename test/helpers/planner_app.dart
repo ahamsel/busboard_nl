@@ -149,6 +149,8 @@ Future<void> pumpPlannerApp(
   bool appRoutes = false,
   List<ServiceAlert> alerts = const [],
   Future<GtfsRepository>? repoFuture,
+  ThemeData? theme,
+  List<NearbyStop> nearby = const [],
 }) async {
   SharedPreferences.setMockInitialValues({});
   useInMemoryAlertStore();
@@ -168,7 +170,7 @@ Future<void> pumpPlannerApp(
         ),
         // [repoFuture], when given, holds the schedule (a cold start) until it completes.
         gtfsRepositoryProvider.overrideWith((ref) => repoFuture ?? Future.value(net.repo)),
-        nearestStopsProvider.overrideWith((ref) async => const <NearbyStop>[]),
+        nearestStopsProvider.overrideWith((ref) async => nearby),
         plannerClockProvider.overrideWithValue(clock ?? () => now),
         // Isolate.run never finishes under testWidgets' fake async.
         timetableIndexBuilderProvider.overrideWithValue((repo, day) async => TimetableIndex.build(repo, day)),
@@ -182,7 +184,7 @@ Future<void> pumpPlannerApp(
         ...overrides,
       ],
       child: MaterialApp.router(
-        theme: BBTheme.light(),
+        theme: theme ?? BBTheme.light(),
         routerConfig: router,
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
