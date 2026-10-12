@@ -13,7 +13,7 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/journey_on_map_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
-import 'package:busboard_nl/ui/map/map_screen.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_detail_screen.dart';
 import 'package:flutter/rendering.dart';
@@ -189,7 +189,7 @@ void main() {
     expect(shown, isNotNull);
     expect(shown!.departs, 8 * 3600);
     expect(_location(tester), '/map');
-    expect(find.byType(MapScreen), findsOneWidget);
+    expect(find.byType(HomeScreen), findsOneWidget);
     expect(find.bySemanticsLabel('Hide the trip from the map'), findsOneWidget);
     await _unmount(tester);
   });

@@ -25,19 +25,17 @@ import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../copy/legal_copy.dart';
 import '../kit/kit.dart';
+import '../map/follow_camera.dart';
+import '../map/follow_card.dart';
+import '../map/journey_lines.dart';
+import '../map/map_hit_test.dart';
+import '../map/map_layers.dart';
+import '../map/map_style.dart';
+import '../map/map_surface.dart';
+import '../map/map_view.dart';
+import '../map/route_filter_card.dart';
 import '../trip_planner/map_plan_sheet.dart';
-import 'bus_card.dart';
-import 'follow_camera.dart';
-import 'follow_card.dart';
-import 'journey_lines.dart';
-import 'map_hit_test.dart';
-import 'map_layers.dart';
-import 'map_style.dart';
-import 'map_surface.dart';
-import 'map_view.dart';
-import 'my_stop_card.dart';
-import 'route_filter_card.dart';
-import 'stop_card.dart';
+import 'sheet_content.dart';
 
 /// What the screen holds while a bus is being followed (spec §3.5): the
 /// tracker and camera, whether a gesture has paused the camera, the card's
@@ -69,22 +67,20 @@ class _Follow {
   ({List<List<double>> driven, List<List<double>> ahead, Color color})? route;
 }
 
-/// The Map tab (spec §3.3): full-screen Harbour map with your-stop and route
-/// chips, a my-location control and one floating sheet whose card follows the
-/// selection (your stop / a stop / a bus). A long-press plans from or to that
-/// point; [pick] ('from' or 'to', from `/map?pick=`) makes the next tap choose
-/// that end of the trip; a journey shown from the planner is drawn on top.
-class MapScreen extends ConsumerStatefulWidget {
-  const MapScreen({super.key, this.pick});
+/// The app's home (spec 2026-10-12 §3): the map, the floating controls and one sheet whose content
+/// follows the selection. A long-press plans from or to that point; [pick] ('from' or 'to') makes the next
+/// tap choose that end of the trip; a journey shown from the planner is drawn on top.
+class HomeScreen extends ConsumerStatefulWidget {
+  const HomeScreen({super.key, this.pick});
 
   /// 'from' or 'to' while the planner waits for a point on the map; anything else is ignored.
   final String? pick;
 
   @override
-  ConsumerState<MapScreen> createState() => _MapScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   static const _defaultTarget = LatLng(47.5615, -52.7126);
   static const _defaultZoom = 13.0;
   static const _frameInterval = Duration(milliseconds: 120);
@@ -962,20 +958,12 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 semanticLabel: 'Map sheet',
                 header: _measuredHeader(follow != null
                     ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
-                    : switch (selection) {
-                        null => MyStopCard.header(),
-                        StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),
-                        BusSelection(:final vehicleId) => BusCardHeader(vehicleId: vehicleId),
-                      }),
+                    : selectionHeader(selection, selectedStop)),
                 slivers: [
                   SliverToBoxAdapter(
                     child: follow != null
                         ? FollowCardBody(snapshot: follow.snapshot)
-                        : switch (selection) {
-                            null => MyStopCard.body(),
-                            StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardBody(stop: selectedStop),
-                            BusSelection(:final vehicleId) => BusCardBody(vehicleId: vehicleId),
-                          },
+                        : selectionBody(selection, selectedStop),
                   ),
                 ],
               ),
