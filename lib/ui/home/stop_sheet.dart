@@ -39,6 +39,7 @@ class _StopHeader extends ConsumerWidget {
     final rows = arrivals.value;
     final checking = rows == null && !arrivals.hasError;
     final live = rows != null && rows.any((r) => r.isLive);
+    final updatedAt = ref.watch(stopArrivalsUpdatedAtProvider.select((m) => m[stopId]));
     final mine = ref.watch(settingsProvider.select((s) => s.selectedStopId)) == stopId;
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.s, BBSpace.s),
@@ -84,6 +85,12 @@ class _StopHeader extends ConsumerWidget {
                 ),
               ),
             ),
+            // Outside the live region, so assistive tech hears live <-> schedule changes, not every refresh time.
+            if (live && updatedAt != null)
+              Text(
+                ' · updated ${BBTime.of(updatedAt, use24h: BBTime.use24h(context), seconds: true)}',
+                style: bb.text.caption,
+              ),
           ]),
           const SizedBox(height: BBSpace.s),
           BBButton(
