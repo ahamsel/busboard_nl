@@ -9,7 +9,7 @@ See what is happening now
 
 Check any stop
 
-• Enter a four-digit stop ID or choose a nearby stop.
+• Enter a four-digit stop ID, or choose a nearby stop and see where each route goes from it.
 • Compare Metrobus live predictions with scheduled departures.
 • Set an arrival alert: get a notification when your bus is 3, 5 or 10 minutes away.
 • See run and vehicle details when Metrobus provides them.

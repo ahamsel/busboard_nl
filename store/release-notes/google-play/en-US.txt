@@ -1,7 +1,3 @@
-New in 1.4.0:
-• Trip planner: the new Plan tab plans a trip leaving now, leaving by or arriving by any minute you pick
-• Start and end at a stop, your location or any spot on the map; press and hold the map to plan from or to it
-• Save trips you take often and see their next buses on the Plan tab
-• Plans use live bus times for the next hour, all worked out on your phone
-• Tap a live bus on a stop's card on the map to follow it
-• Late buses keep their live times past midnight
+New in 1.4.1:
+• Nearby stops show where each route goes from there, like 10 to Downtown or Kelsey Drive
+• Live times show after midnight for buses still running from the night before
