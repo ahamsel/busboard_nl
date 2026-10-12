@@ -838,6 +838,20 @@ void main() {
       expect(padding.top, greaterThan(16 + 44));
     });
 
+    testWidgets('on a tablet See all stops scrolls the panel down to the stop list', (tester) async {
+      await pumpFollow(tester, size: const Size(1024, 300));
+      await startFollowing(tester);
+      final scrollable = find.descendant(of: find.byKey(const ValueKey('home-side-panel')), matching: find.byType(Scrollable));
+      ScrollPosition position() => tester.state<ScrollableState>(scrollable).position;
+      expect(position().maxScrollExtent, greaterThan(0), reason: 'the card is taller than the panel');
+      expect(position().pixels, 0);
+      await tester.tap(find.text('See all stops'));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100)); // the scroll animation
+      }
+      expect(position().pixels, greaterThan(0));
+    });
+
     testWidgets('while following, the route is drawn as a driven and an ahead part', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
@@ -1583,6 +1597,19 @@ void main() {
       expect(surface.features(MapLayers.journeySource), isEmpty);
       expect(surface.features(MapLayers.journeyWalkSource), isEmpty);
       expect(find.text('Hide trip'), findsNothing);
+    });
+
+    testWidgets('the fit keeps the journey clear of the Hide trip chip', (tester) async {
+      final surface = _RecordingSurface();
+      _surface = surface;
+      await _pump(tester, repo: network);
+      final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      container.read(journeyOnMapProvider.notifier).show(journey());
+      await tester.runAsync(() => _styleLoaded(surface));
+      await _frames(tester, 3);
+      final (_, _, padding, _) = surface.fits.last;
+      final hideBottom = tester.getRect(find.widgetWithText(BBChip, 'Hide trip')).bottom;
+      expect(padding.top, greaterThanOrEqualTo(hideBottom + 16), reason: 'a fitted marker is not drawn under the chip');
     });
 
     testWidgets('a journey shown before the style loads is drawn once it does', (tester) async {

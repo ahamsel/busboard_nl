@@ -138,6 +138,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   double? _actionsBottom;
   bool _headerMeasureScheduled = false;
   double _controlsHeight = 44;
+  // The "Hide trip" chip, one row under the chips while a journey is drawn: the fit keeps clear of it too.
+  final _hideTripKey = GlobalKey();
+  double _hideTripHeight = 44;
   bool _measureScheduled = false;
   bool _frameInFlight = false;
   bool _myLocationEnabled = false;
@@ -153,7 +156,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   bool _journeyFitPending = false;
   // Where the follow camera must keep the bus and your stop clear of the chips
   // and the peeking sheet; refreshed by every layout.
-  EdgeInsets _fitPadding = const EdgeInsets.fromLTRB(48, 96, 48, 220);
+  EdgeInsets _fitBase = const EdgeInsets.fromLTRB(48, 96, 48, 220);
+
+  /// What the "Hide trip" chip adds under the chips, once a journey is drawn.
+  double get _hideTripExtra => BBSpace.m + _hideTripHeight;
+
+  /// [_fitBase] with room for the Hide-trip chip when a journey is drawn. Read when the camera moves, so a journey
+  /// that has just been shown (the chip not built yet) already counts.
+  EdgeInsets get _fitPadding => ref.read(journeyOnMapProvider) == null
+      ? _fitBase
+      : _fitBase.copyWith(top: _fitBase.top + _hideTripExtra);
 
   /// The map's size, for the follow camera's fit.
   Size _mapSize = const Size(390, 844);
@@ -729,8 +741,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return _sheet;
   }
 
-  /// "Choose your stop": the sheet is pulled up to the nearby stops; the side panel is scrolled down to them.
-  void _chooseStop({required bool wide}) {
+  /// "Choose your stop", "See all stops": the sheet is pulled up to the rest of its content; the side panel is
+  /// scrolled down past its header to it.
+  void _showMore({required bool wide}) {
     if (!wide) return unawaited(_sheet.animateToDetent(BBSheetDetent.full));
     final header = _headerKey.currentContext;
     final scrollable = header == null ? null : Scrollable.maybeOf(header);
@@ -843,7 +856,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return LayoutBuilder(builder: (context, constraints) {
       // On a tablet the sheet is a fixed panel at the left and everything else is laid out to its right.
       final wide = constraints.maxWidth >= homeSidePanelBreakpoint;
-      final panelInset = wide ? homeSidePanelWidth + BBSpace.s : 0.0;
+      // The panel stands clear of a notch on its side, and everything else of the panel.
+      final panelLeft = media.padding.left + BBSpace.s;
+      final panelInset = wide ? panelLeft + homeSidePanelWidth : 0.0;
+      final hideTripExtra = journey == null ? 0.0 : _hideTripExtra;
       // BBSheet pads top + s above and bottomInset + s below, and its fractions
       // apply to what is left: this is where the peeking card's top really is.
       final sheetArea = math.max(1.0, constraints.maxHeight - (media.padding.top + BBSpace.s) - (navInset + BBSpace.s));
@@ -862,7 +878,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // Just above the card, but below the chips and the my-location pill. With
       // no room, stay on screen and overlap the card's top edge instead.
       final belowControls =
-          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + BBSpace.s) - creditTextHeight;
+          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + hideTripExtra + BBSpace.s) - creditTextHeight;
       // The panel has no peek: the credit sits in the bottom corner of the map beside it.
       final creditBottom = wide
           ? navInset + BBSpace.s
@@ -873,7 +889,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _mapSize = constraints.biggest;
       // The follow camera keeps the bus and your stop clear of the chips, the
       // credit and the card, with room for half a followed marker on each side.
-      _fitPadding = EdgeInsets.fromLTRB(
+      _fitBase = EdgeInsets.fromLTRB(
         _fitMargin + panelInset,
         media.padding.top + BBSpace.s + _controlsHeight + _fitMargin / 2,
         _fitMargin,
@@ -892,8 +908,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // gets its own header key and sheet controller.)
       final sheetController = _sheetFor(sheetKey);
       final panelHeader = _measuredHeader(followShowing
-          ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
-          : selectionHeader(sheet, onChooseStop: () => _chooseStop(wide: wide)));
+          ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows, wide: wide)
+          : selectionHeader(sheet, onChooseStop: () => _showMore(wide: wide)));
       final panelSlivers = followShowing
           ? [SliverToBoxAdapter(child: FollowCardBody(snapshot: follow.snapshot))]
           : selectionSlivers(sheet);
@@ -973,6 +989,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                           child: journey == null
                               ? const SizedBox.shrink()
                               : BBChip(
+                                  key: _hideTripKey,
                                   label: 'Hide trip',
                                   icon: BBIcons.close,
                                   semanticLabel: 'Hide the trip from the map',
@@ -1031,18 +1048,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             if (wide)
               Positioned(
                 key: const ValueKey('home-side-panel'),
-                left: BBSpace.s,
+                left: panelLeft,
                 top: media.padding.top + BBSpace.s,
                 bottom: media.padding.bottom + BBSpace.s,
                 width: homeSidePanelWidth,
-                child: DecoratedBox(
-                  decoration: bb.floating(radius: BBRadius.sheet),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(BBRadius.sheet),
-                    // A new selection starts at the top of a fresh list.
-                    child: CustomScrollView(
-                      key: ValueKey(sheetKey),
-                      slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
+                child: Semantics(
+                  container: true,
+                  label: 'Map sheet',
+                  child: DecoratedBox(
+                    decoration: bb.floating(radius: BBRadius.sheet),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(BBRadius.sheet),
+                      // A new selection starts at the top of a fresh list.
+                      child: CustomScrollView(
+                        key: ValueKey(sheetKey),
+                        slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
+                      ),
                     ),
                   ),
                 ),
@@ -1129,7 +1150,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// The follow card at peek. Its destination, route and delay come from the
   /// followed trip: after an arrival the bus may already be on its next one.
   Widget _followHeader(_Follow f, GtfsRepository repo, StopInfo? myStop, List<ArrivalRow> yourStopArrivals,
-      {required bool actionsFirst}) {
+      {required bool actionsFirst, required bool wide}) {
     final snap = f.snapshot;
     final bus = snap.bus;
     final busOnTrip = bus != null && (bus.currentTripId == null || bus.currentTripId == snap.tripId);
@@ -1144,7 +1165,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       tripHeadsign: tripHeadsign,
       routeLabel: _routeLabel(repo, snap),
       onStop: () => ref.read(followProvider.notifier).stop(),
-      onSeeAll: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)),
+      onSeeAll: () => _showMore(wide: wide),
       actionsFirst: actionsFirst,
       actionsKey: _actionsKey,
       alertAction: live.isEmpty || myStop == null
@@ -1197,7 +1218,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _measureScheduled = false;
       if (!mounted) return;
       final height = _controlsKey.currentContext?.size?.height;
-      if (height != null && (height - _controlsHeight).abs() > 0.5) setState(() => _controlsHeight = height);
+      final hideHeight = _hideTripKey.currentContext?.size?.height;
+      final controlsChanged = height != null && (height - _controlsHeight).abs() > 0.5;
+      final hideChanged = hideHeight != null && (hideHeight - _hideTripHeight).abs() > 0.5;
+      if (controlsChanged || hideChanged) {
+        setState(() {
+          if (controlsChanged) _controlsHeight = height;
+          if (hideChanged) _hideTripHeight = hideHeight;
+        });
+      }
     });
   }
 }

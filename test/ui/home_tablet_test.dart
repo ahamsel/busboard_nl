@@ -1,3 +1,4 @@
+import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
@@ -23,6 +24,7 @@ void main() {
     expect(panel.left, lessThan(20));
     expect(panel.width, homeSidePanelWidth);
     expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
+    expect(find.bySemanticsLabel('Map sheet'), findsOneWidget, reason: 'the panel is named like the sheet');
     expect(tester.getRect(find.bySemanticsLabel('Settings')).left, greaterThan(panel.right));
     expect(tester.getRect(find.text('All routes')).left, greaterThan(panel.right), reason: 'the chips clear the panel');
     expect(tester.getRect(find.textContaining('OpenStreetMap')).left, greaterThan(panel.right), reason: 'so does the credit');
@@ -71,5 +73,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Choose your stop scrolls the panel down to the nearby stops', (tester) async {
+    tester.view.physicalSize = const Size(1024, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final net = TestNetwork();
+    await pumpPlannerApp(
+      tester,
+      net: net,
+      now: _now,
+      initial: '/',
+      nearby: [
+        for (final (i, id) in ['A', 'B', 'C', 'D', 'E', 'F'].indexed)
+          NearbyStop(stop: net.repo.stopsById[id]!, distanceMeters: 80.0 + i * 40),
+      ],
+    );
+    final panel = find.byKey(const ValueKey('home-side-panel'));
+    final scrollable = find.descendant(of: panel, matching: find.byType(Scrollable));
+    ScrollPosition position() => tester.state<ScrollableState>(scrollable).position;
+    expect(position().pixels, 0);
+    expect(position().maxScrollExtent, greaterThan(0), reason: 'the panel is taller than the screen leaves it');
+    await tester.tap(find.text('Choose your stop'));
+    await tester.pumpAndSettle();
+    expect(position().pixels, greaterThan(0), reason: 'scrolled past the header');
+    final nearest = tester.getRect(find.text('Stop A · 80m'));
+    expect(nearest.top, greaterThanOrEqualTo(tester.getRect(panel).top));
+    expect(nearest.bottom, lessThanOrEqualTo(tester.getRect(panel).bottom), reason: 'the nearest stop is in view');
+  });
+
+  testWidgets('the panel stands clear of a notch at the left', (tester) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(left: 40);
+    addTearDown(tester.view.reset);
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
+    final panel = tester.getRect(find.byKey(const ValueKey('home-side-panel')));
+    expect(panel.left, 40 + BBSpace.s);
+    expect(tester.getRect(find.text('All routes')).left, greaterThan(panel.right));
   });
 }
