@@ -16,6 +16,7 @@ import 'package:busboard_nl/state/saved_place_providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
@@ -25,7 +26,9 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_alerts.dart';
 import '../helpers/planner_app.dart';
 import '../trip_planner/test_network.dart';
 
@@ -133,6 +136,34 @@ Future<void> _pullUp(WidgetTester tester) async {
 }
 
 void main() {
+  group('the one-time tip', () {
+    testWidgets('shows once and stays dismissed', (tester) async {
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: false);
+      expect(find.textContaining("Everything's on the map now"), findsOneWidget);
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("Everything's on the map now"), findsNothing);
+      expect(await SharedPreferencesAsync().getBool('home_tip_seen.v1'), isTrue);
+    });
+
+    testWidgets('a seen tip never shows', (tester) async {
+      // pumpPlannerApp's homeTipSeen is the HomeTipSeenNotifier.seen() override.
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: true);
+      expect(find.textContaining("Everything's on the map now"), findsNothing);
+    });
+
+    test('a tip stored as seen stays gone on the next start', () async {
+      useInMemoryAlertStore();
+      final fresh = ProviderContainer();
+      addTearDown(fresh.dispose);
+      expect(await fresh.read(homeTipSeenProvider.future), isFalse);
+      await SharedPreferencesAsync().setBool('home_tip_seen.v1', true);
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      expect(await c.read(homeTipSeenProvider.future), isTrue);
+    });
+  });
+
   testWidgets('at peek: Where to, saved places, alerts for you and your stop, with no taps', (tester) async {
     final handle = tester.ensureSemantics();
     await _pumpHome(
