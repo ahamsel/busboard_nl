@@ -7,7 +7,7 @@ import 'package:busboard_nl/domain/trip_planner/live_overlay.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
-import 'package:busboard_nl/ui/trip_planner/journey_detail_screen.dart';
+import 'package:busboard_nl/ui/home/journey_sheet.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'live_overlay_test.dart' show feedWith;

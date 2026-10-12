@@ -18,7 +18,7 @@ class JourneyOnMapNotifier extends Notifier<Journey?> {
   /// The trip's end, as planned when the journey was shown: a walk with no stop at its end finishes here.
   Place? get to => _to;
 
-  /// Shows [j], with the ends it was planned for (the Plan form's, now).
+  /// Shows [j], with the ends it was planned for (the trip options' draft, now).
   void show(Journey j) {
     final draft = ref.read(planQueryProvider);
     _from = draft.from;

@@ -377,7 +377,7 @@ void main() {
         tester,
         net: TestNetwork(),
         now: DateTime(2026, 10, 12, 13, 0),
-        appRoutes: true,
+       
         initial: '/',
         textScale: textScale,
         theme: dark ? BBTheme.dark() : BBTheme.light(),

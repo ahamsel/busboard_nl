@@ -8,6 +8,7 @@ import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/journey_on_map_provider.dart';
+import 'package:busboard_nl/state/map_pick_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/map/map_layers.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
@@ -25,6 +26,7 @@ import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
+import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
@@ -1290,33 +1292,49 @@ void main() {
     // Real glyph widths, so the 2x text checks measure what a phone shows.
     setUpAll(loadAppFonts);
     final eight = DateTime(testDay.year, testDay.month, testDay.day, 8, 1);
+    // Also while the search is pushed over home.
     ProviderContainer container(WidgetTester tester) =>
-        ProviderScope.containerOf(routerElement(tester));
-    String location(WidgetTester tester) => GoRouter.of(routerElement(tester)).state.uri.toString();
-    // The real map tab started its own refresh timers; let them run out after it goes.
-    Future<void> unmount(WidgetTester tester) async {
-      await tester.pumpWidget(const SizedBox());
-      await tester.pump(const Duration(minutes: 1));
-    }
+        ProviderScope.containerOf(tester.element(find.byType(HomeScreen, skipOffstage: false)));
 
-    testWidgets('a long-press on a stop opens a sheet named for it; Plan to here sets the destination', (tester) async {
+    testWidgets('a long-press on a stop opens a sheet named for it; Plan to here opens options to it', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
       map.longPress(47.5700, -52.7500);
       await tester.pumpAndSettle();
       expect(find.text('Stop C'), findsOneWidget);
       expect(find.text('Plan from here'), findsOneWidget);
       await tester.tap(find.text('Plan to here'));
       await tester.pumpAndSettle();
-      expect(container(tester).read(planQueryProvider).to, StopPlace(stopId: 'C', name: 'Stop C'));
-      expect(find.text('Plan a trip'), findsOneWidget);
-      expect(location(tester), '/plan');
-      await unmount(tester);
+      final c = container(tester);
+      expect(c.read(planQueryProvider).to, StopPlace(stopId: 'C', name: 'Stop C'));
+      expect(c.read(planQueryProvider).from, isNull, reason: 'location is off: the start stays empty');
+      expect(c.read(homeSheetProvider), isA<OptionsSheet>());
+      expect(find.byType(SearchScreen), findsNothing);
     });
 
-    testWidgets('a long-press far from any stop drops a pin; Plan from here sets the start to it', (tester) async {
+    testWidgets('Plan to here starts from the phone\'s position when there is no start', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
+      await pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: eight,
+        initial: '/',
+        mapView: map.build,
+        geolocator: FixedGeolocator(47.5601, -52.7501),
+      );
+      map.longPress(47.5700, -52.7500);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Plan to here'));
+      await tester.pumpAndSettle();
+      final draft = container(tester).read(planQueryProvider);
+      expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
+      expect(draft.from, isA<PinPlace>().having((p) => p.label, 'label', 'My location'));
+    });
+
+    testWidgets('a long-press far from any stop drops a pin; Plan from here sets the start and opens the search',
+        (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
       map.longPress(47.0, -52.0);
       await tester.pumpAndSettle();
       expect(find.text('Dropped pin'), findsOneWidget);
@@ -1324,44 +1342,60 @@ void main() {
       await tester.pumpAndSettle();
       final from = container(tester).read(planQueryProvider).from;
       expect(from, isA<PinPlace>().having((p) => p.label, 'label', 'Dropped pin').having((p) => p.lat, 'lat', 47.0));
-      expect(find.text('Plan a trip'), findsOneWidget);
-      await unmount(tester);
+      expect(tester.widget<SearchScreen>(find.byType(SearchScreen)).end, MapPick.to, reason: 'next: where to');
     });
 
     testWidgets('a stop 60 m away is too far to count: the press drops a pin', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
       map.longPress(47.5700 + 60 / 111320, -52.7500); // 60 m north of C
       await tester.pumpAndSettle();
       expect(find.text('Dropped pin'), findsOneWidget);
-      await unmount(tester);
     });
 
-    testWidgets('pick mode: the banner asks for the start, and a tap at a stop sets it and goes back', (tester) async {
+    testWidgets('pick mode: the banner asks for the start, and a tap at a stop sets it and keeps the sheet',
+        (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map?pick=from', mapView: map.build);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
+      final c = container(tester);
+      c.read(planQueryProvider.notifier).setDestination(StopPlace(stopId: 'C', name: 'Stop C'));
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      c.read(mapPickProvider.notifier).start(MapPick.from);
+      await tester.pumpAndSettle();
       expect(find.text('Tap the map to choose your starting point'), findsOneWidget);
       expect(find.bySemanticsLabel('Cancel choosing on the map'), findsOneWidget);
       map.tap(47.5600, -52.7500);
       await tester.pumpAndSettle();
-      expect(container(tester).read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
-      expect(location(tester), '/plan');
-      // Back on the map later, the pick is over.
-      GoRouter.of(routerElement(tester)).go('/map');
-      await tester.pumpAndSettle();
+      expect(c.read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
+      expect(c.read(mapPickProvider), isNull);
+      expect(c.read(homeSheetProvider), isA<OptionsSheet>());
       expect(find.text('Tap the map to choose your starting point'), findsNothing);
-      await unmount(tester);
     });
 
-    testWidgets('pick mode for the destination says so, and Cancel goes back with nothing set', (tester) async {
+    testWidgets('pick mode for the destination says so, and Cancel ends it with nothing set', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map?pick=to', mapView: map.build);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
+      final c = container(tester);
+      c.read(mapPickProvider.notifier).start(MapPick.to);
+      await tester.pumpAndSettle();
       expect(find.text('Tap the map to choose your destination'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(location(tester), '/plan');
-      expect(container(tester).read(planQueryProvider).to, isNull);
-      await unmount(tester);
+      expect(c.read(mapPickProvider), isNull);
+      expect(find.text('Tap the map to choose your destination'), findsNothing);
+      expect(c.read(planQueryProvider).to, isNull);
+      expect(c.read(homeSheetProvider), isA<HomeSheetHome>());
+    });
+
+    testWidgets('system back in pick mode ends the pick instead of leaving the app', (tester) async {
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/');
+      final c = container(tester);
+      c.read(mapPickProvider.notifier).start(MapPick.to);
+      await tester.pumpAndSettle();
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      expect(c.read(mapPickProvider), isNull);
+      expect(find.byType(HomeScreen), findsOneWidget);
     });
 
     for (final size in const [Size(320, 568), Size(390, 844)]) {
@@ -1382,10 +1416,12 @@ void main() {
           tester,
           net: TestNetwork(),
           now: eight,
-          initial: '/map?pick=from',
+          initial: '/',
           textScale: 2,
           mapView: map.build,
         );
+        container(tester).read(mapPickProvider.notifier).start(MapPick.from);
+        await tester.pumpAndSettle();
         readsInFull('Tap the map to choose your starting point');
         readsInFull('Cancel');
         map.longPress(47.0, -52.0);
@@ -1403,21 +1439,21 @@ void main() {
         await tester.pumpAndSettle();
         readsInFull('Hide trip');
         expect(tester.takeException(), isNull);
-        await unmount(tester);
       });
     }
 
-    testWidgets('a new destination picked on the map never shows the old results on the Plan tab', (tester) async {
+    testWidgets('a new destination picked on the map never shows the old results in the options', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, mapView: map.build);
-      container(tester).read(planQueryProvider.notifier)
-        ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
-        ..setTo(StopPlace(stopId: 'C', name: 'Stop C'));
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
+      final c = container(tester);
+      c.read(planQueryProvider.notifier).setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'C', name: 'Stop C'));
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      await tester.pumpAndSettle();
+      await tester.drag(find.bySemanticsLabel('Map sheet'), const Offset(0, -600));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyCard), findsWidgets);
-      await tester.tap(find.text('Stop C'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Pick on map'));
+      // As the destination's search does with Choose on map.
+      c.read(mapPickProvider.notifier).start(MapPick.to);
       await tester.pumpAndSettle();
       expect(find.text('Tap the map to choose your destination'), findsOneWidget);
       map.tap(47.5800, -52.7500); // Stop E
@@ -1433,10 +1469,11 @@ void main() {
       await tester.pump();
       onlyNewResults();
       await tester.pumpAndSettle();
-      expect(location(tester), '/plan');
+      expect(c.read(homeSheetProvider), isA<OptionsSheet>());
+      await tester.drag(find.bySemanticsLabel('Map sheet'), const Offset(0, -600));
+      await tester.pumpAndSettle();
       expect(find.byType(JourneyCard), findsWidgets);
       onlyNewResults();
-      await unmount(tester);
     });
   });
 
