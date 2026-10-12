@@ -19,7 +19,7 @@ class AlertsScreen extends ConsumerWidget {
     Widget centered(Widget child) => ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
-              BBSpace.screen, BBSpace.xl, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+              BBSpace.screen, BBSpace.xl, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
           children: [Center(child: child)],
         );
     return BBScaffold(
@@ -29,6 +29,7 @@ class AlertsScreen extends ConsumerWidget {
           BBTopBar(
             title: 'Service alerts',
             large: true,
+            onBack: () => context.canPop() ? context.pop() : context.go('/'),
             actions: [
               BBIconButton(icon: BBIcons.settings, semanticLabel: 'Settings', onPressed: () => context.push('/settings')),
             ],
@@ -48,7 +49,7 @@ class AlertsScreen extends ConsumerWidget {
                 loading: () => ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
-                      BBSpace.screen, BBSpace.xl, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+                      BBSpace.screen, BBSpace.xl, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
                   children: const [
                     BBSkeleton(kind: BBSkeletonKind.alertCard, count: 3, label: 'Loading service alerts...'),
                   ],
@@ -105,7 +106,7 @@ class _AlertsContent extends ConsumerWidget {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(
-        BBSpace.screen, BBSpace.s, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+        BBSpace.screen, BBSpace.s, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
       children: [
         _ServiceStatusCard(status: updates.serviceStatus, fetchedAt: updates.feedTimestamp ?? updates.fetchedAt),
         const SizedBox(height: BBSpace.xl),

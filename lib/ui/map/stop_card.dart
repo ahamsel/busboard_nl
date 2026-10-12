@@ -72,7 +72,7 @@ class StopCardBody extends ConsumerWidget {
               alert: alerts.first,
               stopNames: {stop.stopId: stop.stopName},
               compact: true,
-              onTap: () => context.go('/alerts'),
+              onTap: () => context.push('/alerts'),
             ),
           ],
           const SizedBox(height: BBSpace.l),

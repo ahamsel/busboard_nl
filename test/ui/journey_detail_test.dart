@@ -31,9 +31,9 @@ import '../trip_planner/test_network.dart';
 
 DateTime _at(int h, int m) => DateTime(testDay.year, testDay.month, testDay.day, h, m);
 
-ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
+ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(routerElement(tester));
 
-String _location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+String _location(WidgetTester tester) => GoRouter.of(routerElement(tester)).state.uri.toString();
 
 Finder _badge(String route) => find.byWidgetPredicate((w) => w is RouteBadge && w.label == route);
 
@@ -301,7 +301,7 @@ void main() {
       await pumpPlannerApp(tester, net: TestNetwork(), now: now, overrides: [live.override]);
       final j = planned();
       expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), ['1-0', '2-1']);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(routerElement(tester)).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyDetailScreen), findsOneWidget);
     }
@@ -350,7 +350,7 @@ void main() {
       final j = planned();
       expect((j.legs.first as WalkLeg).seconds, 60);
       expect(j.departs, 8 * 3600 + 19 * 60);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(routerElement(tester)).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyDetailScreen), findsOneWidget);
     }
@@ -402,7 +402,7 @@ void main() {
         PlanQuery(from: y, to: z, mode: PlanMode.leaveBy, time: DateTime(testDay.year, testDay.month, testDay.day, 23, 55)),
       ) as PlanFound).journeys.first;
       expect((j.serviceDate, j.legs.whereType<RideLeg>().single.tripId), (testDay, '9-1'));
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(routerElement(tester)).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expectLiveFollowAndBell();
     });

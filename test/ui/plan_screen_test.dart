@@ -46,18 +46,6 @@ void main() {
   // Real glyph widths, so the 2x text checks measure what a phone shows.
   setUpAll(loadAppFonts);
 
-  testWidgets('the nav bar has Board, Map, Alerts and Plan; Plan opens the planner', (tester) async {
-    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
-    final bar = find.byType(BBNavBar);
-    for (final label in ['Board', 'Map', 'Alerts', 'Plan']) {
-      expect(find.descendant(of: bar, matching: find.text(label)), findsOneWidget);
-    }
-    expect(tester.widget<BBNavBar>(bar).items, hasLength(4));
-    await tester.tap(find.descendant(of: bar, matching: find.text('Plan')));
-    await tester.pumpAndSettle();
-    expect(find.text('Plan a trip'), findsOneWidget);
-  });
-
   testWidgets('choosing A then C shows the 8:10 → 8:20 journey', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
     expect(find.text("Choose where you're going"), findsOneWidget);
@@ -320,7 +308,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Pick on map'));
     await tester.pump();
-    final router = GoRouter.of(tester.element(find.byType(BBNavBar)));
+    final router = GoRouter.of(routerElement(tester));
     expect(router.state.uri.toString(), '/map?pick=to');
     // The real map tab started its own refresh timers; let them run out after it goes.
     await tester.pumpWidget(const SizedBox());
