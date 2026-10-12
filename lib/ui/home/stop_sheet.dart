@@ -86,10 +86,13 @@ class _StopHeader extends ConsumerWidget {
               ),
             ),
             // Outside the live region, so assistive tech hears live <-> schedule changes, not every refresh time.
+            // Flexible too, so at large text the pair shares the row and wraps instead of crushing the state label.
             if (live && updatedAt != null)
-              Text(
-                ' · updated ${BBTime.of(updatedAt, use24h: BBTime.use24h(context), seconds: true)}',
-                style: bb.text.caption,
+              Flexible(
+                child: Text(
+                  ' · updated ${BBTime.of(updatedAt, use24h: BBTime.use24h(context), seconds: true)}',
+                  style: bb.text.caption,
+                ),
               ),
           ]),
           const SizedBox(height: BBSpace.s),

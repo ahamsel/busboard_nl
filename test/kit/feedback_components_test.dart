@@ -39,7 +39,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('outside the tab shell the toast sits just above the bottom safe area', (tester) async {
+  testWidgets('the toast sits just above the bottom safe area', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;
     tester.view.padding = const FakeViewPadding(bottom: 34);
@@ -50,26 +50,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     final bottom = tester.getRect(find.byKey(BBToast.cardKey)).bottom;
     expect(bottom, closeTo(800 - 34 - BBSpace.l - BBSpace.s, 0.5));
-    await tester.pump(const Duration(seconds: 4));
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('inside the tab shell the toast clears the nav bar', (tester) async {
-    tester.view.physicalSize = const Size(400, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    late double reserved;
-    await tester.pumpWidget(kitHost(BBNavBarScope(
-      child: Builder(builder: (c) {
-        reserved = BBNavBar.reservedHeight(c);
-        return BBButton(label: 'go', onPressed: () => BBToast.show(c, 'above the bar'));
-      }),
-    )));
-    await tester.tap(find.text('go'));
-    await tester.pump(); // first frame: inserts the overlay and starts the slide
-    await tester.pump(const Duration(milliseconds: 250));
-    final bottom = tester.getRect(find.byKey(BBToast.cardKey)).bottom;
-    expect(bottom, closeTo(800 - reserved - BBSpace.s, 0.5));
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
   });

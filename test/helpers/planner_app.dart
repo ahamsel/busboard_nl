@@ -163,6 +163,7 @@ Future<void> pumpPlannerApp(
         ...overrides,
       ],
       child: MaterialApp.router(
+        debugShowCheckedModeBanner: false,
         theme: theme ?? BBTheme.light(),
         routerConfig: router,
         builder: (context, child) => MediaQuery(
