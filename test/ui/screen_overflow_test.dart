@@ -13,16 +13,20 @@ import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/map/follow_tracker.dart';
 import 'package:busboard_nl/domain/map/route_geometry.dart';
 import 'package:busboard_nl/state/map_providers.dart';
+import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
+import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/state/saved_place_providers.dart';
+import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
+import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
-import 'package:busboard_nl/ui/map/my_stop_card.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
-import 'package:busboard_nl/ui/stop_picker/stop_picker_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -32,8 +36,10 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/planner_app.dart';
 import '../kit/kit_test_helpers.dart';
 import '../helpers/fake_alerts.dart';
+import '../trip_planner/test_network.dart';
 
 /// Large-text guard: every Phase 2 screen is scrolled to its end at 2x text on
 /// the two smallest supported phones, and any layout exception fails the test.
@@ -181,6 +187,50 @@ List<Override> _mapOverrides({List<ArrivalRow> arrivals = const []}) => [
           (ref) => Stream.value(_updates([_alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.')]))),
     ];
 
+class _Places extends SavedPlacesNotifier {
+  @override
+  Future<List<SavedPlace>> build() async => [
+        SavedPlace(
+            id: 'home',
+            name: 'Home',
+            icon: SavedPlaceIcon.home,
+            place: StopPlace(stopId: '1150', name: _longStopName)),
+        SavedPlace(
+            id: 'work',
+            name: 'Memorial University of Newfoundland',
+            icon: SavedPlaceIcon.work,
+            place: StopPlace(stopId: '1150', name: _longStopName)),
+      ];
+}
+
+class _Trips extends SavedTripsNotifier {
+  @override
+  Future<List<SavedTrip>> build() async => [
+        SavedTrip(
+            id: 't1',
+            name: 'To the Avalon Mall and back again',
+            from: StopPlace(stopId: '1150', name: _longStopName),
+            to: StopPlace(stopId: '1150', name: _longStopName)),
+      ];
+}
+
+class _StopCSettings extends SettingsNotifier {
+  @override
+  AppSettings build() => const AppSettings(selectedStopId: 'C');
+}
+
+/// The home sheet with a stop, arrivals, saved places and a trip, an alert on the stop and two nearby stops.
+List<Override> _homeOverrides({List<ArrivalRow> arrivals = const []}) => [
+      ..._mapOverrides(arrivals: arrivals),
+      savedPlacesProvider.overrideWith(_Places.new),
+      savedTripsProvider.overrideWith(_Trips.new),
+      savedTripNextProvider('t1').overrideWith((ref) async => const []),
+      nearestStopsProvider.overrideWith((ref) async => const [
+            NearbyStop(stop: _stop, distanceMeters: 80),
+            NearbyStop(stop: _stop, distanceMeters: 640),
+          ]),
+    ];
+
 Widget _app(Widget screen, List<Override> overrides) {
   final container = ProviderContainer(retry: (_, _) => null, overrides: overrides);
   addTearDown(container.dispose);
@@ -202,23 +252,6 @@ GoRouter _router(Widget screen) => GoRouter(routes: [
     ]);
 
 final _screens = <_Screen>[
-  _Screen('picker (last stop + nearby with 9 routes)', (t) {
-    SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
-    return _app(const StopPickerScreen(), [
-      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
-      nearestStopsProvider.overrideWith((ref) async => const [
-            NearbyStop(stop: _stop, distanceMeters: 80),
-            NearbyStop(stop: _stop, distanceMeters: 640),
-          ]),
-    ]);
-  }),
-  _Screen('picker (schedule failed to load)', (t) {
-    SharedPreferences.setMockInitialValues({});
-    return _app(const StopPickerScreen(), [
-      gtfsRepositoryProvider.overrideWith((ref) async =>
-          throw const SocketException('Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, errno = 8)')),
-    ]);
-  }),
   _Screen('board (alert + failing live feed)', (t) {
     SharedPreferences.setMockInitialValues({});
     useInMemoryAlertStore();
@@ -270,24 +303,24 @@ final _screens = <_Screen>[
     await tester.pumpAndSettle();
     expect(find.text('29 km/h'), findsOneWidget, reason: 'technical details are open');
   }),
-  _Screen('map: your-stop card (2 arrivals)', (t) {
+  _Screen('home: sheet (your stop, 3 arrivals, saved place, alert, saved trip, nearby with 9 routes)', (t) {
     SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
     return _app(
-      _card(MyStopCard.header(), MyStopCard.body()),
-      _mapOverrides(arrivals: _arrivals.take(2).toList()),
+      _card(HomeSheetContent.header(), HomeSheetContent.body()),
+      _homeOverrides(arrivals: _arrivals),
     );
   }),
-  _Screen('map: your-stop card (3 arrivals)', (t) {
+  _Screen('home: sheet (your stop, 2 arrivals)', (t) {
     SharedPreferences.setMockInitialValues({'selectedStopId': '1150'});
     return _app(
-      _card(MyStopCard.header(), MyStopCard.body()),
-      _mapOverrides(arrivals: _arrivals),
+      _card(HomeSheetContent.header(), HomeSheetContent.body()),
+      _homeOverrides(arrivals: _arrivals.take(2).toList()),
     );
   }),
-  _Screen('map: your-stop card (no stop chosen)', (t) {
+  _Screen('home: sheet (no stop chosen, nothing saved)', (t) {
     SharedPreferences.setMockInitialValues({});
     return _app(
-      _card(MyStopCard.header(), MyStopCard.body()),
+      _card(HomeSheetContent.header(onChooseStop: () {}), HomeSheetContent.body()),
       _mapOverrides(),
     );
   }),
@@ -334,5 +367,61 @@ void main() {
         await tester.pump(const Duration(seconds: 11));
       });
     }
+  }
+
+  // The home at its peek: the real screen, so the peek is the sheet's own. Where to? is the first thing in it and
+  // must be on screen and tappable however tall the rest of the header grows.
+  for (final dark in [false, true]) {
+    testWidgets('home at peek, 360x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
+      tester.view.physicalSize = const Size(360 * 3, 640 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: DateTime(2026, 10, 12, 13, 0),
+        appRoutes: true,
+        initial: '/',
+        textScale: 2.0,
+        theme: dark ? BBTheme.dark() : BBTheme.light(),
+        alerts: [
+          ServiceAlert(
+            sourceIds: const {'a'},
+            header: 'Water Street detour',
+            description: 'Routes 1 and 2 use Harbour Drive between Duckworth Street and Prescott Street.',
+            cause: ServiceAlertCause.construction,
+            effect: ServiceAlertEffect.detour,
+            severity: ServiceAlertSeverity.warning,
+            activePeriods: [ServiceAlertPeriod(end: DateTime(2099))],
+            targets: const [ServiceAlertTarget(routeId: '1')],
+          ),
+        ],
+        nearby: const [NearbyStop(stop: _stop, distanceMeters: 80)],
+        overrides: [
+          settingsProvider.overrideWith(_StopCSettings.new),
+          savedPlacesProvider.overrideWith(_Places.new),
+          savedTripsProvider.overrideWith(_Trips.new),
+          savedTripNextProvider('t1').overrideWith((ref) async => const []),
+          stopArrivalsProvider.overrideWith((ref, id) async => _arrivals),
+        ],
+      );
+      expect(tester.takeException(), isNull, reason: 'initial layout');
+
+      final whereTo = find.byKey(HomeSheetContent.whereToKey);
+      expect(whereTo, findsOneWidget);
+      expect(whereTo.hitTestable(), findsOneWidget, reason: 'Where to? can be tapped at peek');
+      final card = tester.getRect(find.byKey(BBSheet.cardKey));
+      final rect = tester.getRect(whereTo);
+      expect(rect.top, greaterThanOrEqualTo(card.top), reason: 'inside the sheet');
+      expect(rect.bottom, lessThanOrEqualTo(card.bottom), reason: 'inside the peeking sheet');
+      expect(rect.bottom, lessThanOrEqualTo(640));
+
+      // Pulled up to full, the whole sheet scrolls without overflowing.
+      await tester.drag(whereTo, const Offset(0, -700));
+      await tester.pumpAndSettle();
+      await _scrollThrough(tester);
+      expect(tester.takeException(), isNull);
+    });
   }
 }

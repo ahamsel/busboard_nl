@@ -1,0 +1,154 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../data/trip_planner/saved_place_store.dart';
+import '../../state/alerts_for_you_provider.dart';
+import '../../state/home_sheet_provider.dart';
+import '../../state/providers.dart';
+import '../../state/saved_place_providers.dart';
+import '../../state/trip_planner_providers.dart';
+import '../alerts/service_alert_card.dart';
+import '../kit/kit.dart';
+import '../map/stop_card.dart';
+import '../stop_picker/near_me_list.dart';
+import '../trip_planner/saved_trips_section.dart';
+
+/// The home sheet (spec 2026-10-12 §3.1). The header is what peeks: Where to, saved places, alerts for you,
+/// your stop's next buses. The body: saved trips, then nearby stops.
+abstract final class HomeSheetContent {
+  static const whereToKey = ValueKey('where-to');
+
+  /// [onChooseStop] pulls the sheet up to the nearby stops (home_screen.dart passes its sheet's full detent).
+  static Widget header({VoidCallback? onChooseStop}) => _Header(onChooseStop: onChooseStop);
+  static Widget body() => const _Body();
+}
+
+IconData _iconOf(SavedPlaceIcon i) => switch (i) {
+      SavedPlaceIcon.home => BBIcons.board,
+      SavedPlaceIcon.work => BBIcons.schedule,
+      SavedPlaceIcon.school => BBIcons.info,
+      SavedPlaceIcon.star => BBIcons.star,
+    };
+
+class _Header extends ConsumerWidget {
+  const _Header({this.onChooseStop});
+
+  final VoidCallback? onChooseStop;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bb = context.bb;
+    final places = ref.watch(savedPlacesProvider).value ?? const <SavedPlace>[];
+    final alerts = ref.watch(alertsForYouProvider);
+    final stopId = ref.watch(settingsProvider.select((s) => s.selectedStopId));
+    final stop = stopId == null ? null : ref.watch(stopInfoProvider(stopId));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.s),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          BBPressable(
+            key: HomeSheetContent.whereToKey,
+            semanticLabel: 'Where to? Search for a place or a stop',
+            onTap: () => context.push('/search'),
+            child: DecoratedBox(
+              decoration: bb.card(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.m),
+                child: Row(children: [
+                  Icon(BBIcons.search, size: 20, color: bb.colors.muted),
+                  const SizedBox(width: BBSpace.s),
+                  Expanded(child: Text('Where to?', style: bb.text.title.copyWith(color: bb.colors.muted))),
+                ]),
+              ),
+            ),
+          ),
+          const SizedBox(height: BBSpace.s),
+          Wrap(
+            spacing: BBSpace.s,
+            runSpacing: BBSpace.s,
+            children: [
+              for (final p in places)
+                GestureDetector(
+                  onLongPress: () => _editPlace(context, ref, p),
+                  child: BBChip(
+                    label: p.name,
+                    icon: _iconOf(p.icon),
+                    semanticLabel: 'Go to ${p.name}',
+                    onTap: () {
+                      ref.read(planQueryProvider.notifier).setDestination(p.place);
+                      ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
+                    },
+                  ),
+                ),
+              BBChip(
+                label: places.isEmpty ? 'Save a place' : 'Add',
+                icon: BBIcons.add,
+                semanticLabel: 'Save a place',
+                onTap: () => context.push('/search?save=1'),
+              ),
+            ],
+          ),
+          for (final a in alerts.take(2)) ...[
+            const SizedBox(height: BBSpace.s),
+            ServiceAlertCard(alert: a, compact: true, onTap: () => context.push('/alerts')),
+          ],
+          const SizedBox(height: BBSpace.m),
+          if (stop == null)
+            BBButton(
+              label: 'Choose your stop',
+              icon: BBIcons.nearMe,
+              kind: BBButtonKind.quiet,
+              expand: true,
+              onPressed: onChooseStop,
+            )
+          else ...[
+            BBPressable(
+              semanticLabel: 'Your stop, ${stop.stopName}. Open its buses',
+              onTap: () => ref.read(homeSheetProvider.notifier).open(StopSheet(stop.stopId)),
+              child: Row(children: [
+                Icon(BBIcons.star, size: 18, color: bb.colors.brand),
+                const SizedBox(width: BBSpace.s),
+                Expanded(child: Text(stop.stopName, style: bb.text.headline, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                Text('#${stop.stopId}', style: bb.text.caption),
+              ]),
+            ),
+            const SizedBox(height: BBSpace.s),
+            ArrivalsPreview(stopId: stop.stopId, max: 3),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Body extends StatelessWidget {
+  const _Body();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.l),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: BBSpace.m),
+            SavedTripsSection(),
+            NearMeList(),
+          ],
+        ),
+      );
+}
+
+/// Long-press on a saved place: remove it. (Rename and the icon choice come with the save flow, spec §3.5.)
+Future<void> _editPlace(BuildContext context, WidgetRef ref, SavedPlace p) async {
+  final remove = await BBDialog.show<bool>(
+    context,
+    title: p.name,
+    actions: const [
+      BBDialogAction(label: 'Cancel', value: false),
+      BBDialogAction(label: 'Remove', value: true, primary: true),
+    ],
+  );
+  if (remove == true) await ref.read(savedPlacesProvider.notifier).remove(p.id);
+}

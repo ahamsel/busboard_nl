@@ -961,7 +961,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 semanticLabel: 'Map sheet',
                 header: _measuredHeader(followShowing
                     ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
-                    : selectionHeader(sheet, selectedStop)),
+                    : selectionHeader(sheet, selectedStop,
+                        onChooseStop: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)))),
                 slivers: [
                   SliverToBoxAdapter(
                     child: followShowing

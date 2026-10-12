@@ -11,7 +11,6 @@ import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
-import 'package:busboard_nl/ui/map/my_stop_card.dart';
 import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/rendering.dart' show RenderParagraph;
@@ -260,15 +259,5 @@ void main() {
   testWidgets('a bus that has gone away shows a plain message', (tester) async {
     await _host(tester, header: const BusCardHeader(vehicleId: '9999'), body: const BusCardBody(vehicleId: '9999'));
     expect(find.text('This bus is no longer reporting'), findsOneWidget);
-  });
-
-  testWidgets('your-stop card invites you to choose a stop when there is none', (tester) async {
-    await _host(tester, header: MyStopCard.header(), body: MyStopCard.body());
-    expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
-  });
-
-  testWidgets('your-stop card names your stop', (tester) async {
-    await _host(tester, header: MyStopCard.header(), body: MyStopCard.body(), prefs: {'selectedStopId': '1150'});
-    expect(find.text('MUN Centre'), findsOneWidget);
   });
 }
