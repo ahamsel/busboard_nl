@@ -209,4 +209,43 @@ void main() {
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
     _expectAt(tester, (s) => s.fullFraction, 'full');
   });
+
+  testWidgets('backgrounded while the restore waits, the reopened Board is still saved at the next background',
+      (tester) async {
+    final checked = Completer<bool>();
+    await pumpPlannerApp(tester,
+        net: TestNetwork(), now: _now, overrides: _overrides, asyncPrefs: {_key: 'C'}, launchLinkChecked: checked);
+    await _background(tester); // no Board showing yet: the store is cleared
+    await _foreground(tester);
+    checked.complete(false);
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    _expectAt(tester, (s) => s.fullFraction, 'full');
+    await _background(tester);
+    expect(await _saved(), 'C', reason: 'the next cold start must reopen it');
+  });
+
+  testWidgets('a launch link reported by the check (no sheet change seen yet) stops the restore', (tester) async {
+    final checked = Completer<bool>();
+    await pumpPlannerApp(tester,
+        net: TestNetwork(), now: _now, overrides: _overrides, asyncPrefs: {_key: 'C'}, launchLinkChecked: checked);
+    checked.complete(true);
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>(), reason: 'no Board opened');
+    expect(await _saved(), isNull);
+  });
+
+  testWidgets('a launch check that never answers gives up after 3 s, and the Board reopens', (tester) async {
+    await pumpPlannerApp(tester,
+        net: TestNetwork(),
+        now: _now,
+        overrides: _overrides,
+        asyncPrefs: {_key: 'C'},
+        launchLinkChecked: Completer<bool>());
+    expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    _expectAt(tester, (s) => s.fullFraction, 'full');
+  });
 }

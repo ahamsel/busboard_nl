@@ -867,7 +867,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     try {
       id = await store.read();
       if (id == null || !mounted) return;
-      final launchLink = await launchChecked;
+      // A notification plugin that never answers must not hold the Board back: after 3 s, no launch link.
+      final launchLink = await launchChecked.timeout(const Duration(seconds: 3), onTimeout: () => false);
       final repo = await ref.read(gtfsRepositoryProvider.future);
       if (!mounted) return;
       final stillThere = repo.stopsById[id] != null;
@@ -879,7 +880,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         return;
       }
       ref.read(homeSheetProvider.notifier).openBoard(id);
+      // Written back: a background while this waited (no Board showing then) cleared the store.
       _savedBoard = id;
+      await store.save(id);
     } catch (e) {
       // The id is still stored: the next background, or a collapse, must clear it.
       if (mounted) _savedBoard ??= id;
