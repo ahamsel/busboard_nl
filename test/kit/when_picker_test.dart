@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'contrast_test.dart' show contrast;
 import 'kit_test_helpers.dart';
 
 // Wednesday 7 October 2026, 08:01: "now".
@@ -137,6 +138,39 @@ void main() {
     expect(_confirmLabel(tester), 'Set 12:20 AM tomorrow');
     await _confirm(tester);
     expect(opened.result, DateTime(2026, 10, 8, 0, 20));
+  });
+
+  testWidgets('12-hour mode: the hour wheel names the period, so 11 AM and 12 PM are told apart', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _open(tester, use24h: false);
+    final hour = find.byKey(BBWhenPicker.hourWheelKey);
+    expect(tester.getSemantics(hour), isSemantics(
+      isSlider: true, label: 'Hour', value: '8 AM', increasedValue: '9 AM', decreasedValue: '7 AM',
+      hasIncreaseAction: true, hasDecreaseAction: true,
+    ));
+    await _turn(tester, BBWhenPicker.hourWheelKey, 10); // "11", AM
+    expect(tester.getSemantics(hour), isSemantics(
+      isSlider: true, label: 'Hour', value: '11 AM', increasedValue: '12 PM', decreasedValue: '10 AM',
+      hasIncreaseAction: true, hasDecreaseAction: true,
+    ));
+    handle.dispose();
+  });
+
+  testWidgets('the wheel values above and below the centre stay readable: ink at the fade is 4.5:1 on the sheet '
+      '(light and dark)', (tester) async {
+    for (final b in Brightness.values) {
+      await tester.pumpWidget(const SizedBox());
+      await _open(tester, brightness: b, use24h: false);
+      final colors = (b == Brightness.dark ? BBTokens.dark : BBTokens.light).colors;
+      for (final wheel in [BBWhenPicker.hourWheelKey, BBWhenPicker.minuteWheelKey, BBWhenPicker.periodWheelKey]) {
+        final w = tester.widget<ListWheelScrollView>(find.byKey(wheel));
+        expect(w.overAndUnderCenterOpacity, BBWhenPicker.neighbourOpacity, reason: '${b.name} $wheel');
+        final text = tester.widget<Text>(find.descendant(of: find.byKey(wheel), matching: find.byType(Text)).first);
+        expect(text.style!.color, colors.ink, reason: 'neighbours are drawn in ink, faded by the wheel');
+      }
+      final faded = Color.alphaBlend(colors.ink.withValues(alpha: BBWhenPicker.neighbourOpacity), colors.surface);
+      expect(contrast(faded, colors.surface), greaterThanOrEqualTo(4.5), reason: b.name);
+    }
   });
 
   testWidgets('quick picks set the day and time at once and move the wheels', (tester) async {

@@ -93,6 +93,8 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
   void swap() => state = PlanDraft(from: state.to, to: state.from, mode: state.mode, time: state.time);
   /// Leave by and Arrive by with no time picked plan for [planDefaultTimeProvider], not now: Arrive by now has no bus.
   void setMode(PlanMode m) => state = PlanDraft(from: state.from, to: state.to, mode: m, time: state.time);
+  /// Back to Leave now: no mode that needs a time, and no time pinned.
+  void useNow() => state = PlanDraft(from: state.from, to: state.to);
   void setTime(DateTime t) => state = PlanDraft(from: state.from, to: state.to, mode: state.mode, time: t);
 
   /// A saved trip opened from its card: its ends, leaving now.

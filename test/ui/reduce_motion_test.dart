@@ -119,11 +119,13 @@ void main() {
     expect(find.byType(BBPing), findsNothing);
 
     await tester.tap(find.bySemanticsLabel('My location'));
-    for (var i = 0; i < 4; i++) {
-      await tester.pump(const Duration(milliseconds: 300));
+    // Zero-duration frames until the ping is mounted: no time passes, so a ring that Reduce Motion merely
+    // shortened would still be on screen at this point.
+    for (var i = 0; i < 10 && find.byType(BBPing).evaluate().isEmpty; i++) {
+      await tester.pump();
     }
-    expect(surface.moves, hasLength(1), reason: 'the tap went through: the camera moved to the rider');
     expect(find.byType(BBPing), findsOneWidget, reason: 'the ping was asked for (not skipped), so this is not vacuous');
+    expect(surface.moves, hasLength(1), reason: 'the tap went through: the camera moved to the rider');
     expect(find.byKey(BBPing.ringKey), findsNothing, reason: 'Reduce Motion: no rings are drawn');
     await settlesWithin100ms(tester, 'the location ping');
   });

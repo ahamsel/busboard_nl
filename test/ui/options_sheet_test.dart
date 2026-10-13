@@ -250,6 +250,24 @@ void main() {
     expect((time.day, time.hour, time.minute), (testDay.day + 1, 8, 35));
   });
 
+  testWidgets('Use now instead from Arrive by goes back to Leave now: no pinned time, no Arrive by now', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, use24h: true);
+    await _openOptions(tester, from: _a, to: _c);
+    await tester.tap(find.text('Arrive by'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(OptionsSheetContent.whenButtonKey));
+    await tester.pumpAndSettle();
+    await _turn(tester, BBWhenPicker.hourWheelKey, 7); // 07:35, before 08:01
+    expect(find.text("That's in the past"), findsOneWidget);
+    await _confirmPicker(tester);
+
+    final draft = _container(tester).read(planQueryProvider);
+    expect(draft.mode, PlanMode.leaveNow);
+    expect(draft.time, isNull);
+    expect(find.byKey(OptionsSheetContent.whenButtonKey), findsNothing, reason: 'Leave now has no When row');
+    expect(find.byKey(BBWhenPicker.sheetKey), findsNothing);
+  });
+
   testWidgets('closing the picker leaves the time as it was', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
     await _openOptions(tester);

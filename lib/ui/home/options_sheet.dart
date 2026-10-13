@@ -278,7 +278,9 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
     onMap.show(first);
   }
 
-  Future<void> _pickWhen(DateTime current, DateTime now, GtfsRepository? repo, PlanMode mode) async {
+  Future<void> _pickWhen(DateTime current, GtfsRepository? repo, PlanMode mode) async {
+    // "Now" is read as the rider taps, not when the sheet last built: it may have been open a while.
+    final now = ref.read(plannerClockProvider)();
     final t = await showBBWhenPicker(
       context,
       title: mode == PlanMode.arriveBy ? 'Arrive by' : 'Leave by',
@@ -287,7 +289,15 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
       last: feedEndDate(repo, now),
       use24h: BBTime.use24h(context),
     );
-    if (t != null && mounted) ref.read(planQueryProvider.notifier).setTime(t);
+    if (t == null || !mounted) return;
+    final q = ref.read(planQueryProvider.notifier);
+    // "Use now instead" comes back as now: that is Leave now, not a frozen time or an Arrive by now.
+    final nowMinute = DateTime(now.year, now.month, now.day, now.hour, now.minute);
+    if (DateTime(t.year, t.month, t.day, t.hour, t.minute).isAfter(nowMinute)) {
+      q.setTime(t);
+    } else {
+      q.useNow();
+    }
   }
 
   Future<void> _save(Place from, Place to) async {
@@ -341,7 +351,7 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
               label: '${BBTime.of(when, use24h: use24h)} · ${dayLabel(when, now)}',
               semanticLabel: '${draft.mode == PlanMode.arriveBy ? 'Arrive by' : 'Leave by'} '
                   '${BBTime.of(when, use24h: use24h)}, ${dayLabel(when, now)}. Change',
-              onTap: () => _pickWhen(when, now, repo, draft.mode),
+              onTap: () => _pickWhen(when, repo, draft.mode),
             ),
           ],
           const SizedBox(height: BBSpace.l),

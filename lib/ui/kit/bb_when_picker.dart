@@ -91,6 +91,10 @@ class BBWhenPicker extends StatefulWidget {
   final bool wide;
 
   static const double wideBreakpoint = 600;
+
+  /// How visible the wheel values above and below the centre one are: `ink` at this opacity stays at 4.5:1 or
+  /// better on the sheet (Ruling 5), so the fade reads as depth without dropping below WCAG AA.
+  static const double neighbourOpacity = 0.65;
   static const sheetKey = ValueKey('bb-when-sheet');
   static const closeKey = ValueKey('bb-when-close');
   static const hourWheelKey = ValueKey('bb-when-hour');
@@ -274,7 +278,6 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
     required FixedExtentScrollController controller,
     required int count,
     required String Function(int) label,
-    required int selectedItem,
     required ValueChanged<int> onChanged,
     required String semanticLabel,
     required String value,
@@ -304,7 +307,7 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
             itemExtent: itemExtent,
             physics: const FixedExtentScrollPhysics(),
             diameterRatio: 1.6,
-            overAndUnderCenterOpacity: 0.45,
+            overAndUnderCenterOpacity: BBWhenPicker.neighbourOpacity,
             onSelectedItemChanged: onChanged,
             childDelegate: ListWheelChildBuilderDelegate(
               childCount: count,
@@ -313,7 +316,7 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                   label(i),
                   maxLines: 1,
                   style: bb.text.title.copyWith(
-                    color: i == selectedItem ? bb.colors.ink : bb.colors.muted,
+                    color: bb.colors.ink,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -329,7 +332,10 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
     final bb = context.bb;
     final d = _days[_day];
     DateTime at(int hour, int minute) => DateTime(d.year, d.month, d.day, hour, minute);
-    String hours(int h) => '$h ${h == 1 ? 'hour' : 'hours'}';
+    // 24-hour: "8 hours". 12-hour names the period too ("11 AM", "12 PM"), since the wheel shows 1–12.
+    String hours(int h) => widget.use24h
+        ? '$h ${h == 1 ? 'hour' : 'hours'}'
+        : '${_shownHour(h)} ${h < 12 ? 'AM' : 'PM'}';
     String minutes(int m) => '$m ${m == 1 ? 'minute' : 'minutes'}';
     final pm = _hour >= 12;
     return Stack(
@@ -350,12 +356,11 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                 controller: _hourWheel,
                 count: widget.use24h ? 24 : 12,
                 label: (i) => widget.use24h ? i.toString().padLeft(2, '0') : '${i + 1}',
-                selectedItem: _hourItem(_hour),
                 onChanged: _onHour,
                 semanticLabel: 'Hour',
-                value: hours(_shownHour(_hour)),
-                increased: _hour < 23 ? hours(_shownHour(_hour + 1)) : null,
-                decreased: _hour > 0 ? hours(_shownHour(_hour - 1)) : null,
+                value: hours(_hour),
+                increased: _hour < 23 ? hours(_hour + 1) : null,
+                decreased: _hour > 0 ? hours(_hour - 1) : null,
                 onIncrease: _hour < 23 ? () => _set(at(_hour + 1, _minute)) : null,
                 onDecrease: _hour > 0 ? () => _set(at(_hour - 1, _minute)) : null,
                 itemExtent: itemExtent,
@@ -369,7 +374,6 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                 controller: _minuteWheel,
                 count: 60,
                 label: (i) => i.toString().padLeft(2, '0'),
-                selectedItem: _minute,
                 onChanged: _onMinute,
                 semanticLabel: 'Minute',
                 value: minutes(_minute),
@@ -388,7 +392,6 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                   controller: _periodWheel,
                   count: 2,
                   label: (i) => i == 0 ? 'AM' : 'PM',
-                  selectedItem: pm ? 1 : 0,
                   onChanged: _onPeriod,
                   semanticLabel: 'AM or PM',
                   value: pm ? 'PM' : 'AM',
