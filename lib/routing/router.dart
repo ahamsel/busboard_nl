@@ -21,6 +21,17 @@ String _toStopSheet(BuildContext context, GoRouterState state) {
   return '/';
 }
 
+/// [child] as a page of Flutter's own [MaterialApp], so the theme's page transition (with its iOS edge swipe back)
+/// runs. go_router 18 looks for `material_ui`'s MaterialApp, a different class from the one the app uses, and
+/// without a page builder falls back to a page with no transition and no swipe back.
+Page<void> _page(GoRouterState state, Widget child) => MaterialPage<void>(
+      key: state.pageKey,
+      name: state.name ?? state.path,
+      arguments: <String, String>{...state.pathParameters, ...state.uri.queryParameters},
+      restorationId: state.pageKey.value,
+      child: child,
+    );
+
 /// A fresh router over the app's route tree (tests build their own so no state carries between them).
 GoRouter buildAppRouter({String initialLocation = '/'}) {
   return GoRouter(
@@ -28,7 +39,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) => const HomeScreen(),
+        pageBuilder: (context, state) => _page(state, const HomeScreen()),
       ),
       GoRoute(path: '/stop/:stopId', redirect: _toStopSheet),
       GoRoute(path: '/board/:stopId', redirect: _toStopSheet),
@@ -43,20 +54,23 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
         // ?end=from chooses the start; ?save=1 saves a place; ?keep=1 changes the destination of the trip being
         // planned (its start, mode and time stay) where a plain search starts a fresh trip; ?pickStop=1 chooses
         // your stop.
-        builder: (context, state) => SearchScreen(
-          end: state.uri.queryParameters['end'] == 'from' ? MapPick.from : MapPick.to,
-          save: state.uri.queryParameters['save'] == '1',
-          keepStart: state.uri.queryParameters['keep'] == '1',
-          pickStop: state.uri.queryParameters['pickStop'] == '1',
+        pageBuilder: (context, state) => _page(
+          state,
+          SearchScreen(
+            end: state.uri.queryParameters['end'] == 'from' ? MapPick.from : MapPick.to,
+            save: state.uri.queryParameters['save'] == '1',
+            keepStart: state.uri.queryParameters['keep'] == '1',
+            pickStop: state.uri.queryParameters['pickStop'] == '1',
+          ),
         ),
       ),
       GoRoute(
         path: '/alerts',
-        builder: (context, state) => const AlertsScreen(),
+        pageBuilder: (context, state) => _page(state, const AlertsScreen()),
       ),
       GoRoute(
         path: '/settings',
-        builder: (context, state) => const SettingsScreen(),
+        pageBuilder: (context, state) => _page(state, const SettingsScreen()),
       ),
     ],
   );
