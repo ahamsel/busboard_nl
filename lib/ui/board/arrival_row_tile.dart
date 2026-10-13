@@ -129,7 +129,8 @@ class ArrivalRowTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(
+                // The number rolls as it counts down (spec §3.2).
+                BBRollingText(
                   a.minutesAway <= 0 ? 'Now' : '${a.minutesAway}',
                   style: bb.text.minutes.copyWith(
                     color: soon ? bb.colors.soon : bb.colors.ink,
@@ -152,28 +153,30 @@ class ArrivalRowTile extends StatelessWidget {
         ],
       ),
     );
-    return BBCard(
-      onTap: onTap,
-      // The content below carries the tap and label; the card adds no second node.
-      exposeSemantics: false,
-      child: Row(
-        children: [
-          Expanded(
-            // The content's own semantics replace the card's, so the tap is
-            // restated here; the action stays outside so it keeps its own.
-            child: Semantics(
-              label: semanticsLabel(a, use24h: use24h),
-              excludeSemantics: true,
-              button: onTap != null ? true : null,
-              onTap: onTap,
-              onTapHint: onTap == null
-                  ? null
-                  : 'follow bus ${a.vehicleNumber} on the map',
-              child: content,
+    // A row becoming "Now" swells once and its card edge glows brand (spec §3.2).
+    return BBNowPulse(
+      active: a.minutesAway <= 0,
+      child: BBCard(
+        onTap: onTap,
+        // The content below carries the tap and label; the card adds no second node.
+        exposeSemantics: false,
+        child: Row(
+          children: [
+            Expanded(
+              // The content's own semantics replace the card's, so the tap is
+              // restated here; the action stays outside so it keeps its own.
+              child: Semantics(
+                label: semanticsLabel(a, use24h: use24h),
+                excludeSemantics: true,
+                button: onTap != null ? true : null,
+                onTap: onTap,
+                onTapHint: onTap == null ? null : 'follow bus ${a.vehicleNumber} on the map',
+                child: content,
+              ),
             ),
-          ),
-          ?action,
-        ],
+            ?action,
+          ],
+        ),
       ),
     );
   }

@@ -370,6 +370,63 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('the same trip twice at one stop (a loop route) shows two rows', (tester) async {
+    ArrivalRow loop(String at, int minutes) => ArrivalRow(
+          routeShortName: '3',
+          headsign: 'Loop',
+          scheduledTime: GtfsTime.parse(at),
+          minutesAway: minutes,
+          isLive: false,
+          tripId: 'loop-1',
+        );
+    await _pump(tester, repo: _repo(), overrides: [
+      stopArrivalsProvider.overrideWith((ref, stopId) async => [loop('09:52:00', 4), loop('10:22:00', 34)]),
+    ]);
+    expect(tester.takeException(), isNull, reason: 'no duplicate keys');
+    expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    await _unmount(tester);
+  });
+
+  testWidgets('after the skeleton, the loaded rows stagger in (spec §3.2)', (tester) async {
+    ArrivalRow at(String route, int minutes) => ArrivalRow(
+          routeShortName: route,
+          headsign: 'Downtown',
+          scheduledTime: GtfsTime.parse('09:5$minutes:00'),
+          minutesAway: minutes,
+          isLive: false,
+          tripId: 't-$route',
+        );
+    final loaded = Completer<List<ArrivalRow>>();
+    await _pump(tester, repo: _repo(), settle: false, overrides: [
+      stopArrivalsProvider.overrideWith((ref, stopId) => loaded.future),
+    ]);
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.byType(BBSkeleton), findsOneWidget);
+    expect(find.byType(BBListItem), findsNothing);
+
+    loaded.complete([at('5', 1), at('6', 2), at('7', 3), at('8', 4)]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(find.byType(BBSkeleton), findsNothing);
+    double opacity(int i) => tester
+        .widget<FadeTransition>(
+          find.descendant(of: find.byType(BBListItem).at(i), matching: find.byType(FadeTransition)).first,
+        )
+        .opacity
+        .value;
+    expect(find.byType(BBListItem), findsNWidgets(4));
+    expect(opacity(0), lessThan(1), reason: 'the first row is still entering');
+    expect(opacity(3), 0, reason: 'the last row has not begun: they enter one after another');
+
+    await tester.pump(const Duration(milliseconds: 600));
+    for (var i = 0; i < 4; i++) {
+      expect(opacity(i), 1, reason: 'row $i has arrived');
+    }
+    await _unmount(tester);
+  });
+
   testWidgets('only live rows announce the follow hint', (tester) async {
     final handle = tester.ensureSemantics();
     await _pump(tester, repo: _repo(), overrides: [

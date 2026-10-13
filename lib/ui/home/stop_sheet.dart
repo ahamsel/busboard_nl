@@ -79,7 +79,7 @@ class _StopHeader extends ConsumerWidget {
           ),
           const SizedBox(height: BBSpace.xs),
           Row(children: [
-            BBGlyph(BBGlyphKind.liveDot, size: 12, color: live ? bb.colors.live : bb.colors.muted),
+            BBLiveDot(color: live ? bb.colors.live : bb.colors.muted, breathing: live),
             const SizedBox(width: BBSpace.s),
             Flexible(
               child: Semantics(
@@ -179,6 +179,18 @@ class _StopBody extends ConsumerWidget {
       };
     }
 
+    // Rows are keyed by trip and scheduled time (a loop route can pass a stop twice on one trip), plus a count for
+    // exact repeats, so no two rows ever share a key.
+    final seen = <(String, int), int>{};
+    final rowKeys = [
+      for (final a in rows ?? const <ArrivalRow>[])
+        (
+          a.tripId,
+          a.scheduledTime.totalSeconds,
+          seen.update((a.tripId, a.scheduledTime.totalSeconds), (n) => n + 1, ifAbsent: () => 0),
+        ),
+    ];
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.l),
       child: Column(
@@ -211,15 +223,28 @@ class _StopBody extends ConsumerWidget {
               message: 'There are no scheduled departures\nfrom this stop right now.',
             )
           else
-            for (final a in rows)
-              Padding(
-                padding: const EdgeInsets.only(bottom: BBSpace.s),
-                child: ArrivalRowTile(
-                  arrival: a,
-                  onTap: follow(a),
-                  action: AlertBell(arrival: a, stopId: stopId, stopName: name),
-                ),
+            // Rows enter staggered on first show, and slide when the list reorders (spec §3.2). Built only once the
+            // data is here, so the stagger plays after the skeleton rather than behind it.
+            BBListMotion(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (i, a) in rows.indexed)
+                    BBListItem(
+                      key: ValueKey(rowKeys[i]),
+                      index: i,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: BBSpace.s),
+                        child: ArrivalRowTile(
+                          arrival: a,
+                          onTap: follow(a),
+                          action: AlertBell(arrival: a, stopId: stopId, stopName: name),
+                        ),
+                      ),
+                    ),
+                ],
               ),
+            ),
         ],
       ),
     );

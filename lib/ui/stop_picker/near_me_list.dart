@@ -60,12 +60,19 @@ class NearMeList extends ConsumerWidget {
                 ),
               );
             }
-            return Column(children: [
-              for (var i = 0; i < stops.length; i++) ...[
-                if (i > 0) const BBDivider(indent: 52),
-                _NearbyStopTile(nearby: stops[i]),
-              ],
-            ]);
+            return BBListMotion(
+              child: Column(children: [
+                for (var i = 0; i < stops.length; i++)
+                  BBListItem(
+                    key: ValueKey('near-${stops[i].stop.stopId}'),
+                    index: i,
+                    child: Column(children: [
+                      if (i > 0) const BBDivider(indent: 52),
+                      _NearbyStopTile(nearby: stops[i]),
+                    ]),
+                  ),
+              ]),
+            );
           },
         ),
       ],

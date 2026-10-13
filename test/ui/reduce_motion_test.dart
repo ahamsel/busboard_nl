@@ -1,0 +1,84 @@
+import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/domain/arrival/arrival_models.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
+import 'package:busboard_nl/state/map_providers.dart';
+import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/stop_sheet.dart';
+import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/planner_app.dart';
+import '../trip_planner/test_network.dart';
+
+class _StopASettings extends SettingsNotifier {
+  @override
+  AppSettings build() => const AppSettings(selectedStopId: 'A');
+}
+
+ArrivalRow _live(int minutes, String trip) => ArrivalRow(
+      routeShortName: '10',
+      headsign: 'Downtown',
+      scheduledTime: GtfsTime.parse('08:30:00'),
+      predictedTime: GtfsTime.parse('08:31:00'),
+      minutesAway: minutes,
+      isLive: true,
+      liveStatus: LiveStatus.behind,
+      tripId: trip,
+      vehicleNumber: '2134',
+    );
+
+/// One frame for [what], then frames 16 ms apart: with Reduce Motion, nothing may still be asking for frames
+/// 100 ms later (spec §8). Any real animation (120 ms or more) would. (Not `hasRunningAnimations`: a
+/// LayoutBuilder rebuild also registers a frame callback, and the 1 ms Reduce Motion detent move ends a
+/// frame after it starts.)
+Future<void> settlesWithin100ms(WidgetTester tester, String what) async {
+  await tester.pump();
+  var elapsed = Duration.zero;
+  while (tester.binding.hasScheduledFrame && elapsed < const Duration(milliseconds: 100)) {
+    await tester.pump(const Duration(milliseconds: 16));
+    elapsed += const Duration(milliseconds: 16);
+  }
+  expect(tester.binding.hasScheduledFrame, isFalse,
+      reason: '$what: still asking for frames ${elapsed.inMilliseconds} ms later');
+}
+
+void main() {
+  testWidgets('with Reduce Motion, home, a stop sheet and options settle within 100 ms of each interaction',
+      (tester) async {
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: DateTime(testDay.year, testDay.month, testDay.day, 8, 1),
+      reduceMotion: true,
+      overrides: [
+        settingsProvider.overrideWith(_StopASettings.new),
+        stopArrivalsProvider.overrideWith((ref, id) async => [_live(0, 'a'), _live(6, 'b'), _live(12, 'c')]),
+      ],
+    );
+    await settlesWithin100ms(tester, 'home at rest');
+
+    // A stop sheet, from Your stop.
+    await tester.tap(find.bySemanticsLabel(RegExp('^Your stop')));
+    await settlesWithin100ms(tester, 'opening the stop sheet');
+    expect(find.byType(BBLiveDot), findsWidgets, reason: 'the live dot is there, but still');
+    await tester.tap(find.byKey(StopSheetContent.refreshKey));
+    await settlesWithin100ms(tester, 'refreshing the stop');
+    await tester.tap(find.byKey(StopSheetContent.closeKey));
+    await settlesWithin100ms(tester, 'closing the stop sheet');
+
+    // Options.
+    final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    c.read(planQueryProvider.notifier).setTrip(
+          StopPlace(stopId: 'A', name: 'Stop A'),
+          StopPlace(stopId: 'C', name: 'Stop C'),
+        );
+    c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+    await settlesWithin100ms(tester, 'opening options');
+    await tester.tap(find.text('Leave by'));
+    await settlesWithin100ms(tester, 'choosing Leave by');
+  });
+}

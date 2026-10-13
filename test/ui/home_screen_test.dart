@@ -521,6 +521,23 @@ void main() {
       expect(surface.locationReads, 3);
       expect(surface.moves.single.$1, const LatLng(47.51, -52.80));
     });
+
+    testWidgets('pings where the map centred on the rider, twice, then stops (spec §3.2)', (tester) async {
+      mockGeolocator();
+      final surface = _SequencedLocationSurface([const LatLng(47.55, -52.70)]);
+      _surface = surface;
+      await _pump(tester);
+      expect(find.byType(BBPing), findsNothing);
+      await tester.tap(find.byType(BBControlPill));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(surface.moves, hasLength(1));
+      expect(find.byKey(BBPing.ringKey), findsOneWidget);
+      expect(tester.getCenter(find.byType(BBPing)), tester.getCenter(find.byKey(const ValueKey('stub-map'))));
+      await tester.pump(const Duration(seconds: 4));
+      expect(find.byKey(BBPing.ringKey), findsNothing, reason: 'two rings, then gone');
+    });
   });
 
   testWidgets("the peek shows Where to?, your stop and its next two buses in full", (tester) async {

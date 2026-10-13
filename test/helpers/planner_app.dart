@@ -105,7 +105,7 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 /// Pumps the app's route tree on [net] at [now] ([clock], when given, tells the time instead), starting at [initial].
 /// [use24h], when given, sets the device's clock format. [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
 /// [asyncPrefs] is what SharedPreferencesAsync holds at launch. [launchLinkChecked], when given, is the app's check for
-/// a notification that launched it (already done, with no link, otherwise).
+/// a notification that launched it (already done, with no link, otherwise). [reduceMotion] turns on the OS Reduce Motion setting.
 /// The one-time home tip is already seen unless [homeTipSeen] is false (it sits above "Where to?" and moves the peek).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
@@ -129,6 +129,7 @@ Future<void> pumpPlannerApp(
   bool homeTipSeen = true,
   Map<String, Object> asyncPrefs = const {},
   Completer<bool>? launchLinkChecked,
+  bool reduceMotion = false,
 }) async {
   // flutter_test's own 800x600 is a tablet to the home screen (its side panel starts at 700): a test that has not
   // picked a size gets a phone, so the sheet is a pull-up sheet. A test that sets its own size keeps it.
@@ -179,6 +180,7 @@ Future<void> pumpPlannerApp(
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(
             textScaler: TextScaler.linear(textScale),
+            disableAnimations: reduceMotion,
             alwaysUse24HourFormat: use24h ?? MediaQuery.of(context).alwaysUse24HourFormat,
           ),
           child: child!,

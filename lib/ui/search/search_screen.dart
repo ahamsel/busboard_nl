@@ -249,16 +249,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.xxl),
-              children: [
-                if (_locating)
-                  Semantics(
-                    liveRegion: true,
-                    child: const BBPickRow(icon: BBIcons.nearMe, label: 'Finding you…', onTap: null),
-                  ),
-                ...(query.isEmpty ? _emptyRows(saved, recent) : _resultRows(bb, repo, query, saved)),
-              ],
+            // Lazy list items move when they scroll, so no slide.
+            child: BBListMotion(
+              slide: false,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.xxl),
+                children: [
+                  for (final (i, row) in [
+                    if (_locating)
+                      Semantics(
+                        liveRegion: true,
+                        child: const BBPickRow(icon: BBIcons.nearMe, label: 'Finding you…', onTap: null),
+                      ),
+                    ...(query.isEmpty ? _emptyRows(saved, recent) : _resultRows(bb, repo, query, saved)),
+                  ].indexed)
+                    BBListItem(key: ValueKey('search-row-$i'), index: i, child: row),
+                ],
+              ),
             ),
           ),
         ],

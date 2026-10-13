@@ -51,18 +51,26 @@ const _sizes = [Size(320, 568), Size(360, 640)];
 
 const _longStopName = 'Elizabeth Avenue at Allandale Road Westbound';
 const _stop = StopInfo(stopId: '1150', stopName: _longStopName, stopLat: 47.57, stopLon: -52.73);
+/// A second stop with the same name and routes: the nearby list never shows one stop twice.
+const _stop2 = StopInfo(stopId: '1151', stopName: _longStopName, stopLat: 47.571, stopLon: -52.731);
 const _routes = ['1', '2', '3', '6', '9', '10', '10A', '11', '12'];
 
 GtfsRepository _repo() {
-  final repo = GtfsRepository()..stopsById['1150'] = _stop;
+  final repo = GtfsRepository()
+    ..stopsById['1150'] = _stop
+    ..stopsById['1151'] = _stop2;
   final times = <StopTimeRow>[];
+  final times2 = <StopTimeRow>[];
   for (var i = 0; i < _routes.length; i++) {
     repo.routesById['r$i'] = RouteInfo(routeId: 'r$i', routeShortName: _routes[i], routeLongName: '');
     repo.tripsById['t$i'] = TripInfo(tripId: 't$i', routeId: 'r$i', serviceId: 's', tripHeadsign: '', directionId: 0);
     times.add(StopTimeRow(
         tripId: 't$i', arrivalTime: '08:00:00', departureTime: '08:00:00', stopId: '1150', stopSequence: 1));
+    times2.add(StopTimeRow(
+        tripId: 't$i', arrivalTime: '08:00:00', departureTime: '08:00:00', stopId: '1151', stopSequence: 1));
   }
   repo.stopTimesByStopId['1150'] = times;
+  repo.stopTimesByStopId['1151'] = times2;
   return repo;
 }
 
@@ -236,7 +244,7 @@ List<Override> _homeOverrides({List<ArrivalRow> arrivals = const []}) => [
       savedTripNextProvider('t1').overrideWith((ref) async => const []),
       nearestStopsProvider.overrideWith((ref) async => const [
             NearbyStop(stop: _stop, distanceMeters: 80),
-            NearbyStop(stop: _stop, distanceMeters: 640),
+            NearbyStop(stop: _stop2, distanceMeters: 640),
           ]),
     ];
 

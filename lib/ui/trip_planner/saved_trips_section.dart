@@ -30,10 +30,22 @@ class SavedTripsSection extends ConsumerWidget {
       children: [
         const BBSectionHeader(title: 'Saved trips'),
         const SizedBox(height: BBSpace.s),
-        for (final trip in trips) ...[
-          _SavedTripCard(key: ValueKey('saved-trip-${trip.id}'), trip: trip),
-          const SizedBox(height: BBSpace.s),
-        ],
+        BBListMotion(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final (i, trip) in trips.indexed)
+                BBListItem(
+                  key: ValueKey('saved-trip-item-${trip.id}'),
+                  index: i,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: BBSpace.s),
+                    child: _SavedTripCard(key: ValueKey('saved-trip-${trip.id}'), trip: trip),
+                  ),
+                ),
+            ],
+          ),
+        ),
         const SizedBox(height: BBSpace.s),
       ],
     );

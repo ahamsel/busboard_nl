@@ -391,16 +391,28 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
       ],
       PlanFound(:final journeys) when journeys.isEmpty => [noJourney],
       PlanFound(:final journeys) => [
-        for (final (i, j) in journeys.indexed) ...[
-          if (i > 0) const SizedBox(height: BBSpace.s),
-          JourneyCard(
-            journey: j,
-            onTap: () {
-              ref.read(journeyOnMapProvider.notifier).show(j);
-              ref.read(homeSheetProvider.notifier).open(JourneySheet(j));
-            },
+        BBListMotion(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final (i, j) in journeys.indexed)
+                BBListItem(
+                  key: ValueKey('journey-$i'),
+                  index: i,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: i > 0 ? BBSpace.s : 0),
+                    child: JourneyCard(
+                      journey: j,
+                      onTap: () {
+                        ref.read(journeyOnMapProvider.notifier).show(j);
+                        ref.read(homeSheetProvider.notifier).open(JourneySheet(j));
+                      },
+                    ),
+                  ),
+                ),
+            ],
           ),
-        ],
+        ),
       ],
       PlanNoJourney(:final nextDeparture, :final firstArrival) => [
         BBEmptyState(

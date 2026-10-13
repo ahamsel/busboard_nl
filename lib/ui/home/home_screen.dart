@@ -154,6 +154,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   bool _measureScheduled = false;
   bool _frameInFlight = false;
   bool _myLocationEnabled = false;
+
+  /// Counts My location centrings; each new value plays a fresh ping.
+  int _pings = 0;
   List<BusMarker> _lastMarkers = const [];
   final _headings = HeadingSmoother();
 
@@ -939,6 +942,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final here = await _locate(camera, attempts: wasEnabled ? 1 : 3);
     if (here == null || !mounted) return;
     await camera.moveTo(here, 15, animate: !MediaQuery.disableAnimationsOf(context));
+    // The location dot now sits at the map's centre: ping it (spec §3.2; BBPing does nothing under Reduce Motion).
+    if (mounted) setState(() => _pings++);
   }
 
   Future<LatLng?> _locate(MapCamera camera, {required int attempts}) async {
@@ -1217,6 +1222,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 )),
               ),
             ),
+            // The location ping, over the map and under everything else (spec §3.2).
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Center(
+                  child: _pings == 0 ? const SizedBox.shrink() : BBPing(key: ValueKey(_pings), color: bb.colors.brand),
+                ),
+              ),
+            ),
             Positioned(
               top: media.padding.top + BBSpace.s,
               left: BBSpace.s + panelInset,
@@ -1326,10 +1339,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                       decoration: bb.floating(radius: BBRadius.sheet),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(BBRadius.sheet),
-                        // A new selection starts at the top of a fresh list.
-                        child: CustomScrollView(
-                          key: ValueKey(sheetKey),
-                          slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
+                        // A new selection starts at the top of a fresh list, cross-fading in (spec §3.2).
+                        child: AnimatedSwitcher(
+                          duration: BBMotion.of(context, BBMotion.standard),
+                          child: CustomScrollView(
+                            key: ValueKey(sheetKey),
+                            slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
+                          ),
                         ),
                       ),
                     ),
@@ -1376,42 +1392,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     });
   }
 
-  /// What the next tap chooses, and a way out without choosing.
+  /// What the next tap chooses, and a way out without choosing. It slides and fades in on the
+  /// emphasis spring (spec §3.2), at once with Reduce Motion.
   Widget _pickBanner(bool forFrom) {
     final bb = context.bb;
     void cancel() => ref.read(mapPickProvider.notifier).clear();
-    return DecoratedBox(
-      decoration: bb.floating(radius: BBRadius.sheet),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(BBSpace.l, BBSpace.xs, BBSpace.xs, BBSpace.xs),
-        child: Row(
-          children: [
-            Icon(BBIcons.pin, size: 20, color: bb.brandEdge),
-            const SizedBox(width: BBSpace.s),
-            Expanded(
-              child: Semantics(
-                liveRegion: true,
-                child: Text(
-                  'Tap the map to choose ${forFrom ? 'your starting point' : 'your destination'}',
-                  style: bb.text.body,
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: BBMotion.of(context, BBMotion.emphasis),
+      curve: BBMotion.emphasisCurve,
+      builder: (context, t, child) => Opacity(
+        opacity: t.clamp(0.0, 1.0),
+        child: Transform.translate(offset: Offset(0, -12 * (1 - t)), child: child),
+      ),
+      child: DecoratedBox(
+        decoration: bb.floating(radius: BBRadius.sheet),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(BBSpace.l, BBSpace.xs, BBSpace.xs, BBSpace.xs),
+          child: Row(
+            children: [
+              Icon(BBIcons.pin, size: 20, color: bb.brandEdge),
+              const SizedBox(width: BBSpace.s),
+              Expanded(
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    'Tap the map to choose ${forFrom ? 'your starting point' : 'your destination'}',
+                    style: bb.text.body,
+                  ),
                 ),
               ),
-            ),
-            Semantics(
-              button: true,
-              label: 'Cancel choosing on the map',
-              onTap: cancel,
-              excludeSemantics: true,
-              child: BBButton(label: 'Cancel', kind: BBButtonKind.quiet, wrap: true, onPressed: cancel),
-            ),
-          ],
+              Semantics(
+                button: true,
+                label: 'Cancel choosing on the map',
+                onTap: cancel,
+                excludeSemantics: true,
+                child: BBButton(label: 'Cancel', kind: BBButtonKind.quiet, wrap: true, onPressed: cancel),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _followChip(_Follow f) => BBChip(
-        leading: BBGlyph(BBGlyphKind.liveDot, size: 12, color: context.bb.colors.live),
+        leading: BBLiveDot(color: context.bb.colors.live),
         label: 'Following bus ${f.vehicleId}',
         semanticLabel: 'Following bus ${f.vehicleId}. Back to the bus',
         onTap: () {
