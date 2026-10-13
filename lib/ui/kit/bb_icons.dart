@@ -9,6 +9,10 @@ import 'package:flutter/widgets.dart';
 abstract final class BBIcons {
   static const IconData board = IconData(0xed2c, fontFamily: 'PhosphorRegular'); // clockCountdown
   static const IconData boardFill = IconData(0xed2c, fontFamily: 'PhosphorFill'); // clockCountdown
+  // Saved places' kinds.
+  static const IconData home = IconData(0xe2c2, fontFamily: 'PhosphorRegular'); // house
+  static const IconData work = IconData(0xe0ee, fontFamily: 'PhosphorRegular'); // briefcase
+  static const IconData school = IconData(0xe62c, fontFamily: 'PhosphorRegular'); // graduationCap
   static const IconData map = IconData(0xe31a, fontFamily: 'PhosphorRegular'); // mapTrifold
   static const IconData mapFill = IconData(0xe31a, fontFamily: 'PhosphorFill'); // mapTrifold
   static const IconData alerts = IconData(0xe324, fontFamily: 'PhosphorRegular'); // megaphone

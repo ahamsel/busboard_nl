@@ -1,3 +1,5 @@
+import 'package:busboard_nl/data/trip_planner/saved_place_store.dart' show SavedPlaceIcon;
+import 'package:busboard_nl/ui/home/home_sheet.dart' show savedPlaceIconData;
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
@@ -53,6 +55,22 @@ void _expectAtFull(WidgetTester tester) {
 void main() {
   // The app's own fonts, for the large-text check.
   setUpAll(loadAppFonts);
+
+  test("a saved place's icon never looks like Open board's, and each kind has its own", () {
+    final icons = [for (final i in SavedPlaceIcon.values) savedPlaceIconData(i)];
+    expect(icons, isNot(contains(BBIcons.board)));
+    expect(icons.toSet(), hasLength(icons.length));
+  });
+
+  testWidgets('Open board looks the same on home as in the stop sheet: the filled green button', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, overrides: _overrides);
+    final onHome = tester.widget<BBButton>(find.ancestor(of: _openBoard, matching: find.byType(BBButton)).first);
+    expect(onHome.kind, BBButtonKind.primary, reason: 'not a text-only link while the Board is closed');
+    _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
+    await tester.pumpAndSettle();
+    final inSheet = tester.widget<BBButton>(find.ancestor(of: _openBoard, matching: find.byType(BBButton)).first);
+    expect(inSheet.kind, onHome.kind);
+  });
 
   testWidgets("home's Your stop has Open board, which opens the stop's sheet at full height", (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, overrides: _overrides);

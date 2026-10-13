@@ -35,9 +35,9 @@ abstract final class HomeSheetContent {
 
 /// The icon for a saved place's kind.
 IconData savedPlaceIconData(SavedPlaceIcon i) => switch (i) {
-  SavedPlaceIcon.home => BBIcons.board,
-  SavedPlaceIcon.work => BBIcons.schedule,
-  SavedPlaceIcon.school => BBIcons.info,
+  SavedPlaceIcon.home => BBIcons.home,
+  SavedPlaceIcon.work => BBIcons.work,
+  SavedPlaceIcon.school => BBIcons.school,
   SavedPlaceIcon.star => BBIcons.star,
 };
 
@@ -152,13 +152,14 @@ class _Header extends ConsumerWidget {
                 ],
               ),
             ),
-            // For riders used to the Board tab: their stop's whole Board in one tap.
+            // For riders used to the Board tab: their stop's whole Board in one tap. The same filled button as in
+            // the stop's own sheet, so it reads as the way in, not a link.
+            const SizedBox(height: BBSpace.s),
             BBButton(
               key: HomeSheetContent.openBoardKey,
               label: 'Open board',
               semanticLabel: 'Open board, ${stop.stopName}',
               icon: BBIcons.board,
-              kind: BBButtonKind.quiet,
               expand: true,
               wrap: true,
               onPressed: () => ref.read(homeSheetProvider.notifier).openBoard(stop.stopId),
