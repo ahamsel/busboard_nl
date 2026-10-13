@@ -1367,6 +1367,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                       : math.max(_cardHalf, peek + 0.05),
                   bottomInset: navInset,
                   semanticLabel: 'Map sheet',
+                  fadeUnderHeader: homeShowing && !followShowing,
                   // A card swipes down past its peek back to what was under it (spec §3.2); the home sheet, and the
                   // follow card over it, stay.
                   dismissible: !homeShowing,

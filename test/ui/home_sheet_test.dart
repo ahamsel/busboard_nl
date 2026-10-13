@@ -275,7 +275,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop C');
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Stop C').last);
+    await tester.tap(find.textContaining('Stop C (C)'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Go here'));
     await tester.pumpAndSettle();
@@ -298,7 +298,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop E');
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Stop E').last);
+    await tester.tap(find.textContaining('Stop E (E)'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Go here'));
     await tester.pumpAndSettle();
@@ -320,7 +320,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop E');
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Stop E').last);
+    await tester.tap(find.textContaining('Stop E (E)'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Go here'));
     await tester.pumpAndSettle();
@@ -504,7 +504,7 @@ void main() {
     expect(find.text('Choose on map'), findsNothing, reason: 'this search is for a stop, not a place to go');
     await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop C');
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('Stop C').last);
+    await tester.tap(find.textContaining('Stop C (C)'));
     await tester.pumpAndSettle();
     expect(find.byType(SearchScreen), findsNothing);
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));

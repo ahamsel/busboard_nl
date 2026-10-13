@@ -14,6 +14,7 @@ class BBTopBar extends StatelessWidget {
     this.onBack,
     this.actions = const [],
     this.large = false,
+    this.condensed = false,
   });
 
   final String title;
@@ -21,6 +22,9 @@ class BBTopBar extends StatelessWidget {
   final VoidCallback? onBack;
   final List<Widget> actions;
   final bool large;
+
+  /// Content has scrolled under the bar: a [large] title shrinks to the inline title (spec §5).
+  final bool condensed;
 
   @override
   Widget build(BuildContext context) {
@@ -40,11 +44,11 @@ class BBTopBar extends StatelessWidget {
               children: [
                 Semantics(
                   header: true,
-                  child: Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: large ? bb.text.display : bb.text.title,
+                  child: AnimatedDefaultTextStyle(
+                    duration: BBMotion.of(context, BBMotion.standard),
+                    curve: BBMotion.curve,
+                    style: large && !condensed ? bb.text.display : bb.text.title,
+                    child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
                   ),
                 ),
                 if (subtitle != null)

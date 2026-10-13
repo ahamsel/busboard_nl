@@ -15,72 +15,68 @@ class AlertsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final updatesAsync = ref.watch(serviceUpdatesProvider);
     // Every state is a scrollable list so pull-to-refresh works and large text
-    // can never push Retry off-screen.
-    Widget centered(Widget child) => ListView(
+    // can never push Retry off-screen. Lists start below the frosted bar (topInset).
+    Widget centered(double topInset, Widget child) => ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-              BBSpace.screen, BBSpace.xl, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
+          padding: EdgeInsets.fromLTRB(BBSpace.screen, topInset + BBSpace.xl, BBSpace.screen,
+              MediaQuery.paddingOf(context).bottom + BBSpace.l),
           children: [Center(child: child)],
         );
     return BBScaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          BBTopBar(
-            title: 'Service alerts',
-            large: true,
-            onBack: () => context.canPop() ? context.pop() : context.go('/'),
-            actions: [
-              BBIconButton(icon: BBIcons.settings, semanticLabel: 'Settings', onPressed: () => context.push('/settings')),
-            ],
-          ),
-          Expanded(
-            child: BBRefresh(
-              semanticLabel: 'Service alerts',
-              onRefresh: () async {
-                ref.invalidate(serviceUpdatesProvider);
-                try {
-                  await ref.read(serviceUpdatesProvider.future);
-                } catch (_) {
-                  // A failed refresh shows the error state, not an unhandled throw.
-                }
-              },
-              child: updatesAsync.when(
-                loading: () => ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                      BBSpace.screen, BBSpace.xl, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
-                  children: const [
-                    BBSkeleton(kind: BBSkeletonKind.alertCard, count: 3, label: 'Loading service alerts...'),
-                  ],
+      body: BBScrollPage(
+        title: 'Service alerts',
+        large: true,
+        onBack: () => context.canPop() ? context.pop() : context.go('/'),
+        actions: [
+          BBIconButton(icon: BBIcons.settings, semanticLabel: 'Settings', onPressed: () => context.push('/settings')),
+        ],
+        body: (context, topInset) => BBRefresh(
+          semanticLabel: 'Service alerts',
+          topInset: topInset,
+          onRefresh: () async {
+            ref.invalidate(serviceUpdatesProvider);
+            try {
+              await ref.read(serviceUpdatesProvider.future);
+            } catch (_) {
+              // A failed refresh shows the error state, not an unhandled throw.
+            }
+          },
+          child: updatesAsync.when(
+            loading: () => ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(BBSpace.screen, topInset + BBSpace.xl, BBSpace.screen,
+                  MediaQuery.paddingOf(context).bottom + BBSpace.l),
+              children: const [
+                BBSkeleton(kind: BBSkeletonKind.alertCard, count: 3, label: 'Loading service alerts...'),
+              ],
+            ),
+            error: (error, _) => centered(
+              topInset,
+              BBEmptyState(
+                icon: BBIcons.offline,
+                tone: BBEmptyTone.error,
+                title: 'Could not load service alerts',
+                message: error.toString(),
+                action: BBButton(
+                  label: 'Retry',
+                  icon: BBIcons.refresh,
+                  onPressed: () => ref.invalidate(serviceUpdatesProvider),
                 ),
-                error: (error, _) => centered(
-                  BBEmptyState(
-                    icon: BBIcons.offline,
-                    tone: BBEmptyTone.error,
-                    title: 'Could not load service alerts',
-                    message: error.toString(),
-                    action: BBButton(
-                      label: 'Retry',
-                      icon: BBIcons.refresh,
-                      onPressed: () => ref.invalidate(serviceUpdatesProvider),
-                    ),
-                  ),
-                ),
-                data: (updates) => _AlertsContent(updates: updates),
               ),
             ),
+            data: (updates) => _AlertsContent(updates: updates, topInset: topInset),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _AlertsContent extends ConsumerWidget {
-  const _AlertsContent({required this.updates});
+  const _AlertsContent({required this.updates, required this.topInset});
 
   final ServiceUpdates updates;
+  final double topInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -106,7 +102,7 @@ class _AlertsContent extends ConsumerWidget {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(
-        BBSpace.screen, BBSpace.s, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
+        BBSpace.screen, topInset + BBSpace.s, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
       children: [
         _ServiceStatusCard(status: updates.serviceStatus, fetchedAt: updates.feedTimestamp ?? updates.fetchedAt),
         const SizedBox(height: BBSpace.xl),

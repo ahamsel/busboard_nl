@@ -1567,7 +1567,7 @@ void main() {
       expect(c.read(planQueryProvider).mode, PlanMode.leaveNow);
       await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop E');
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('Stop E').last);
+      await tester.tap(find.textContaining('Stop E (E)'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Go here'));
       await tester.pumpAndSettle();

@@ -232,43 +232,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final saved = ref.watch(savedPlacesProvider).value ?? const <SavedPlace>[];
     final recent = ref.watch(recentPlacesProvider).value ?? const <Place>[];
     return BBScaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          BBTopBar(title: _title, onBack: () => _leave(GoRouter.of(context))),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.s),
-            child: BBTextField(
-              key: SearchScreen.fieldKey,
-              controller: _controller,
-              autofocus: true,
-              leadingIcon: BBIcons.search,
-              hint: widget.pickStop ? 'Type the stop number on the pole' : 'Search for a stop or a place',
-              textInputAction: TextInputAction.search,
-              onChanged: (_) => setState(() {}),
-            ),
+      body: BBScrollPage(
+        title: _title,
+        onBack: () => _leave(GoRouter.of(context)),
+        below: Padding(
+          padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.s),
+          child: BBTextField(
+            key: SearchScreen.fieldKey,
+            controller: _controller,
+            autofocus: true,
+            leadingIcon: BBIcons.search,
+            hint: widget.pickStop ? 'Type the stop number on the pole' : 'Search for a stop or a place',
+            textInputAction: TextInputAction.search,
+            onChanged: (_) => setState(() {}),
           ),
-          Expanded(
-            // Lazy list items move when they scroll, so no slide.
-            child: BBListMotion(
-              slide: false,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.xxl),
-                children: [
-                  for (final (i, row) in [
-                    if (_locating)
-                      Semantics(
-                        liveRegion: true,
-                        child: const BBPickRow(icon: BBIcons.nearMe, label: 'Finding you…', onTap: null),
-                      ),
-                    ...(query.isEmpty ? _emptyRows(saved, recent) : _resultRows(bb, repo, query, saved)),
-                  ].indexed)
-                    BBListItem(key: ValueKey('search-row-$i'), index: i, child: row),
-                ],
-              ),
-            ),
+        ),
+        // Results stagger in the first time (spec §3.2); lazy rows move when they scroll, so they don't slide.
+        body: (context, topInset) => BBListMotion(
+          slide: false,
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(BBSpace.l, topInset, BBSpace.l, BBSpace.xxl),
+            children: [
+              for (final (i, row) in [
+                if (_locating)
+                  Semantics(
+                    liveRegion: true,
+                    child: const BBPickRow(icon: BBIcons.nearMe, label: 'Finding you…', onTap: null),
+                  ),
+                ...(query.isEmpty ? _emptyRows(saved, recent) : _resultRows(bb, repo, query, saved)),
+              ].indexed)
+                BBListItem(key: ValueKey('search-row-$i'), index: i, child: row),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

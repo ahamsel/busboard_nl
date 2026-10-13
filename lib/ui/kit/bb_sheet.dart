@@ -52,6 +52,7 @@ class BBSheet extends StatefulWidget {
     this.dismissible = false,
     this.onDismiss,
     this.semanticLabel = 'Sheet',
+    this.fadeUnderHeader = false,
   })  : assert(
           peekFraction > 0 && peekFraction < halfFraction && halfFraction < fullFraction && fullFraction <= 1,
           'BBSheet fractions must satisfy 0 < peek < half < full <= 1',
@@ -75,9 +76,24 @@ class BBSheet extends StatefulWidget {
   final VoidCallback? onDismiss;
   final String semanticLabel;
 
+  /// Home: the top of the list fades under the pinned header once it scrolls (spec §5).
+  final bool fadeUnderHeader;
+
   static const double sideMargin = 8;
   static const cardKey = ValueKey('bb-sheet-card');
   static const handleKey = ValueKey('bb-sheet-handle');
+  static const headerKey = ValueKey('bb-sheet-header');
+  static const fadeKey = ValueKey('bb-sheet-fade');
+  static const topFadeKey = ValueKey('bb-sheet-top-fade');
+
+  /// The list fades to clear over its last [fadeExtent] while more is below (spec §5).
+  static const double fadeExtent = 24;
+  static const double topFadeExtent = 16;
+
+  /// The bottom fade's gradient stops for a list [height] tall: opaque, then clear over the last
+  /// [fadeExtent]. Off (or too short to fade), it stays opaque.
+  static List<double> fadeStops(double height, {required bool on}) =>
+      !on || height <= fadeExtent ? const [0, 1, 1] : [0, 1 - fadeExtent / height, 1];
 
   @override
   State<BBSheet> createState() => _BBSheetState();
@@ -96,6 +112,8 @@ class _BBSheetState extends State<BBSheet> {
   late double _extent = widget.initialFraction ?? widget.peekFraction;
   Timer? _settleTimer;
   bool _dismissed = false;
+  bool _scrolled = false;
+  bool _moreBelow = false;
   Duration _snapDuration = BBMotion.emphasis;
 
   @override
@@ -247,6 +265,89 @@ class _BBSheetState extends State<BBSheet> {
     );
   }
 
+  /// The list under the header: scrolled (hairline, shadow, top fade) and more below (bottom fade).
+  bool _onList(Notification n) {
+    final ScrollMetrics metrics;
+    if (n is ScrollNotification && n.depth == 0) {
+      metrics = n.metrics;
+    } else if (n is ScrollMetricsNotification && n.depth == 0) {
+      metrics = n.metrics;
+    } else {
+      return false;
+    }
+    final scrolled = metrics.pixels > 0.5;
+    final more = metrics.extentAfter > 0.5;
+    if (scrolled != _scrolled || more != _moreBelow) {
+      // Notifications can arrive mid-layout, where setState is not allowed.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _scrolled = scrolled;
+          _moreBelow = more;
+        });
+      });
+    }
+    return false;
+  }
+
+  Widget _pinnedHeader(BuildContext context) {
+    final bb = context.bb;
+    // DecoratedBox paints the hairline over the header's own bottom edge: no layout change, so the
+    // peek never moves.
+    final header = DecoratedBox(
+      key: BBSheet.headerKey,
+      decoration: BoxDecoration(
+        color: bb.colors.surface,
+        border: _scrolled ? Border(bottom: BorderSide(color: bb.colors.line)) : null,
+        boxShadow: _scrolled
+            ? [
+                BoxShadow(
+                  color: bb.isDark ? const Color(0x59000000) : const Color(0x1A13261A),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [_handle(context), ?widget.header],
+      ),
+    );
+    if (!widget.fadeUnderHeader) return header;
+    // A strip under the header, surface to clear: the list's top fades under it. The pinned header
+    // paints after the list, so the strip lies over it.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        header,
+        Positioned(
+          key: BBSheet.topFadeKey,
+          left: 0,
+          right: 0,
+          bottom: -BBSheet.topFadeExtent,
+          height: BBSheet.topFadeExtent,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: _scrolled ? 1 : 0,
+              duration: BBMotion.of(context, BBMotion.quick),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [bb.colors.surface, bb.colors.surface.withValues(alpha: 0)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
@@ -276,21 +377,34 @@ class _BBSheetState extends State<BBSheet> {
             final content = BBSurfaceScope(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(BBRadius.sheet),
-                child: CustomScrollView(
-                  controller: scrollController,
-                  slivers: [
-                    PinnedHeaderSliver(
-                      child: ColoredBox(
-                        color: bb.colors.surface,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [_handle(context), ?widget.header],
-                        ),
-                      ),
+                child: NotificationListener<Notification>(
+                  onNotification: _onList,
+                  // The list fades out over its last 24 px while more is below; never at peek, where the
+                  // last row showing must stay crisp (spec §5).
+                  child: ShaderMask(
+                    key: BBSheet.fadeKey,
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (rect) {
+                      final on = _moreBelow && _nearest != BBSheetDetent.peek;
+                      return LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          const Color(0xFF000000),
+                          const Color(0xFF000000),
+                          on ? const Color(0x00000000) : const Color(0xFF000000),
+                        ],
+                        stops: BBSheet.fadeStops(rect.height, on: on),
+                      ).createShader(rect);
+                    },
+                    child: CustomScrollView(
+                      controller: scrollController,
+                      slivers: [
+                        PinnedHeaderSliver(child: _pinnedHeader(context)),
+                        ...widget.slivers,
+                      ],
                     ),
-                    ...widget.slivers,
-                  ],
+                  ),
                 ),
               ),
             );

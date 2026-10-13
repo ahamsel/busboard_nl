@@ -14,7 +14,7 @@ import 'tokens.dart';
 /// then "Updated". The child must overscroll at the top: the app's bouncing
 /// scroll behaviour with AlwaysScrollableScrollPhysics.
 class BBRefresh extends StatefulWidget {
-  const BBRefresh({super.key, required this.onRefresh, required this.child, this.semanticLabel});
+  const BBRefresh({super.key, required this.onRefresh, required this.child, this.semanticLabel, this.topInset = 0});
 
   final Future<void> Function() onRefresh;
   final Widget child;
@@ -22,6 +22,9 @@ class BBRefresh extends StatefulWidget {
   /// Names the screen-reader focus stop that carries the "Refresh" action
   /// (e.g. "Departures"), so the action is not announced on an unlabelled node.
   final String? semanticLabel;
+
+  /// Where the content's visible top is (a [BBScrollPage]'s bar height): the indicator shows below it.
+  final double topInset;
 
   static const double triggerDistance = 72;
   static const CustomSemanticsAction refreshAction = CustomSemanticsAction(label: 'Refresh');
@@ -123,9 +126,9 @@ class _BBRefreshState extends State<BBRefresh> {
       child: Stack(
         children: [
           NotificationListener<ScrollNotification>(onNotification: _onScroll, child: widget.child),
-          Positioned(top: 0, left: 0, right: 0, child: IgnorePointer(child: _indicator(context))),
+          Positioned(top: widget.topInset, left: 0, right: 0, child: IgnorePointer(child: _indicator(context))),
           Positioned(
-            top: 0,
+            top: widget.topInset,
             left: 0,
             // 1×1, not zero-size: zero-area nodes can be dropped from the tree.
             child: Semantics(liveRegion: true, label: _announcement, child: const SizedBox(width: 1, height: 1)),

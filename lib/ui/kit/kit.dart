@@ -21,6 +21,7 @@ export 'bb_pressable.dart';
 export 'bb_refresh.dart';
 export 'bb_route_dots.dart';
 export 'bb_scaffold.dart';
+export 'bb_scroll_page.dart';
 export 'bb_section_header.dart';
 export 'bb_segmented.dart';
 export 'bb_sheet.dart';
