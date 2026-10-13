@@ -157,6 +157,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// Counts My location centrings; each new value plays a fresh ping.
   int _pings = 0;
+
+  /// Whether the latest ping is still on screen. The ring is a screen overlay at the map's centre, not anchored to
+  /// the map, so the first drag or pinch of the map cancels it (it would drift off the dot).
+  bool _pinging = false;
   List<BusMarker> _lastMarkers = const [];
   final _headings = HeadingSmoother();
 
@@ -604,8 +608,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void _onPointerMove(PointerMoveEvent e) {
     final f = _follow;
     final start = _pointerStarts[e.pointer];
-    if (f == null || f.paused || start == null) return;
-    if ((e.position - start).distance > _panPauseDistance) setState(() => f.paused = true);
+    if (start == null || (e.position - start).distance <= _panPauseDistance) return;
+    // A pan or a pinch moves the camera: the follow camera pauses and the location ping is dropped.
+    if (_pinging || (f != null && !f.paused)) {
+      setState(() {
+        _pinging = false;
+        f?.paused = true;
+      });
+    }
   }
 
   void _onPointerEnd(PointerEvent e) => _pointerStarts.remove(e.pointer);
@@ -943,7 +953,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (here == null || !mounted) return;
     await camera.moveTo(here, 15, animate: !MediaQuery.disableAnimationsOf(context));
     // The location dot now sits at the map's centre: ping it (spec §3.2; BBPing does nothing under Reduce Motion).
-    if (mounted) setState(() => _pings++);
+    if (mounted) {
+      setState(() {
+        _pings++;
+        _pinging = true;
+      });
+    }
   }
 
   Future<LatLng?> _locate(MapCamera camera, {required int attempts}) async {
@@ -1226,7 +1241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             Positioned.fill(
               child: IgnorePointer(
                 child: Center(
-                  child: _pings == 0 ? const SizedBox.shrink() : BBPing(key: ValueKey(_pings), color: bb.colors.brand),
+                  child: _pinging ? BBPing(key: ValueKey(_pings), color: bb.colors.brand) : const SizedBox.shrink(),
                 ),
               ),
             ),
@@ -1342,6 +1357,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         // A new selection starts at the top of a fresh list, cross-fading in (spec §3.2).
                         child: AnimatedSwitcher(
                           duration: BBMotion.of(context, BBMotion.standard),
+                          // The default stack, except that the outgoing panel, still fading for a moment, is hidden
+                          // from screen readers. Every child keeps its key and wrapper, so none rebuilds its state
+                          // when it turns from current to outgoing.
+                          layoutBuilder: (current, previous) => Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              for (final p in previous) ExcludeSemantics(key: p.key, child: p),
+                              if (current != null) ExcludeSemantics(key: current.key, excluding: false, child: current),
+                            ],
+                          ),
                           child: CustomScrollView(
                             key: ValueKey(sheetKey),
                             slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],

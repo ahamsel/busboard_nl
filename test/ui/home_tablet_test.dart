@@ -82,6 +82,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('while the panel cross-fades, the outgoing content is still drawn but is not in the semantics tree',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final net = TestNetwork();
+    await pumpPlannerApp(tester, net: net, now: _now, initial: '/');
+    final whereTo = find.semantics.byLabel(RegExp(r'^Where to\?'));
+    expect(whereTo, findsOneWidget);
+
+    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    container.read(homeSheetProvider.notifier).open(const StopSheet('C'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100)); // mid-fade
+    expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget, reason: 'the old panel is still on its way out');
+    expect(whereTo, findsNothing, reason: 'but a screen reader no longer sees it');
+    expect(find.semantics.byLabel('Stop C'), findsWidgets, reason: 'the new panel is announced at once');
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(HomeSheetContent.whereToKey), findsNothing);
+
+    // And back: the home panel is the current child again, so it is in the tree (state kept across the swap).
+    container.read(homeSheetProvider.notifier).back();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(whereTo, findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(whereTo, findsOneWidget);
+    semantics.dispose();
+  });
+
   testWidgets('Choose your stop scrolls the panel down to the nearby stops', (tester) async {
     tester.view.physicalSize = const Size(1024, 480);
     tester.view.devicePixelRatio = 1;

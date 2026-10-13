@@ -538,6 +538,32 @@ void main() {
       await tester.pump(const Duration(seconds: 4));
       expect(find.byKey(BBPing.ringKey), findsNothing, reason: 'two rings, then gone');
     });
+
+    testWidgets('the first drag of the map cancels the ping, which is a screen overlay that would drift off the dot',
+        (tester) async {
+      mockGeolocator();
+      final surface = _SequencedLocationSurface([const LatLng(47.55, -52.70)]);
+      _surface = surface;
+      await _pump(tester);
+      await tester.tap(find.byType(BBControlPill));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(find.byKey(BBPing.ringKey), findsOneWidget);
+      // A tap is not a camera move: the ping stays. (A point of bare map: the centre is under the sheet.)
+      final openMap = tester.getTopLeft(find.byKey(const ValueKey('stub-map'))) + const Offset(195, 250);
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, greaterThan(openMap.dy));
+      await tester.tapAt(openMap);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(BBPing.ringKey), findsOneWidget);
+      // A pan is.
+      await tester.dragFrom(openMap, const Offset(0, -60));
+      await tester.pump();
+      expect(find.byType(BBPing), findsNothing);
+      await tester.pump(const Duration(seconds: 4));
+      expect(find.byType(BBPing), findsNothing, reason: 'it does not come back');
+      expect(tester.hasRunningAnimations, isFalse);
+    });
   });
 
   testWidgets("the peek shows Where to?, your stop and its next two buses in full", (tester) async {
