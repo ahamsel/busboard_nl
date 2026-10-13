@@ -387,7 +387,7 @@ void main() {
         await layers.updateRoute(
           driven: const [[-52.70, 47.56], [-52.71, 47.56]],
           ahead: const [[-52.71, 47.56], [-52.72, 47.56]],
-          color: RouteHue.green.line,
+          color: RouteHue.ocean.line,
         );
         final f = surface.features(MapLayers.routeSource);
         expect([for (final x in f) x['properties']['part']], ['driven', 'ahead']);

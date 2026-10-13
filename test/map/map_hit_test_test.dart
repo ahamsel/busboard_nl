@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 BusMarker _m(String id, double lat, double lon) =>
-    BusMarker(vehicleId: id, lat: lat, lon: lon, heading: 0, label: '10', hue: RouteHue.green, stale: false);
+    BusMarker(vehicleId: id, lat: lat, lon: lon, heading: 0, label: '10', hue: RouteHue.ocean, stale: false);
 
 void main() {
   test('tap radius shrinks as you zoom in', () {

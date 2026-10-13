@@ -15,7 +15,7 @@ class BBRouteDots extends StatefulWidget {
   final double? progress;
   final double dotSize;
 
-  static const List<RouteHue> hues = [RouteHue.red, RouteHue.yellow, RouteHue.green];
+  static const List<RouteHue> hues = [RouteHue.red, RouteHue.yellow, RouteHue.ocean];
 
   @override
   State<BBRouteDots> createState() => _BBRouteDotsState();

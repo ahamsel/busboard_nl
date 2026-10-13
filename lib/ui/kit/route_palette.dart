@@ -7,12 +7,15 @@ enum RouteHue {
   red(Color(0xFFFFC9C2), Color(0xFFFFB3A8), Color(0xFFD63B3B)),
   orange(Color(0xFFFFD9B8), Color(0xFFFFC28F), Color(0xFFE07A1F)),
   yellow(Color(0xFFFBE7A6), Color(0xFFF5D97A), Color(0xFFC9A219)),
-  lime(Color(0xFFE2F0B0), Color(0xFFCFE58A), Color(0xFF7FA31F)),
-  green(Color(0xFFCFEEDB), Color(0xFFA6E3BF), Color(0xFF2E9E62)),
+  // Was lime: too close to the brand green (spec §2.3).
+  olive(Color(0xFFE8EBB8), Color(0xFFD8DE8F), Color(0xFF7C8A1C)),
+  // Was green: blended into the brand and live greens (spec §2.3).
+  ocean(Color(0xFFB9DDF0), Color(0xFF8FC6E6), Color(0xFF2D7BB2)),
   teal(Color(0xFFC4ECE8), Color(0xFF93DDD6), Color(0xFF1F8F86)),
-  sky(Color(0xFFCFE3FA), Color(0xFFA9CDF5), Color(0xFF3E7CB1)),
-  indigo(Color(0xFFD6DAFA), Color(0xFFB3BAF5), Color(0xFF4A57C9)),
-  lilac(Color(0xFFE3D6FA), Color(0xFFCDB6F5), Color(0xFF8656D1)),
+  sky(Color(0xFFCFE3FA), Color(0xFFA9CDF5), Color(0xFF65ADE0)),
+  // Lines moved away from the indigo accent.
+  indigo(Color(0xFFD6DAFA), Color(0xFFB3BAF5), Color(0xFF2E4E99)),
+  lilac(Color(0xFFE3D6FA), Color(0xFFCDB6F5), Color(0xFFA855C7)),
   pink(Color(0xFFFAD3E4), Color(0xFFF5B0CD), Color(0xFFC9417E));
 
   const RouteHue(this.fill, this.fillDark, this.line);
@@ -28,7 +31,7 @@ enum RouteHue {
 /// The same route always gets the same colour everywhere in the app.
 abstract final class RoutePalette {
   /// Text/number colour on every route fill, in both modes.
-  static const Color ink = Color(0xFF1C2A3A);
+  static const Color ink = Color(0xFF13261A);
 
   /// Hand-assigned from GTFS stop overlap so routes sharing stops differ.
   static const Map<int, RouteHue> assigned = {
@@ -37,7 +40,7 @@ abstract final class RoutePalette {
     3: RouteHue.yellow,
     6: RouteHue.teal,
     9: RouteHue.teal,
-    10: RouteHue.green,
+    10: RouteHue.ocean,
     11: RouteHue.teal,
     12: RouteHue.pink,
     13: RouteHue.indigo,
@@ -47,9 +50,9 @@ abstract final class RoutePalette {
     18: RouteHue.lilac,
     19: RouteHue.sky,
     20: RouteHue.red,
-    21: RouteHue.lime,
-    22: RouteHue.green,
-    23: RouteHue.lime,
+    21: RouteHue.olive,
+    22: RouteHue.ocean,
+    23: RouteHue.olive,
     24: RouteHue.orange,
     26: RouteHue.pink,
     29: RouteHue.sky,

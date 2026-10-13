@@ -36,8 +36,8 @@ void main() {
   test('ids separate label, staleness, brightness and hue', () {
     expect(MarkerImages.badgeId('10', stale: false, brightness: Brightness.light), 'bb-badge-light-10');
     expect(MarkerImages.badgeId('10', stale: true, brightness: Brightness.dark), 'bb-badge-dark-stale-10');
-    expect(MarkerImages.notchId(RouteHue.green, stale: false), 'bb-notch-green');
-    expect(MarkerImages.notchId(RouteHue.green, stale: true), 'bb-notch-stale');
+    expect(MarkerImages.notchId(RouteHue.ocean, stale: false), 'bb-notch-ocean');
+    expect(MarkerImages.notchId(RouteHue.ocean, stale: true), 'bb-notch-stale');
   });
 
   testWidgets('a badge is the route fill inside a white outline, at the pixel ratio', (tester) async {
@@ -45,7 +45,7 @@ void main() {
       const pr = 2.0;
       final image = await _decode(await MarkerImages.badge(
         label: '10',
-        hue: RouteHue.green,
+        hue: RouteHue.ocean,
         stale: false,
         brightness: Brightness.light,
         pixelRatio: pr,
@@ -55,7 +55,7 @@ void main() {
       expect(image.width, (size.width * pr).ceil());
       expect(image.height, (size.height * pr).ceil());
       // Just inside the outline on the left edge, vertically centred: the fill.
-      _near(await _pixel(image, ((MarkerImages.outline + 2) * pr).round(), image.height ~/ 2), RouteHue.green.fill);
+      _near(await _pixel(image, ((MarkerImages.outline + 2) * pr).round(), image.height ~/ 2), RouteHue.ocean.fill);
       // On the outline at the top edge, horizontally centred: white.
       _near(await _pixel(image, image.width ~/ 2, (0.6 * pr).round()), const Color(0xFFFFFFFF));
       // The outer corner is rounded off, so the very corner is transparent.
@@ -66,7 +66,7 @@ void main() {
   testWidgets('a badge draws its number in ink inside the inner rect', (tester) async {
     await tester.runAsync(() async {
       final image = await _decode(await MarkerImages.badge(
-          label: '10', hue: RouteHue.green, stale: false, brightness: Brightness.light, pixelRatio: 2));
+          label: '10', hue: RouteHue.ocean, stale: false, brightness: Brightness.light, pixelRatio: 2));
       addTearDown(image.dispose);
       final data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
       var inkPixels = 0;
@@ -87,7 +87,7 @@ void main() {
     await tester.runAsync(() async {
       const pr = 2.625;
       final image = await _decode(await MarkerImages.badge(
-          label: '1', hue: RouteHue.green, stale: false, brightness: Brightness.light, pixelRatio: pr));
+          label: '1', hue: RouteHue.ocean, stale: false, brightness: Brightness.light, pixelRatio: pr));
       addTearDown(image.dispose);
       expect(image.width, (30 * pr).ceil());
       // Last column, mid-height: still the white outline, not an unpainted gap.
@@ -98,13 +98,13 @@ void main() {
   testWidgets('a stale badge is grey, a dark badge uses the dark fill', (tester) async {
     await tester.runAsync(() async {
       final stale = await _decode(await MarkerImages.badge(
-          label: '10', hue: RouteHue.green, stale: true, brightness: Brightness.light, pixelRatio: 1));
+          label: '10', hue: RouteHue.ocean, stale: true, brightness: Brightness.light, pixelRatio: 1));
       addTearDown(stale.dispose);
       _near(await _pixel(stale, (MarkerImages.outline + 2).round(), stale.height ~/ 2), MarkerImages.staleFill);
       final dark = await _decode(await MarkerImages.badge(
-          label: '10', hue: RouteHue.green, stale: false, brightness: Brightness.dark, pixelRatio: 1));
+          label: '10', hue: RouteHue.ocean, stale: false, brightness: Brightness.dark, pixelRatio: 1));
       addTearDown(dark.dispose);
-      _near(await _pixel(dark, (MarkerImages.outline + 2).round(), dark.height ~/ 2), RouteHue.green.fillDark);
+      _near(await _pixel(dark, (MarkerImages.outline + 2).round(), dark.height ~/ 2), RouteHue.ocean.fillDark);
     });
   });
 
@@ -124,11 +124,11 @@ void main() {
   testWidgets('the notch points up from the top edge and leaves the centre clear', (tester) async {
     await tester.runAsync(() async {
       const pr = 2.0;
-      final image = await _decode(await MarkerImages.notch(hue: RouteHue.green, stale: false, pixelRatio: pr));
+      final image = await _decode(await MarkerImages.notch(hue: RouteHue.ocean, stale: false, pixelRatio: pr));
       addTearDown(image.dispose);
       expect(image.width, (64 * pr).ceil());
       expect(image.height, image.width);
-      _near(await _pixel(image, image.width ~/ 2, (6 * pr).round()), RouteHue.green.line);
+      _near(await _pixel(image, image.width ~/ 2, (6 * pr).round()), RouteHue.ocean.line);
       expect((await _pixel(image, image.width ~/ 2, image.height ~/ 2)).a, 0);
     });
   });
