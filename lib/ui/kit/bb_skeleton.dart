@@ -59,19 +59,22 @@ class _BBSkeletonState extends State<BBSkeleton> with SingleTickerProviderStateM
     final block = bb.colors.skeleton;
     final light = bb.isDark ? const Color(0xFFFFFFFF) : bb.colors.surface;
     final shine = Color.lerp(block, light, bb.isDark ? 0.12 : 0.7)!;
-    return AnimatedBuilder(
-      animation: _shimmer.controller,
-      child: blocks,
-      builder: (context, child) => ShaderMask(
-        key: BBSkeleton.shimmerKey,
-        blendMode: BlendMode.srcATop,
-        shaderCallback: (rect) => LinearGradient(
-          colors: [block, shine, block],
-          stops: const [0.35, 0.5, 0.65],
-          // The band starts and ends off the blocks, so resting and finished look the same.
-          transform: _SlideGradient(-1 + 2 * _shimmer.controller.value),
-        ).createShader(rect),
-        child: child,
+    // Its own layer: a sweep frame repaints the blocks, not the list or sheet around them.
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _shimmer.controller,
+        child: blocks,
+        builder: (context, child) => ShaderMask(
+          key: BBSkeleton.shimmerKey,
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (rect) => LinearGradient(
+            colors: [block, shine, block],
+            stops: const [0.35, 0.5, 0.65],
+            // The band starts and ends off the blocks, so resting and finished look the same.
+            transform: _SlideGradient(-1 + 2 * _shimmer.controller.value),
+          ).createShader(rect),
+          child: child,
+        ),
       ),
     );
   }

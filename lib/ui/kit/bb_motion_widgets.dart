@@ -88,24 +88,27 @@ class _BBNowPulseState extends State<BBNowPulse> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final brand = context.bb.colors.brand;
-    return AnimatedBuilder(
-      animation: _pulse,
-      child: widget.child,
-      builder: (context, child) {
-        final wave = math.sin(math.pi * _pulse.value); // 0 → 1 → 0
-        // One shape at rest and mid-pulse, so the child keeps its state.
-        return Transform.scale(
-          scale: 1 + 0.08 * wave,
-          child: DecoratedBox(
-            position: DecorationPosition.foreground,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(widget.radius),
-              border: Border.all(color: brand.withValues(alpha: wave.clamp(0.0, 1.0)), width: 2),
+    // Its own layer: a pulse frame repaints this row, not the list or sheet around it.
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _pulse,
+        child: widget.child,
+        builder: (context, child) {
+          final wave = math.sin(math.pi * _pulse.value); // 0 → 1 → 0
+          // One shape at rest and mid-pulse, so the child keeps its state.
+          return Transform.scale(
+            scale: 1 + 0.08 * wave,
+            child: DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(widget.radius),
+                border: Border.all(color: brand.withValues(alpha: wave.clamp(0.0, 1.0)), width: 2),
+              ),
+              child: child,
             ),
-            child: child,
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -157,22 +160,25 @@ class _BBLiveDotState extends State<BBLiveDot> with SingleTickerProviderStateMix
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          AnimatedBuilder(
-            animation: _loop.controller,
-            builder: (context, _) {
-              final t = _loop.controller.value;
-              // Invisible at 0 and at 1: resting and finished look the same.
-              return Transform.scale(
-                scale: 1 + 1.2 * t,
-                child: Opacity(
-                  opacity: (0.45 * math.sin(math.pi * t)).clamp(0.0, 1.0),
-                  child: SizedBox.square(
-                    dimension: widget.size * 0.66,
-                    child: DecoratedBox(decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)),
+          // Its own layer: a breath frame repaints the halo, not the sheet the dot sits in.
+          RepaintBoundary(
+            child: AnimatedBuilder(
+              animation: _loop.controller,
+              builder: (context, _) {
+                final t = _loop.controller.value;
+                // Invisible at 0 and at 1: resting and finished look the same.
+                return Transform.scale(
+                  scale: 1 + 1.2 * t,
+                  child: Opacity(
+                    opacity: (0.45 * math.sin(math.pi * t)).clamp(0.0, 1.0),
+                    child: SizedBox.square(
+                      dimension: widget.size * 0.66,
+                      child: DecoratedBox(decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)),
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
           BBGlyph(BBGlyphKind.liveDot, size: widget.size, color: widget.color),
         ],

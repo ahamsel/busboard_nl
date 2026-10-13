@@ -18,6 +18,11 @@ Widget _reducedWhen(ValueNotifier<bool> reduce, Widget child) => ValueListenable
       child: child,
     );
 
+/// [inner] under a [RepaintBoundary] that is itself inside [owner]: the owner's animation repaints only that layer,
+/// not the sheet or page the owner sits in.
+Finder _boundedIn(Type owner, Finder inner) =>
+    find.descendant(of: find.descendant(of: find.byType(owner), matching: find.byType(RepaintBoundary)), matching: inner);
+
 void main() {
   group('BBRollingText', () {
     testWidgets('rolls the old value out and the new one in, then shows only the new one', (tester) async {
@@ -61,6 +66,11 @@ void main() {
         tester.widget<Transform>(find.descendant(of: find.byType(BBNowPulse), matching: find.byType(Transform)).first)
             .transform
             .getMaxScaleOnAxis();
+
+    testWidgets('the pulse repaints in its own layer, not the whole sheet', (tester) async {
+      await tester.pumpWidget(kitHost(const BBNowPulse(active: false, child: Text('row'))));
+      expect(_boundedIn(BBNowPulse, find.byType(Transform)), findsOneWidget);
+    });
 
     testWidgets('pulses once when the row becomes Now, peaking at 1.08', (tester) async {
       Widget host(bool now) => kitHost(BBNowPulse(active: now, child: const SizedBox(height: 60, child: Text('row'))));
@@ -111,6 +121,11 @@ void main() {
   });
 
   group('BBLiveDot', () {
+    testWidgets('the breathing halo repaints in its own layer, not the whole sheet', (tester) async {
+      await tester.pumpWidget(kitHost(Center(child: BBLiveDot(color: BBColors.light.live))));
+      expect(_boundedIn(BBLiveDot, find.byType(Transform)), findsOneWidget);
+    });
+
     testWidgets('breathes for 800 ms, rests 800 ms with no frames, then breathes again', (tester) async {
       await tester.pumpWidget(kitHost(Center(child: BBLiveDot(color: BBColors.light.live))));
       await tester.pump(const Duration(milliseconds: 100));

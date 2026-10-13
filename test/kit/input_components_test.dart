@@ -251,6 +251,22 @@ void main() {
     }
   });
 
+  testWidgets('on BBSwitch carries a 1.5 px brandEdge border, so the green fill is not the only cue', (tester) async {
+    for (final b in Brightness.values) {
+      final t = b == Brightness.dark ? BBTokens.dark : BBTokens.light;
+      await tester.pumpWidget(kitHost(BBSwitch(value: true, onChanged: (_) {}), brightness: b));
+      await tester.pumpAndSettle();
+      final track = tester
+          .widgetList<DecoratedBox>(find.descendant(of: find.byType(BBSwitch), matching: find.byType(DecoratedBox)))
+          .map((d) => d.decoration)
+          .whereType<BoxDecoration>()
+          .singleWhere((d) => d.shape == BoxShape.rectangle && d.border != null);
+      expect(track.color, t.colors.brand, reason: b.name);
+      expect((track.border! as Border).top.color, t.brandEdge, reason: '${b.name} on track edge');
+      expect((track.border! as Border).top.width, 1.5);
+    }
+  });
+
   testWidgets('BBSwitch hit area is at least 44x44', (tester) async {
     await tester.pumpWidget(kitHost(BBSwitch(value: false, onChanged: (_) {})));
     final size = tester.getSize(find.byType(BBSwitch));

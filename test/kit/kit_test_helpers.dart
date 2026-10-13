@@ -4,6 +4,7 @@ import 'package:busboard_nl/ui/kit/bb_theme.dart';
 import 'package:busboard_nl/ui/kit/tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 /// Loads every font in FontManifest.json (Figtree + MaterialIcons) so goldens
 /// render real glyphs instead of test boxes.
@@ -51,3 +52,6 @@ Widget kitHost(
     ),
   );
 }
+
+/// The colour of the topmost modal barrier (the scrim behind a dialog or card), once its fade has settled.
+Color? topScrim(WidgetTester tester) => tester.widgetList<ModalBarrier>(find.byType(ModalBarrier)).last.color;

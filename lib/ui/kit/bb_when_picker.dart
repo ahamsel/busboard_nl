@@ -38,7 +38,7 @@ Future<DateTime?> showBBWhenPicker(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Dismiss',
-    barrierColor: BBScrim.strong,
+    barrierColor: BBScrim.strongOf(context),
     transitionDuration: BBMotion.of(context, BBMotion.emphasis),
     pageBuilder: (dialogContext, _, _) => BBWhenPicker(
       title: title,
@@ -447,6 +447,13 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
         decoration: selected
             ? BoxDecoration(color: bb.colors.brand, borderRadius: BorderRadius.circular(22))
             : bb.field(radius: 22),
+        // Selected: the brandEdge border too, since the fill alone is ~2.85:1 on white. Over the chip, so no size change.
+        foregroundDecoration: selected
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: bb.brandEdge, width: 1.5),
+              )
+            : null,
         // As wide as its label (no `alignment`, which would fill a Wrap's width), centred in the 44 pt height.
         child: Row(
           mainAxisSize: MainAxisSize.min,

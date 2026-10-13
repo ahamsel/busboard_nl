@@ -56,6 +56,14 @@ class BBChip extends StatelessWidget {
                   ? BoxDecoration(color: bb.colors.brand, borderRadius: BorderRadius.circular(22))
                   : bb.field(radius: 22))
               : bb.mapControl(selected: selected),
+          // Selected: a 1.5 px brandEdge border too, since the bright fill alone is ~2.85:1 on white (WCAG 1.4.11).
+          // Drawn over the chip, so it never changes the chip's size.
+          foregroundDecoration: selected
+              ? BoxDecoration(
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: bb.brandEdge, width: 1.5),
+                )
+              : null,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

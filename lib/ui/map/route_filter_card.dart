@@ -12,7 +12,7 @@ Future<void> showRouteFilterCard(BuildContext context, {required List<int> route
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Close route filter',
-    barrierColor: BBScrim.soft,
+    barrierColor: BBScrim.strongOf(context),
     transitionDuration: BBMotion.of(context, BBMotion.standard),
     pageBuilder: (_, _, _) => _RouteFilterCard(routes: routes),
     transitionBuilder: (_, animation, _, child) =>

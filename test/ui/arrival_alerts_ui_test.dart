@@ -74,7 +74,7 @@ ArrivalRow _row(int minutes, {String trip = 't1', String route = '10'}) => Arriv
     );
 
 Future<_Runner> _pump(WidgetTester tester, Widget child,
-    {bool grant = true, double textScale = 1, double width = 390, bool failStart = false}) async {
+    {bool grant = true, double textScale = 1, double width = 390, bool failStart = false, Brightness brightness = Brightness.light}) async {
   SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.empty();
   final runner = _Runner()..throwOnStart = failStart;
   await tester.pumpWidget(ProviderScope(
@@ -82,7 +82,7 @@ Future<_Runner> _pump(WidgetTester tester, Widget child,
       alertRunnerProvider.overrideWithValue(runner),
       alertNotificationsProvider.overrideWithValue(_Notes(grant)),
     ],
-    child: kitHost(child, textScale: textScale, width: width),
+    child: kitHost(child, textScale: textScale, width: width, brightness: brightness),
   ));
   await tester.pumpAndSettle();
   return runner;
@@ -278,6 +278,19 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the lead-time card dims with the strong scrim, like every other modal card', (tester) async {
+    for (final b in Brightness.values) {
+      await tester.pumpWidget(const SizedBox());
+      await _pump(tester, Builder(builder: (context) => BBButton(
+            label: 'open',
+            onPressed: () => showLeadTimeSheet(context, arrival: _row(20), initialLead: 5, explainPermission: false),
+          )), brightness: b);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(topScrim(tester), b == Brightness.dark ? BBScrim.strongDark : BBScrim.strong, reason: b.name);
+    }
   });
 
   testWidgets('the sheet is a surface scope: its chips are field pills, not floating map pills', (tester) async {

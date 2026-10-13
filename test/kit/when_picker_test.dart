@@ -111,6 +111,24 @@ void main() {
     expect(opened.result, DateTime(2026, 10, 7, 13, 20));
   });
 
+  testWidgets("the selected day chip has a 1.5 px brandEdge border; the others don't", (tester) async {
+    for (final b in Brightness.values) {
+      await tester.pumpWidget(const SizedBox());
+      await _open(tester, brightness: b);
+      final t = b == Brightness.dark ? BBTokens.dark : BBTokens.light;
+      BoxDecoration? edge(int i) => tester
+          .widget<AnimatedContainer>(find.descendant(of: find.byKey(BBWhenPicker.dayKey(i)), matching: find.byType(AnimatedContainer)))
+          .foregroundDecoration as BoxDecoration?;
+      final border = edge(0)!.border! as Border;
+      expect(border.top.color, t.brandEdge, reason: b.name);
+      expect(border.top.width, 1.5);
+      expect(edge(1), isNull, reason: '${b.name} unselected');
+      await _tapIn(tester, find.byKey(BBWhenPicker.dayKey(1)));
+      expect(edge(0), isNull);
+      expect((edge(1)!.border! as Border).top.color, t.brandEdge);
+    }
+  });
+
   testWidgets('a day chip moves the day, keeping the time', (tester) async {
     final opened = await _open(tester);
     await _tapIn(tester, find.byKey(BBWhenPicker.dayKey(2)));

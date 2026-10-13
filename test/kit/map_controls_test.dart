@@ -31,6 +31,29 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('a selected chip carries a 1.5 px brandEdge border, on the map and on a sheet; unselected has none',
+      (tester) async {
+    BoxDecoration? edge() =>
+        tester.widget<AnimatedContainer>(find.byKey(BBChip.surfaceKey)).foregroundDecoration as BoxDecoration?;
+    for (final b in Brightness.values) {
+      final t = b == Brightness.dark ? BBTokens.dark : BBTokens.light;
+      for (final onSheet in [false, true]) {
+        Widget chip(bool selected) {
+          final c = Center(child: BBChip(label: 'Route 10', selected: selected, onTap: () {}));
+          return kitHost(onSheet ? BBSurfaceScope(child: c) : c, brightness: b);
+        }
+
+        await tester.pumpWidget(chip(true));
+        final border = edge()!.border! as Border;
+        expect(border.top.color, t.brandEdge, reason: '${b.name} sheet=$onSheet');
+        expect(border.top.width, 1.5, reason: '${b.name} sheet=$onSheet');
+        await tester.pumpWidget(chip(false));
+        await tester.pumpAndSettle();
+        expect(edge(), isNull, reason: '${b.name} sheet=$onSheet unselected');
+      }
+    }
+  });
+
   testWidgets('a long chip label ellipsizes at 2x text on 320 pt', (tester) async {
     const label = 'Freshwater Rd before Anderson Ave · 3080';
     await tester.pumpWidget(kitHost(

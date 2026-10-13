@@ -36,6 +36,25 @@ void main() {
     expect(tester.hasRunningAnimations, isTrue, reason: 'the next sweep');
   });
 
+  testWidgets('each shimmer repaints in its own layer, not the whole list', (tester) async {
+    await tester.pumpWidget(kitHost(const BBSkeleton(kind: BBSkeletonKind.arrivalRow, count: 3)));
+    final shimmers = find.byKey(BBSkeleton.shimmerKey);
+    expect(shimmers, findsNWidgets(3));
+    final bounded = find.descendant(
+      of: find.descendant(of: find.byType(BBSkeleton), matching: find.byType(RepaintBoundary)),
+      matching: shimmers,
+    );
+    expect(bounded, findsNWidgets(3));
+    await tester.pumpWidget(kitHost(const BBSkeleton(kind: BBSkeletonKind.line, count: 2)));
+    expect(
+      find.descendant(
+        of: find.descendant(of: find.byType(BBSkeleton), matching: find.byType(RepaintBoundary)),
+        matching: find.byKey(BBSkeleton.shimmerKey),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Reduce Motion: still blocks, no shimmer', (tester) async {
     for (final kind in BBSkeletonKind.values) {
       await tester.pumpWidget(kitHost(Builder(

@@ -730,6 +730,14 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('the route filter card dims with the same strong scrim as the other modal cards', (tester) async {
+    await _pump(tester, buses: {'2573': _bus()});
+    await tester.tap(find.text('All routes'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(topScrim(tester), BBScrim.strong);
+  });
+
   testWidgets('the map is built with rotation off and a Harbour style asset', (tester) async {
     await _pump(tester);
     expect(_config!.styleString, 'assets/map/harbour_light.json');
@@ -1517,6 +1525,15 @@ void main() {
       final draft = container(tester).read(planQueryProvider);
       expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
       expect(draft.from, isA<PinPlace>().having((p) => p.label, 'label', 'My location'));
+    });
+
+    testWidgets('the long-press card dims with the same strong scrim as the other modal cards', (tester) async {
+      final map = StubMap();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
+      map.longPress(47.5700, -52.7500);
+      await tester.pumpAndSettle();
+      expect(find.text('Plan from here'), findsOneWidget);
+      expect(topScrim(tester), BBScrim.strong);
     });
 
     testWidgets('a long-press far from any stop drops a pin; Plan from here sets the start and opens the search',

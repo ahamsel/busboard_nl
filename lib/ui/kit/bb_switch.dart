@@ -18,7 +18,8 @@ class BBSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.bb.colors;
+    final bb = context.bb;
+    final c = bb.colors;
     final duration = BBMotion.of(context, BBMotion.standard);
     final enabled = onChanged != null;
     // One handler for touch and screen-reader activation.
@@ -50,9 +51,9 @@ class BBSwitch extends StatelessWidget {
               decoration: BoxDecoration(
                 color: value ? c.brand : c.surfaceSunken,
                 borderRadius: BorderRadius.circular(14),
-                // Off state: a muted outline + thumb (>= 3:1, WCAG 1.4.11) so it reads
-                // as a control even without the on-state fill.
-                border: Border.all(color: value ? c.brand : c.muted, width: value ? 1 : 1.5),
+                // Off: a muted outline + thumb (>= 3:1, WCAG 1.4.11) so it reads as a control without a fill.
+                // On: the brandEdge border, since the bright green fill alone is ~2.85:1 on white.
+                border: Border.all(color: value ? bb.brandEdge : c.muted, width: 1.5),
               ),
               child: AnimatedAlign(
                 duration: duration,
