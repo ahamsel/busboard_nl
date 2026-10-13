@@ -153,6 +153,28 @@ void main() {
     }
   }
 
+  testWidgets('when picker 12-hour at noon, light: 12 sits above 1, and the PM wheel is on PM', (tester) async {
+    tester.view.physicalSize = const Size(390 * 3, 700 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      kitHost(
+        BBWhenPicker(
+          title: 'Leave by',
+          initial: DateTime(2026, 10, 7, 12, 10),
+          first: DateTime(2026, 10, 7, 8, 1),
+          last: DateTime(2026, 10, 10),
+          use24h: false,
+          onDone: (_) {},
+        ),
+        use24h: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/when_picker_noon_light.png'));
+  });
+
   testWidgets('sheet dark x1.0', (tester) async {
     tester.view.physicalSize = const Size(390 * 3, 700 * 3);
     tester.view.devicePixelRatio = 3;
