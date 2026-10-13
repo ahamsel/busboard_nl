@@ -25,6 +25,7 @@ import 'home_tip.dart';
 /// your stop's next buses. The body: saved trips, then nearby stops.
 abstract final class HomeSheetContent {
   static const whereToKey = ValueKey('where-to');
+  static const openBoardKey = ValueKey('home-open-board');
 
   /// [onChooseStop] pulls the sheet up to the nearby stops (home_screen.dart passes its sheet's full detent). With no
   /// nearby stops to show (no location, or none near) "Choose your stop" opens a stop search instead (spec §4.4).
@@ -151,7 +152,17 @@ class _Header extends ConsumerWidget {
                 ],
               ),
             ),
-            const SizedBox(height: BBSpace.s),
+            // For riders used to the Board tab: their stop's whole Board in one tap.
+            BBButton(
+              key: HomeSheetContent.openBoardKey,
+              label: 'Open board',
+              semanticLabel: 'Open board, ${stop.stopName}',
+              icon: BBIcons.board,
+              kind: BBButtonKind.quiet,
+              expand: true,
+              wrap: true,
+              onPressed: () => ref.read(homeSheetProvider.notifier).openBoard(stop.stopId),
+            ),
             ArrivalsPreview(stopId: stop.stopId, max: 3),
           ],
         ],
