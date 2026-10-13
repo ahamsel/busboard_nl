@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 /// Colour roles for one brightness (visual refresh spec §2.1: Metrobus green,
 /// "Night Bus" dark). Raw colour values live only here and in route_palette.dart.
@@ -258,15 +259,67 @@ abstract final class BBRadius {
   static const double sheet = 24;
 }
 
+/// The motion system (visual refresh spec §3.1). Everything honours Reduce Motion
+/// (`MediaQuery.disableAnimations`): [of] gives zero, [spring] a near-instant spring,
+/// and loops don't run at all.
 abstract final class BBMotion {
-  static const standard = Duration(milliseconds: 200);
-  static const press = Duration(milliseconds: 120);
-  static const sheet = Duration(milliseconds: 300);
+  /// Presses, toggles.
+  static const quick = Duration(milliseconds: 120);
+
+  /// Most fades and slides.
+  static const standard = Duration(milliseconds: 220);
+
+  /// Sheets snapping to detents, cards entering, the picker sheet (with [emphasisCurve]).
+  static const emphasis = Duration(milliseconds: 360);
+
+  /// Between list items as they enter, for at most [staggerMax] steps.
+  static const stagger = Duration(milliseconds: 40);
+  static const int staggerMax = 8;
+
+  /// One live-dot breath cycle.
+  static const pulse = Duration(milliseconds: 1600);
+
+  /// A row becoming "Now": one scale 1 → 1.08 → 1.
+  static const nowPulse = Duration(milliseconds: 600);
+
   static const Curve curve = Curves.easeOutCubic;
 
+  /// Damping ratio ≈ 0.78, stiffness ≈ 260: a slight overshoot.
+  static final SpringDescription emphasisSpring =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 260, ratio: 0.78);
+
+  /// Reduce Motion: critically damped and stiff, so it settles in a few milliseconds.
+  static final SpringDescription reducedSpring =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 10000, ratio: 1);
+
+  /// [emphasisSpring] over [emphasis], for controller-driven motion.
+  static final Curve emphasisCurve = BBSpringCurve(emphasisSpring, emphasis);
+
+  /// Whether the user has asked the OS to reduce motion.
+  static bool reduced(BuildContext context) => MediaQuery.maybeDisableAnimationsOf(context) == true;
+
   /// [d], or zero when the user has asked the OS to reduce motion.
-  static Duration of(BuildContext context, Duration d) =>
-      MediaQuery.maybeDisableAnimationsOf(context) == true ? Duration.zero : d;
+  static Duration of(BuildContext context, Duration d) => reduced(context) ? Duration.zero : d;
+
+  /// The emphasis spring, or a near-instant critically damped one under Reduce Motion.
+  static SpringDescription spring(BuildContext context) => reduced(context) ? reducedSpring : emphasisSpring;
+}
+
+/// [spring] from 0 to 1 over [duration] as a [Curve], for AnimationController-driven motion.
+/// It may overshoot 1 a little on the way; a linear correction lands it exactly on 1 at the end,
+/// so the last frame doesn't jump.
+class BBSpringCurve extends Curve {
+  const BBSpringCurve(this.spring, this.duration);
+
+  final SpringDescription spring;
+  final Duration duration;
+
+  @override
+  double transformInternal(double t) {
+    final seconds = duration.inMicroseconds / Duration.microsecondsPerSecond;
+    final sim = SpringSimulation(spring, 0, 1, 0);
+    return sim.x(t * seconds) + (1 - sim.x(seconds)) * t;
+  }
 }
 
 /// Dimmed backdrops behind dialogs and floating cards (ink-tinted).

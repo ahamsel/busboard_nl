@@ -52,7 +52,7 @@ class _BBPressableState extends State<BBPressable> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
-    final duration = BBMotion.of(context, BBMotion.press);
+    final duration = BBMotion.of(context, BBMotion.quick);
     final gesture = GestureDetector(
       behavior: HitTestBehavior.opaque,
       // The tap reaches screen readers through the Semantics below (or a descendant's own): a second tap action

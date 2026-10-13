@@ -807,7 +807,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final header = _headerKey.currentContext;
     final scrollable = header == null ? null : Scrollable.maybeOf(header);
     if (scrollable == null || !scrollable.position.hasPixels || scrollable.position.pixels <= 0) return false;
-    unawaited(scrollable.position.animateTo(0, duration: BBMotion.of(context, BBMotion.sheet), curve: BBMotion.curve));
+    unawaited(scrollable.position.animateTo(0, duration: BBMotion.of(context, BBMotion.emphasis), curve: BBMotion.curve));
     return true;
   }
 
@@ -1000,7 +1000,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final position = scrollable.position;
     unawaited(position.animateTo(
       math.min(headerHeight, position.maxScrollExtent),
-      duration: BBMotion.of(context, BBMotion.sheet),
+      duration: BBMotion.of(context, BBMotion.emphasis),
       curve: BBMotion.curve,
     ));
     return true;

@@ -14,7 +14,7 @@ enum BBSheetDetent { peek, half, full }
 class BBSheetController extends DraggableScrollableController {
   _BBSheetState? _sheet;
 
-  /// Animates to [detent] (in 1 ms with reduce motion). No-op when detached.
+  /// Springs to [detent] (spec §3.2: the emphasis spring, slight overshoot; 1 ms with reduce motion). No-op when detached.
   ///
   /// Don't await this from tests or from code that can unmount the sheet: the
   /// future may never complete if the sheet goes away mid-animation. Use
@@ -22,7 +22,7 @@ class BBSheetController extends DraggableScrollableController {
   Future<void> animateToDetent(BBSheetDetent detent) async {
     final sheet = _sheet;
     if (sheet == null || !isAttached) return;
-    await animateTo(sheet._fractionOf(detent), duration: sheet._snapDuration, curve: BBMotion.curve);
+    await animateTo(sheet._fractionOf(detent), duration: sheet._snapDuration, curve: BBMotion.emphasisCurve);
   }
 
   /// Back to peek, e.g. when the map behind the sheet is tapped.
@@ -96,7 +96,7 @@ class _BBSheetState extends State<BBSheet> {
   late double _extent = widget.initialFraction ?? widget.peekFraction;
   Timer? _settleTimer;
   bool _dismissed = false;
-  Duration _snapDuration = BBMotion.sheet;
+  Duration _snapDuration = BBMotion.emphasis;
 
   @override
   void initState() {
@@ -127,7 +127,7 @@ class _BBSheetState extends State<BBSheet> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // The sheet API rejects Duration.zero, so "reduce motion" uses 1 ms.
-    final d = BBMotion.of(context, BBMotion.sheet);
+    final d = BBMotion.of(context, BBMotion.emphasis);
     _snapDuration = d == Duration.zero ? const Duration(milliseconds: 1) : d;
   }
 
