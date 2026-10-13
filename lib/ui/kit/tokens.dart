@@ -171,7 +171,9 @@ class BBColors {
 }
 
 /// Type scale (spec §4.3). Every style sets `decoration: none` so text never
-/// shows Flutter's "missing Material" debug underline.
+/// shows Flutter's "missing Material" debug underline, and a solid
+/// `decorationStyle`, so a strike-through added later is one line, not the
+/// fallback's double line.
 @immutable
 class BBText {
   const BBText({
@@ -208,6 +210,7 @@ class BBText {
         letterSpacing: spacing,
         height: height,
         decoration: TextDecoration.none,
+        decorationStyle: TextDecorationStyle.solid,
       );
     }
 
