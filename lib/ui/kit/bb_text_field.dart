@@ -11,6 +11,7 @@ class BBTextField extends StatefulWidget {
     super.key,
     this.controller,
     this.hint,
+    this.semanticLabel,
     this.leadingIcon,
     this.onChanged,
     this.onSubmitted,
@@ -26,6 +27,10 @@ class BBTextField extends StatefulWidget {
 
   final TextEditingController? controller;
   final String? hint;
+
+  /// What a screen reader calls the field, with or without text in it (a hint is exposed only while the field is
+  /// empty and unfocused). When set, the hint is drawn but not exposed, so the name is read once.
+  final String? semanticLabel;
   final IconData? leadingIcon;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
@@ -102,33 +107,48 @@ class _BBTextFieldState extends State<BBTextField> {
                     // field also works on kit pages that (correctly) have none.
                     child: Material(
                       type: MaterialType.transparency,
-                      child: TextField(
-                        controller: widget.controller,
-                        onChanged: widget.onChanged,
-                        onSubmitted: widget.onSubmitted,
-                        keyboardType: widget.keyboardType,
-                        textInputAction: widget.textInputAction,
-                        autofocus: widget.autofocus,
-                        inputFormatters: widget.inputFormatters,
-                        focusNode: _focus,
-                        textAlign: widget.textAlign,
-                        style: textStyle,
-                        cursorColor: bb.brandEdge,
-                        // Fully bare field: BBTextField draws its own container, so the
-                        // theme's filled/outlined InputDecorationTheme must not leak in.
-                        decoration: InputDecoration(
-                          isCollapsed: true,
-                          filled: false,
-                          contentPadding: EdgeInsets.zero,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          disabledBorder: InputBorder.none,
-                          errorBorder: InputBorder.none,
-                          focusedErrorBorder: InputBorder.none,
-                          hintText: widget.hint,
-                          hintMaxLines: 2,
-                          hintStyle: textStyle.copyWith(color: bb.colors.muted),
+                      child: Semantics(
+                        label: widget.semanticLabel,
+                        child: TextField(
+                          controller: widget.controller,
+                          onChanged: widget.onChanged,
+                          onSubmitted: widget.onSubmitted,
+                          keyboardType: widget.keyboardType,
+                          textInputAction: widget.textInputAction,
+                          autofocus: widget.autofocus,
+                          inputFormatters: widget.inputFormatters,
+                          focusNode: _focus,
+                          textAlign: widget.textAlign,
+                          style: textStyle,
+                          cursorColor: bb.brandEdge,
+                          // Fully bare field: BBTextField draws its own container, so the
+                          // theme's filled/outlined InputDecorationTheme must not leak in.
+                          decoration: InputDecoration(
+                            isCollapsed: true,
+                            filled: false,
+                            contentPadding: EdgeInsets.zero,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                            errorBorder: InputBorder.none,
+                            focusedErrorBorder: InputBorder.none,
+                            // With a semanticLabel the hint is only drawn: the label already names the field, and a
+                            // hint exposed too would be read twice while the field is empty.
+                            hintText: widget.semanticLabel == null ? widget.hint : null,
+                            hint: widget.semanticLabel != null && widget.hint != null
+                                ? ExcludeSemantics(
+                                    child: Text(
+                                      widget.hint!,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: textStyle.copyWith(color: bb.colors.muted),
+                                    ),
+                                  )
+                                : null,
+                            hintMaxLines: 2,
+                            hintStyle: textStyle.copyWith(color: bb.colors.muted),
+                          ),
                         ),
                       ),
                     ),

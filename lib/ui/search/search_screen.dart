@@ -388,14 +388,16 @@ class _SaveFieldsState extends State<_SaveFields> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // The hint vanishes once the user types, so the field keeps a label above it.
+        // The hint vanishes once the user types, so the field keeps a label above it. Only drawn: the field itself
+        // carries the name for screen readers.
         Padding(
           padding: const EdgeInsets.only(bottom: BBSpace.xs),
-          child: Text('Name', style: context.bb.text.caption),
+          child: ExcludeSemantics(child: Text('Name', style: context.bb.text.caption)),
         ),
         BBTextField(
           controller: _controller,
           hint: 'Name',
+          semanticLabel: 'Name',
           autofocus: true,
           onChanged: widget.onName,
           inputFormatters: [LengthLimitingTextInputFormatter(savedTripNameMax)],

@@ -35,6 +35,29 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('BBTextField: a semanticLabel names the field once, empty or not, focused or not', (tester) async {
+    final handle = tester.ensureSemantics();
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(
+      kitHost(BBTextField(controller: controller, focusNode: focus, hint: 'Name', semanticLabel: 'Name')),
+    );
+    expect(find.text('Name'), findsOneWidget, reason: 'the hint is still drawn');
+    expect(tester.getSemantics(find.byType(TextField)), isSemantics(isTextField: true, label: 'Name'));
+    focus.requestFocus();
+    await tester.pump();
+    expect(tester.getSemantics(find.byType(TextField)), isSemantics(isTextField: true, label: 'Name', isFocused: true));
+    controller.text = 'Work';
+    await tester.pump();
+    expect(
+      tester.getSemantics(find.byType(TextField)),
+      isSemantics(isTextField: true, label: 'Name', value: 'Work', isFocused: true),
+    );
+    handle.dispose();
+  });
+
   testWidgets('BBSwitch toggles and announces state', (tester) async {
     final handle = tester.ensureSemantics();
     bool? got;

@@ -256,14 +256,16 @@ class _NameFieldState extends State<_NameField> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     mainAxisSize: MainAxisSize.min,
     children: [
-      // The hint vanishes once the user types, so the field keeps a label above it.
+      // The hint vanishes once the user types, so the field keeps a label above it. Only drawn: the field itself
+      // carries the name for screen readers.
       Padding(
         padding: const EdgeInsets.only(bottom: BBSpace.xs),
-        child: Text('Trip name', style: context.bb.text.caption),
+        child: ExcludeSemantics(child: Text('Trip name', style: context.bb.text.caption)),
       ),
       BBTextField(
         controller: _controller,
         hint: 'Trip name',
+        semanticLabel: 'Trip name',
         autofocus: true,
         onChanged: widget.onChanged,
         inputFormatters: [LengthLimitingTextInputFormatter(savedTripNameMax)],

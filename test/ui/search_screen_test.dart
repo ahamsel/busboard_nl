@@ -14,6 +14,7 @@ import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
@@ -72,6 +73,22 @@ class _HeldRecentStore extends RecentPlaceStore {
     await saved.future;
     return super.push(p);
   }
+}
+
+/// The semantics nodes on screen that speak [text] as their label, hint or value.
+List<SemanticsData> _saying(WidgetTester tester, String text) {
+  final found = <SemanticsData>[];
+  void walk(SemanticsNode node) {
+    final d = node.getSemanticsData();
+    if ([d.label, d.hint, d.value].contains(text)) found.add(d);
+    node.visitChildren((c) {
+      walk(c);
+      return true;
+    });
+  }
+
+  walk(tester.binding.renderViews.single.debugSemantics!);
+  return found;
 }
 
 void main() {
@@ -289,6 +306,19 @@ void main() {
     // The hint is faded out in place, so look for a 'Name' that is not inside the field.
     final labels = find.text('Name').evaluate().where((e) => e.findAncestorWidgetOfExactType<BBTextField>() == null);
     expect(labels, hasLength(1), reason: 'the label stays above the field once the hint is gone');
+  });
+
+  testWidgets('save=1: a screen reader hears the Name field once, not again from its visual caption', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _openSearch(tester, location: '/search?save=1');
+    await _findMun(tester);
+    final field = find.byWidgetPredicate((w) => w is BBTextField && w.hint == 'Name');
+    expect(find.text('Name'), findsNWidgets(2), reason: 'the caption and the hint are both drawn');
+    final said = _saying(tester, 'Name');
+    expect(said, hasLength(1));
+    expect(said.single.flagsCollection.isTextField, isTrue, reason: 'it is the field that carries the label');
+    expect(field, findsOneWidget);
+    handle.dispose();
   });
 
   testWidgets('save=1: a blank name keeps the place name; Cancel saves nothing', (tester) async {

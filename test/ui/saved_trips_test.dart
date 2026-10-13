@@ -120,6 +120,30 @@ void main() {
     expect(find.text('Work'), findsOneWidget);
   });
 
+  testWidgets('a screen reader hears the Trip name field once, not again from its visual caption', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester);
+    await tester.tap(_more);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText), '');
+    await tester.pump();
+    expect(find.text('Trip name'), findsNWidgets(2), reason: 'the caption and the hint are both drawn');
+    final said = <SemanticsData>[];
+    void walk(SemanticsNode node) {
+      final d = node.getSemanticsData();
+      if ([d.label, d.hint, d.value].contains('Trip name')) said.add(d);
+      node.visitChildren((c) {
+        walk(c);
+        return true;
+      });
+    }
+
+    walk(tester.binding.renderViews.single.debugSemantics!);
+    expect(said, hasLength(1));
+    expect(said.single.flagsCollection.isTextField, isTrue, reason: 'it is the field that carries the label');
+    handle.dispose();
+  });
+
   testWidgets('long-pressing the card opens the same dialog', (tester) async {
     await _pump(tester);
     await tester.longPress(find.text('Stop A → Stop C'));
