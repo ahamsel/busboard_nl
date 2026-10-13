@@ -32,7 +32,7 @@ Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) as
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Close',
-    barrierColor: const Color(0x331C2A3A),
+    barrierColor: BBScrim.soft,
     transitionDuration: BBMotion.of(context, BBMotion.standard),
     pageBuilder: (_, _, _) => _MapPlanCard(title: place.label),
     transitionBuilder: (_, animation, _, child) =>

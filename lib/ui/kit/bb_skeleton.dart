@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'bb_card.dart';
 import 'tokens.dart';
 
 enum BBSkeletonKind { arrivalRow, alertCard, stopCard, line }
@@ -106,7 +107,7 @@ class BBSkeleton extends StatelessWidget {
                 child: Container(
                   key: const ValueKey('bb-skeleton-item'),
                   padding: const EdgeInsets.all(BBSpace.m),
-                  decoration: bb.card(),
+                  decoration: BBSurfaceScope.cardOf(context),
                   child: item(),
                 ),
               ),

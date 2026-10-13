@@ -26,10 +26,7 @@ class BBSegmented<T> extends StatelessWidget {
     final bb = context.bb;
     final duration = BBMotion.of(context, BBMotion.standard);
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: bb.colors.surfaceSunken,
-        borderRadius: BorderRadius.circular(BBRadius.badge),
-      ),
+      decoration: bb.field(radius: BBRadius.badge),
       child: Padding(
         padding: const EdgeInsets.all(3),
         // Labels wrap to two lines at large text; every segment then takes
@@ -59,16 +56,16 @@ class BBSegmented<T> extends StatelessWidget {
                             vertical: BBSpace.s,
                           ),
                           decoration: BoxDecoration(
-                            // Brand fill plus a brand border: the fill alone is ~1.3:1
-                            // against the track, so the border carries the state
-                            // (WCAG 1.4.11). Unselected segments keep a clear border
-                            // of the same width so the row never shifts.
+                            // Brand fill plus a brand-edge border (brandInk in light: bright green on
+                            // white is under 3:1): the fill alone is ~1.3:1 against the track, so the
+                            // border carries the state (WCAG 1.4.11). Unselected segments keep a clear
+                            // border of the same width so the row never shifts.
                             color: s.value == selected
                                 ? bb.colors.brandSoft
                                 : const Color(0x00000000),
                             border: Border.all(
                               color: s.value == selected
-                                  ? bb.colors.brand
+                                  ? bb.brandEdge
                                   : const Color(0x00000000),
                               width: 1.5,
                             ),

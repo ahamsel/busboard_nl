@@ -79,13 +79,14 @@ void main() {
     expect(box.borderRadius, BorderRadius.circular(BBRadius.sheet));
   });
 
-  testWidgets('in dark mode the hairline border is painted above the card content', (tester) async {
+  testWidgets('in dark mode the top highlight is painted above the card content', (tester) async {
     await tester.pumpWidget(_host(BBSheetController(), header: const SizedBox(height: 40), brightness: Brightness.dark));
     Iterable<DecoratedBox> foregroundBoxes() => tester
         .widgetList<DecoratedBox>(find.descendant(of: find.byKey(BBSheet.cardKey), matching: find.byType(DecoratedBox)))
         .where((d) => d.position == DecorationPosition.foreground);
     final front = foregroundBoxes().where((d) => (d.decoration as BoxDecoration).border != null);
     expect(front, hasLength(1));
+    expect(((front.single.decoration as BoxDecoration).border! as Border).top.color, BBColors.dark.highlight);
     expect((front.single.decoration as BoxDecoration).borderRadius, BorderRadius.circular(BBRadius.sheet));
     // The background decoration no longer carries the border (it would be
     // hidden under the header).

@@ -447,19 +447,22 @@ class _EndRow extends StatelessWidget {
     return BBPressable(
       onTap: onTap,
       semanticLabel: '$caption: ${p == null ? 'not chosen' : p.label}',
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: BBSpace.s),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(caption, style: bb.text.caption),
-              Text(
-                p?.label ?? placeholder,
-                style: p == null ? bb.text.body.copyWith(color: bb.colors.muted) : bb.text.headline,
-              ),
-            ],
+      child: DecoratedBox(
+        decoration: bb.field(),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.s),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(caption, style: bb.text.caption),
+                Text(
+                  p?.label ?? placeholder,
+                  style: p == null ? bb.text.body.copyWith(color: bb.colors.muted) : bb.text.headline,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -491,7 +494,7 @@ class _FieldButton extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(minHeight: 44),
         padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.s),
-        decoration: BoxDecoration(color: bb.colors.surfaceSunken, borderRadius: BorderRadius.circular(BBRadius.button)),
+        decoration: bb.field(),
         child: Row(
           children: [
             Icon(icon, size: 20, color: bb.colors.muted),

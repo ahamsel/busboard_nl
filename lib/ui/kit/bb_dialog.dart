@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'bb_button.dart';
+import 'bb_card.dart';
 import 'tokens.dart';
 
 class BBDialogAction<T> {
@@ -24,7 +25,7 @@ abstract final class BBDialog {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
-      barrierColor: const Color(0x661C2A3A),
+      barrierColor: BBScrim.strong,
       transitionDuration: BBMotion.of(context, BBMotion.standard),
       pageBuilder: (dialogContext, _, _) => _DialogCard<T>(title: title, message: message, content: content, actions: actions),
       transitionBuilder: (_, animation, _, child) {
@@ -61,49 +62,51 @@ class _DialogCard<T> extends StatelessWidget {
             namesRoute: true,
             explicitChildNodes: true,
             label: title,
-            child: DecoratedBox(
-              decoration: bb.floating(radius: BBRadius.sheet),
-              child: Padding(
-                padding: const EdgeInsets.all(BBSpace.xl),
-                child: DefaultTextStyle(
-                  style: bb.text.body,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Flexible(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Semantics(header: true, child: Text(title, style: bb.text.headline)),
-                              if (message != null) ...[
-                                const SizedBox(height: BBSpace.s),
-                                Text(message!, style: bb.text.body.copyWith(color: bb.colors.muted)),
+            child: BBSurfaceScope(
+              child: DecoratedBox(
+                decoration: bb.floating(radius: BBRadius.sheet),
+                child: Padding(
+                  padding: const EdgeInsets.all(BBSpace.xl),
+                  child: DefaultTextStyle(
+                    style: bb.text.body,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Flexible(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Semantics(header: true, child: Text(title, style: bb.text.headline)),
+                                if (message != null) ...[
+                                  const SizedBox(height: BBSpace.s),
+                                  Text(message!, style: bb.text.body.copyWith(color: bb.colors.muted)),
+                                ],
+                                if (content != null) ...[
+                                  const SizedBox(height: BBSpace.m),
+                                  content!,
+                                ],
                               ],
-                              if (content != null) ...[
-                                const SizedBox(height: BBSpace.m),
-                                content!,
-                              ],
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: BBSpace.xl),
-                      Wrap(
-                        alignment: WrapAlignment.end,
-                        spacing: BBSpace.s,
-                        runSpacing: BBSpace.s,
-                        children: [
-                          for (final a in actions)
-                            BBButton(
-                              label: a.label,
-                              kind: a.primary ? BBButtonKind.primary : BBButtonKind.quiet,
-                              onPressed: () => Navigator.of(context).pop(a.value),
-                            ),
-                        ],
-                      ),
-                    ],
+                        const SizedBox(height: BBSpace.xl),
+                        Wrap(
+                          alignment: WrapAlignment.end,
+                          spacing: BBSpace.s,
+                          runSpacing: BBSpace.s,
+                          children: [
+                            for (final a in actions)
+                              BBButton(
+                                label: a.label,
+                                kind: a.primary ? BBButtonKind.primary : BBButtonKind.quiet,
+                                onPressed: () => Navigator.of(context).pop(a.value),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

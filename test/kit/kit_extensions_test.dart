@@ -70,8 +70,8 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(kitHost(const BBTextField(errorText: 'Please enter a stop ID')));
     expect(tester.getSemantics(find.text('Please enter a stop ID')), isSemantics(isLiveRegion: true));
-    final box = tester.widget<Container>(find.descendant(of: find.byType(BBTextField), matching: find.byType(Container)).first);
-    expect(((box.decoration! as BoxDecoration).border! as Border).top.color, BBColors.light.dangerInk);
+    final box = tester.widget<DecoratedBox>(find.descendant(of: find.byType(BBTextField), matching: find.byType(DecoratedBox)).first);
+    expect(((box.decoration as BoxDecoration).border! as Border).top.color, BBColors.light.dangerInk);
     handle.dispose();
   });
 }

@@ -155,8 +155,9 @@ void main() {
     expect(tester.getSize(pressable).height, greaterThanOrEqualTo(44));
   });
 
-  testWidgets('selected BBSegmented segment uses brand fill, ink label and a 1.5 px brand border in both modes', (tester) async {
-    for (final (brightness, colors) in [(Brightness.light, BBColors.light), (Brightness.dark, BBColors.dark)]) {
+  testWidgets('selected BBSegmented segment uses brand fill, ink label and a 1.5 px brand-edge border in both modes', (tester) async {
+    for (final (brightness, tokens) in [(Brightness.light, BBTokens.light), (Brightness.dark, BBTokens.dark)]) {
+      final colors = tokens.colors;
       await tester.pumpWidget(kitHost(
         BBSegmented<String>(
           segments: const [BBSegment(value: 'near', label: 'Near me'), BBSegment(value: 'id', label: 'Stop number')],
@@ -171,7 +172,7 @@ void main() {
           .decoration! as BoxDecoration;
       final selected = segmentBox('Near me');
       expect(selected.color, colors.brandSoft, reason: '${brightness.name} selected fill');
-      expect((selected.border! as Border).top.color, colors.brand, reason: '${brightness.name} selected border');
+      expect((selected.border! as Border).top.color, tokens.brandEdge, reason: '${brightness.name} selected border');
       expect((selected.border! as Border).top.width, 1.5);
       expect(tester.widget<Text>(find.text('Near me')).style!.color, colors.brandInk);
 

@@ -266,7 +266,7 @@ class _StopStrip extends StatelessWidget {
     }
 
     Widget dot(int i) {
-      if (i == yours) return Icon(BBIcons.star, key: const ValueKey('strip-star'), size: 16, color: bb.colors.brand);
+      if (i == yours) return Icon(BBIcons.star, key: const ValueKey('strip-star'), size: 16, color: bb.brandEdge);
       final passed = i <= idx.bus;
       return Container(
         key: ValueKey('strip-dot-$i'),
@@ -350,7 +350,7 @@ class _TimelineRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(width: 20, child: yours ? Icon(BBIcons.star, size: 16, color: bb.colors.brand) : null),
+            SizedBox(width: 20, child: yours ? Icon(BBIcons.star, size: 16, color: bb.brandEdge) : null),
             const SizedBox(width: BBSpace.s),
             Expanded(
               child: Column(

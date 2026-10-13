@@ -70,7 +70,7 @@ void main() {
     for (final theme in [BBTheme.light(), BBTheme.dark()]) {
       final tokens = theme.extension<BBTokens>()!;
       expect(theme.inputDecorationTheme.filled, isTrue);
-      expect(theme.inputDecorationTheme.fillColor, tokens.colors.surface);
+      expect(theme.inputDecorationTheme.fillColor, tokens.colors.surfaceField);
       expect(theme.elevatedButtonTheme.style!.backgroundColor!.resolve({}), tokens.colors.brand);
       expect(theme.filledButtonTheme.style!.backgroundColor!.resolve({}), tokens.colors.brand);
     }

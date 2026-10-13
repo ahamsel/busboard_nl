@@ -45,7 +45,7 @@ class BBStepper extends StatelessWidget {
       onIncrease: canInc ? inc : null,
       onDecrease: canDec ? dec : null,
       child: DecoratedBox(
-        decoration: BoxDecoration(color: bb.colors.surfaceSunken, borderRadius: BorderRadius.circular(BBRadius.badge)),
+        decoration: bb.field(radius: BBRadius.badge),
         child: Row(
           children: [
             BBIconButton(icon: BBIcons.remove, semanticLabel: 'Decrease $semanticLabel', onPressed: canDec ? dec : null),

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'bb_card.dart';
 import 'bb_icons.dart';
 import 'bb_pressable.dart';
 import 'tokens.dart';
@@ -36,7 +37,7 @@ class BBChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bb = context.bb;
     final fg = selected ? bb.colors.onBrand : bb.colors.ink;
-    final lead = leading ?? (icon == null ? null : Icon(icon, size: 18, color: selected ? fg : bb.colors.brand));
+    final lead = leading ?? (icon == null ? null : Icon(icon, size: 18, color: selected ? fg : bb.colors.accent));
     // Null (not false) when unselected: an ordinary button is not a toggle.
     return Semantics(
       selected: selected ? true : null,
@@ -47,7 +48,12 @@ class BBChip extends StatelessWidget {
           key: surfaceKey,
           constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.s),
-          decoration: bb.floating(radius: 22).copyWith(color: selected ? bb.colors.brand : bb.colors.surface),
+          // On the map a chip floats; on a sheet it is a field-surface pill (spec §2.1).
+          decoration: BBSurfaceScope.isRaised(context)
+              ? (selected
+                  ? BoxDecoration(color: bb.colors.brand, borderRadius: BorderRadius.circular(22))
+                  : bb.field(radius: 22))
+              : bb.mapControl(selected: selected),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

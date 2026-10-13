@@ -15,7 +15,7 @@ Future<int?> showLeadTimeSheet(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Close',
-    barrierColor: const Color(0x331C2A3A),
+    barrierColor: BBScrim.soft,
     transitionDuration: BBMotion.of(context, BBMotion.standard),
     pageBuilder: (_, _, _) =>
         _LeadTimeCard(arrival: arrival, initialLead: initialLead, explainPermission: explainPermission),

@@ -210,7 +210,7 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
                     const SizedBox(height: BBSpace.l),
                   ],
                 _TimelineRow(
-                  leading: Icon(BBIcons.stop, size: 22, color: bb.colors.brand),
+                  leading: Icon(BBIcons.stop, size: 22, color: bb.brandEdge),
                   children: [Text('Arrive ${clock(j.arrives)}', style: bb.text.headline)],
                 ),
               ],

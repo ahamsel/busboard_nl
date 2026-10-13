@@ -21,7 +21,7 @@ class MapButtons extends ConsumerWidget {
         0;
     final alertsLabel = count > 0 ? 'Alerts, $count active' : 'Alerts';
     return DecoratedBox(
-      decoration: bb.floating(radius: 22),
+      decoration: bb.mapControl(),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

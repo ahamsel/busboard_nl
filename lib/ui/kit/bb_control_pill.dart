@@ -28,7 +28,7 @@ class BBControlPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final bb = context.bb;
     return DecoratedBox(
-      decoration: bb.floating(radius: 22),
+      decoration: bb.mapControl(),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -40,7 +40,7 @@ class BBControlPill extends StatelessWidget {
                 icon: items[i].icon,
                 semanticLabel: items[i].semanticLabel,
                 onPressed: items[i].onPressed,
-                color: items[i].selected ? bb.colors.brand : bb.colors.ink,
+                color: items[i].selected ? bb.brandEdge : bb.colors.ink,
               ),
             ),
           ],

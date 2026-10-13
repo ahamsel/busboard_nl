@@ -146,7 +146,7 @@ class _SavedTripCard extends ConsumerWidget {
     return GestureDetector(
       onLongPress: () => _more(context, ref),
       child: DecoratedBox(
-        decoration: bb.card(),
+        decoration: BBSurfaceScope.cardOf(context),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

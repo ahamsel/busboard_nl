@@ -92,7 +92,7 @@ abstract final class BBTheme {
       // Legacy-screen defaults until Phase 2: filled, rounded text fields.
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: c.surface,
+        fillColor: c.surfaceField,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: inputBorder(c.line, 1),
         enabledBorder: inputBorder(c.line, 1),

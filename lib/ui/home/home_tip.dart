@@ -46,7 +46,7 @@ class HomeTip extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: BBSpace.s),
       child: DecoratedBox(
-        decoration: bb.card(),
+        decoration: BBSurfaceScope.cardOf(context),
         child: Padding(
           padding: const EdgeInsets.all(BBSpace.m),
           child: Column(

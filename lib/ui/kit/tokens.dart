@@ -269,6 +269,12 @@ abstract final class BBMotion {
       MediaQuery.maybeDisableAnimationsOf(context) == true ? Duration.zero : d;
 }
 
+/// Dimmed backdrops behind dialogs and floating cards (ink-tinted).
+abstract final class BBScrim {
+  static const Color soft = Color(0x3313261A);
+  static const Color strong = Color(0x6613261A);
+}
+
 @immutable
 class BBTokens extends ThemeExtension<BBTokens> {
   const BBTokens({required this.brightness, required this.colors, required this.text});
@@ -295,25 +301,52 @@ class BBTokens extends ThemeExtension<BBTokens> {
   /// bright green on white is under 3:1 (spec §2.2, WCAG 1.4.11).
   Color get brandEdge => isDark ? colors.brand : colors.brandInk;
 
-  /// Floating elements: chips, sheets, dialogs, toasts. The one
-  /// shadow in light mode; a hairline border instead in dark mode.
-  BoxDecoration floating({double radius = BBRadius.card, BorderRadius? borderRadius}) {
+  /// Dark floating layers: a deep black shadow (spec §2.1, 45–55%). Light: a soft green-tinted one (8–14%).
+  List<BoxShadow> get _floatShadow => isDark
+      ? const [BoxShadow(color: Color(0x80000000), blurRadius: 24, offset: Offset(0, 8))]
+      : const [BoxShadow(color: Color(0x2313261A), blurRadius: 16, offset: Offset(0, 4))];
+
+  /// Dark layers catch the light on their top edge: a 1 px `highlight`. Light mode has none.
+  Border? get _topEdge => isDark ? Border(top: BorderSide(color: colors.highlight)) : null;
+
+  /// Floating layers: sheets, panels, dialogs, toasts, banners. `surface` (or [color]) with the
+  /// float shadow; in dark, the top-edge highlight too.
+  BoxDecoration floating({double radius = BBRadius.card, BorderRadius? borderRadius, Color? color}) {
     return BoxDecoration(
-      color: colors.surface,
+      color: color ?? colors.surface,
       borderRadius: borderRadius ?? BorderRadius.circular(radius),
-      boxShadow: isDark
-          ? null
-          : const [BoxShadow(color: Color(0x2313261A), blurRadius: 16, offset: Offset(0, 4))],
-      border: isDark ? Border.all(color: colors.line) : null,
+      boxShadow: _floatShadow,
+      border: _topEdge,
     );
   }
 
-  /// Flat in-page surface (cards in lists).
-  BoxDecoration card({double radius = BBRadius.card}) {
+  /// Buttons and chips floating on the map (bell, gear, location, route chip): `surfaceFloat`,
+  /// or the brand fill when [selected].
+  BoxDecoration mapControl({double radius = 22, bool selected = false}) =>
+      floating(radius: radius, color: selected ? colors.brand : colors.surfaceFloat);
+
+  /// A card: `surface` on a page, `surfaceRaised` on a sheet or panel ([raised]). Light: white with
+  /// a faint green-tinted shadow. Dark: the top-edge highlight, depth from lightness alone.
+  BoxDecoration card({double radius = BBRadius.card, bool raised = false}) {
     return BoxDecoration(
-      color: colors.surface,
+      color: raised ? colors.surfaceRaised : colors.surface,
       borderRadius: BorderRadius.circular(radius),
-      border: isDark ? Border.all(color: colors.line) : null,
+      boxShadow: isDark ? null : const [BoxShadow(color: Color(0x1513261A), blurRadius: 8, offset: Offset(0, 2))],
+      border: _topEdge,
+    );
+  }
+
+  /// A field (text field, Where to?, the When row, segmented track, stepper, chips on a sheet):
+  /// `surfaceField` with a 1.5 px `line` outline; [focused], a 2 px [brandEdge] ring; [error], a
+  /// `dangerInk` outline. Never `surfaceSunken` (spec §2.2).
+  BoxDecoration field({double radius = BBRadius.button, bool focused = false, bool error = false}) {
+    return BoxDecoration(
+      color: colors.surfaceField,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(
+        color: error ? colors.dangerInk : (focused ? brandEdge : colors.line),
+        width: focused ? 2 : 1.5,
+      ),
     );
   }
 

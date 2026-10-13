@@ -65,7 +65,7 @@ class _Header extends ConsumerWidget {
             semanticLabel: 'Where to? Search for a place or a stop',
             onTap: () => context.push('/search'),
             child: DecoratedBox(
-              decoration: bb.card(),
+              decoration: bb.field(),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.s),
                 child: Row(
@@ -143,7 +143,7 @@ class _Header extends ConsumerWidget {
               onTap: () => ref.read(homeSheetProvider.notifier).open(StopSheet(stop.stopId)),
               child: Row(
                 children: [
-                  Icon(BBIcons.star, size: 18, color: bb.colors.brand),
+                  Icon(BBIcons.star, size: 18, color: bb.brandEdge),
                   const SizedBox(width: BBSpace.s),
                   Expanded(
                     child: Text(stop.stopName, style: bb.text.headline, maxLines: 1, overflow: TextOverflow.ellipsis),

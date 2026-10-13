@@ -1318,14 +1318,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 child: Semantics(
                   container: true,
                   label: 'Map sheet',
-                  child: DecoratedBox(
-                    decoration: bb.floating(radius: BBRadius.sheet),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(BBRadius.sheet),
-                      // A new selection starts at the top of a fresh list.
-                      child: CustomScrollView(
-                        key: ValueKey(sheetKey),
-                        slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
+                  child: BBSurfaceScope(
+                    child: DecoratedBox(
+                      decoration: bb.floating(radius: BBRadius.sheet),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(BBRadius.sheet),
+                        // A new selection starts at the top of a fresh list.
+                        child: CustomScrollView(
+                          key: ValueKey(sheetKey),
+                          slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
+                        ),
                       ),
                     ),
                   ),
@@ -1381,7 +1383,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         padding: const EdgeInsets.fromLTRB(BBSpace.l, BBSpace.xs, BBSpace.xs, BBSpace.xs),
         child: Row(
           children: [
-            Icon(BBIcons.pin, size: 20, color: bb.colors.brand),
+            Icon(BBIcons.pin, size: 20, color: bb.brandEdge),
             const SizedBox(width: BBSpace.s),
             Expanded(
               child: Semantics(
