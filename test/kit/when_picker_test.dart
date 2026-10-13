@@ -119,25 +119,119 @@ void main() {
     expect(opened.result, DateTime(2026, 10, 9, 8, 35));
   });
 
-  testWidgets('12-hour mode: 1–12 and AM/PM; 12 AM is midnight and 12 PM is noon', (tester) async {
+  testWidgets('12-hour mode: the wheel runs 12, 1 … 11 and AM/PM; 12 AM is midnight and 12 PM is noon', (tester) async {
     final opened = await _open(tester, use24h: false);
     final hours = tester.widget<ListWheelScrollView>(find.byKey(BBWhenPicker.hourWheelKey));
     expect((hours.childDelegate as ListWheelChildBuilderDelegate).childCount, 12);
     expect(find.byKey(BBWhenPicker.periodWheelKey), findsOneWidget);
     expect(_confirmLabel(tester), 'Set 8:35 AM today');
+    expect((hours.controller! as FixedExtentScrollController).selectedItem, 8, reason: '8 AM is item 8');
 
-    await _turn(tester, BBWhenPicker.hourWheelKey, 0); // "1"
+    await _turn(tester, BBWhenPicker.hourWheelKey, 1); // "1"
     await _turn(tester, BBWhenPicker.periodWheelKey, 1); // PM
     await _turn(tester, BBWhenPicker.minuteWheelKey, 20);
     expect(_confirmLabel(tester), 'Set 1:20 PM today');
 
-    await _turn(tester, BBWhenPicker.hourWheelKey, 11); // "12", PM: noon
+    await _turn(tester, BBWhenPicker.hourWheelKey, 0); // "12", PM: noon
     expect(_confirmLabel(tester), 'Set 12:20 PM today');
     await _tapIn(tester, find.byKey(BBWhenPicker.dayKey(1)));
     await _turn(tester, BBWhenPicker.periodWheelKey, 0); // 12 AM tomorrow: midnight
     expect(_confirmLabel(tester), 'Set 12:20 AM tomorrow');
     await _confirm(tester);
     expect(opened.result, DateTime(2026, 10, 8, 0, 20));
+  });
+
+  testWidgets('12-hour mode: the first wheel item is "12", with the last "11" below it', (tester) async {
+    await _open(tester, use24h: false);
+    final hours = tester.widget<ListWheelScrollView>(find.byKey(BBWhenPicker.hourWheelKey));
+    final delegate = hours.childDelegate as ListWheelChildBuilderDelegate;
+    String shown(int i) {
+      final row = delegate.build(tester.element(find.byKey(BBWhenPicker.hourWheelKey)), i)! as IndexedSemantics;
+      return ((row.child! as Center).child! as Text).data!;
+    }
+
+    expect([for (var i = 0; i < 12; i++) shown(i)], ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']);
+  });
+
+  testWidgets('12-hour mode: from 11 AM the neighbours are 10 AM and nothing below; it never crosses into noon',
+      (tester) async {
+    await _open(tester, use24h: false, initial: DateTime(2026, 10, 8, 11, 40), first: _now);
+    await _tapIn(tester, find.byKey(BBWhenPicker.dayKey(1)));
+    expect(_confirmLabel(tester), 'Set 11:40 AM tomorrow');
+    final hour = find.byKey(BBWhenPicker.hourWheelKey);
+    final wheel = tester.widget<ListWheelScrollView>(hour);
+    final controller = wheel.controller! as FixedExtentScrollController;
+    expect(controller.selectedItem, 11);
+
+    // A finger dragging the wheel on, past the last item: it stays at 11 AM.
+    await tester.drag(hour, Offset(0, -wheel.itemExtent * 1.2));
+    await tester.pumpAndSettle();
+    expect(controller.selectedItem, 11);
+    expect(_confirmLabel(tester), 'Set 11:40 AM tomorrow');
+
+    // One notch back is 10 AM: the same half of the day.
+    await tester.drag(hour, Offset(0, wheel.itemExtent + 18));
+    await tester.pumpAndSettle();
+    expect(controller.selectedItem, 10);
+    expect(_confirmLabel(tester), 'Set 10:40 AM tomorrow');
+  });
+
+  testWidgets('12-hour mode: 12 AM and 12 PM are both item 0, told apart by the period wheel', (tester) async {
+    await _open(tester, use24h: false, initial: DateTime(2026, 10, 8, 0, 10), first: _now);
+    await _tapIn(tester, find.byKey(BBWhenPicker.dayKey(1)));
+    final hours = tester.widget<ListWheelScrollView>(find.byKey(BBWhenPicker.hourWheelKey));
+    final period = tester.widget<ListWheelScrollView>(find.byKey(BBWhenPicker.periodWheelKey));
+    int item(ListWheelScrollView w) => (w.controller! as FixedExtentScrollController).selectedItem;
+    expect(_confirmLabel(tester), 'Set 12:10 AM tomorrow');
+    expect((item(hours), item(period)), (0, 0), reason: '12 AM: item 0, AM');
+
+    await _turn(tester, BBWhenPicker.periodWheelKey, 1);
+    expect(_confirmLabel(tester), 'Set 12:10 PM tomorrow');
+    expect((item(hours), item(period)), (0, 1), reason: '12 PM: item 0, PM');
+
+    // And back: opening on noon puts the wheels on item 0 and PM.
+    await tester.pumpWidget(const SizedBox());
+    await _open(tester, use24h: false, initial: DateTime(2026, 10, 7, 12, 10), first: _now);
+    final noonHours = tester.widget<ListWheelScrollView>(find.byKey(BBWhenPicker.hourWheelKey));
+    final noonPeriod = tester.widget<ListWheelScrollView>(find.byKey(BBWhenPicker.periodWheelKey));
+    expect((item(noonHours), item(noonPeriod)), (0, 1));
+    expect(_confirmLabel(tester), 'Set 12:10 PM today');
+  });
+
+  testWidgets('12-hour mode: a screen reader\'s increase and a finger agree on the next hour', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _open(tester, use24h: false, initial: DateTime(2026, 10, 8, 0, 10), first: _now);
+    await _tapIn(tester, find.byKey(BBWhenPicker.dayKey(1)));
+    final hour = find.byKey(BBWhenPicker.hourWheelKey);
+    int item() => (tester.widget<ListWheelScrollView>(hour).controller! as FixedExtentScrollController).selectedItem;
+    expect(tester.getSemantics(hour), isSemantics(
+      isSlider: true, label: 'Hour', value: '12 AM', increasedValue: '1 AM',
+      hasIncreaseAction: true, hasDecreaseAction: false,
+    ));
+
+    // The screen reader: 12 AM → 1 AM.
+    tester.semantics.performAction(find.semantics.byLabel('Hour'), SemanticsAction.increase);
+    await tester.pumpAndSettle();
+    expect(_confirmLabel(tester), 'Set 1:10 AM tomorrow');
+    expect(item(), 1);
+
+    // A finger turning back to item 0 and on to item 1 lands on the same thing.
+    await _turn(tester, BBWhenPicker.hourWheelKey, 0);
+    expect(_confirmLabel(tester), 'Set 12:10 AM tomorrow');
+    await _turn(tester, BBWhenPicker.hourWheelKey, 1);
+    expect(_confirmLabel(tester), 'Set 1:10 AM tomorrow');
+
+    // At the end of the wheel (11 AM) there is no further hour to increase to; decrease is 10 AM.
+    await _turn(tester, BBWhenPicker.hourWheelKey, 11);
+    expect(tester.getSemantics(hour), isSemantics(
+      isSlider: true, label: 'Hour', value: '11 AM', decreasedValue: '10 AM',
+      hasIncreaseAction: false, hasDecreaseAction: true,
+    ));
+    tester.semantics.performAction(find.semantics.byLabel('Hour'), SemanticsAction.decrease);
+    await tester.pumpAndSettle();
+    expect(_confirmLabel(tester), 'Set 10:10 AM tomorrow');
+    expect(item(), 10);
+    handle.dispose();
   });
 
   testWidgets('12-hour mode: the hour wheel names the period, so 11 AM and 12 PM are told apart', (tester) async {
@@ -148,10 +242,14 @@ void main() {
       isSlider: true, label: 'Hour', value: '8 AM', increasedValue: '9 AM', decreasedValue: '7 AM',
       hasIncreaseAction: true, hasDecreaseAction: true,
     ));
-    await _turn(tester, BBWhenPicker.hourWheelKey, 10); // "11", AM
+    await _turn(tester, BBWhenPicker.hourWheelKey, 11); // "11", AM
     expect(tester.getSemantics(hour), isSemantics(
-      isSlider: true, label: 'Hour', value: '11 AM', increasedValue: '12 PM', decreasedValue: '10 AM',
-      hasIncreaseAction: true, hasDecreaseAction: true,
+      isSlider: true, label: 'Hour', value: '11 AM', decreasedValue: '10 AM', hasDecreaseAction: true,
+    ));
+    await _turn(tester, BBWhenPicker.periodWheelKey, 1);
+    await _turn(tester, BBWhenPicker.hourWheelKey, 0); // "12", PM
+    expect(tester.getSemantics(hour), isSemantics(
+      isSlider: true, label: 'Hour', value: '12 PM', increasedValue: '1 PM',
     ));
     handle.dispose();
   });
@@ -251,10 +349,10 @@ void main() {
   });
 
   testWidgets('screen readers: wheels are sliders with increase and decrease; chips are selectable buttons; '
-      'the time is announced on open and on confirm', (tester) async {
+      'the time is announced on open (the route already names the title) and on confirm', (tester) async {
     final handle = tester.ensureSemantics();
     final opened = await _open(tester);
-    expect(tester.takeAnnouncements(), contains(isAccessibilityAnnouncement('Leave by, 08:35 today')));
+    expect(tester.takeAnnouncements(), contains(isAccessibilityAnnouncement('08:35 today')));
 
     final hour = find.byKey(BBWhenPicker.hourWheelKey);
     expect(tester.getSemantics(hour), isSemantics(

@@ -143,7 +143,8 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
     _minuteWheel = FixedExtentScrollController(initialItem: _minute);
     _periodWheel = FixedExtentScrollController(initialItem: _hour < 12 ? 0 : 1);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _announce('${widget.title}, ${_spoken(_value)}');
+      // The route already names the picker, so only the time is announced.
+      if (mounted) _announce(_spoken(_value));
     });
   }
 
@@ -162,11 +163,17 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
     return DateTime(d.year, d.month, d.day, t.hour, t.minute);
   }
 
-  /// The hour wheel's item for [hour]: the hour itself in 24-hour mode; 0–11 for "1"–"12" otherwise.
-  int _hourItem(int hour) => widget.use24h ? hour : (hour % 12 == 0 ? 11 : hour % 12 - 1);
+  /// The hour wheel's item for [hour]: the hour itself in 24-hour mode; otherwise 0–11 for "12", "1" … "11"
+  /// (the clock's order, so 12 AM and 12 PM are item 0 and the period wheel tells them apart).
+  int _hourItem(int hour) => widget.use24h ? hour : hour % 12;
 
   /// What the hour wheel shows for [hour].
   int _shownHour(int hour) => widget.use24h ? hour : (hour % 12 == 0 ? 12 : hour % 12);
+
+  /// Whether the hour wheel has an item after (or before) [hour]'s: the 12-hour wheel stops at "11" (and "12"),
+  /// since going on would change the period, which is the period wheel's job.
+  bool _hasNextHour(int hour) => widget.use24h ? hour < 23 : hour % 12 < 11;
+  bool _hasPrevHour(int hour) => widget.use24h ? hour > 0 : hour % 12 > 0;
 
   DateTime get _value {
     final d = _days[_day];
@@ -209,7 +216,7 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
   }
 
   void _onHour(int item) {
-    setState(() => _hour = widget.use24h ? item : ((item + 1) % 12) + (_hour >= 12 ? 12 : 0));
+    setState(() => _hour = widget.use24h ? item : item + (_hour >= 12 ? 12 : 0));
     _tick();
   }
 
@@ -340,7 +347,7 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
     final bb = context.bb;
     final d = _days[_day];
     DateTime at(int hour, int minute) => DateTime(d.year, d.month, d.day, hour, minute);
-    // 24-hour: "8 hours". 12-hour names the period too ("11 AM", "12 PM"), since the wheel shows 1–12.
+    // 24-hour: "8 hours". 12-hour names the period too ("11 AM", "12 PM"), since the wheel shows 12, 1 … 11.
     String hours(int h) => widget.use24h
         ? '$h ${h == 1 ? 'hour' : 'hours'}'
         : '${_shownHour(h)} ${h < 12 ? 'AM' : 'PM'}';
@@ -363,14 +370,14 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                 key: BBWhenPicker.hourWheelKey,
                 controller: _hourWheel,
                 count: widget.use24h ? 24 : 12,
-                label: (i) => widget.use24h ? i.toString().padLeft(2, '0') : '${i + 1}',
+                label: (i) => widget.use24h ? i.toString().padLeft(2, '0') : '${_shownHour(i)}',
                 onChanged: _onHour,
                 semanticLabel: 'Hour',
                 value: hours(_hour),
-                increased: _hour < 23 ? hours(_hour + 1) : null,
-                decreased: _hour > 0 ? hours(_hour - 1) : null,
-                onIncrease: _hour < 23 ? () => _set(at(_hour + 1, _minute)) : null,
-                onDecrease: _hour > 0 ? () => _set(at(_hour - 1, _minute)) : null,
+                increased: _hasNextHour(_hour) ? hours(_hour + 1) : null,
+                decreased: _hasPrevHour(_hour) ? hours(_hour - 1) : null,
+                onIncrease: _hasNextHour(_hour) ? () => _set(at(_hour + 1, _minute)) : null,
+                onDecrease: _hasPrevHour(_hour) ? () => _set(at(_hour - 1, _minute)) : null,
                 itemExtent: itemExtent,
                 visible: visible,
               ),
