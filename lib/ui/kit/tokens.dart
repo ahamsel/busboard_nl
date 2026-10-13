@@ -329,7 +329,7 @@ abstract final class BBScrim {
   static const Color soft = Color(0x3313261A);
   static const Color strong = Color(0x6613261A);
   static const Color softDark = Color(0x59000000); // black, 35 %
-  static const Color strongDark = Color(0xB8000000); // black, 72 %
+  static const Color strongDark = Color(0x99000000); // black, 60 %
 
   static Color softOf(BuildContext context) => context.bb.isDark ? softDark : soft;
   static Color strongOf(BuildContext context) => context.bb.isDark ? strongDark : strong;

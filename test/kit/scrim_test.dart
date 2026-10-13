@@ -31,10 +31,12 @@ void main() {
     }
   });
 
-  test('dark: a dialog on surface is lifted off the sheet it covers (>= 1.3:1)', () {
+  test('dark: a dialog on surface is lifted off the sheet it covers (>= 1.2:1; its top highlight and shadow add the rest)', () {
     final c = BBColors.dark;
     final covered = _over(BBScrim.strongDark, c.surface);
-    expect(contrast(c.surface, covered), greaterThanOrEqualTo(1.3));
+    expect(contrast(c.surface, covered), greaterThanOrEqualTo(1.2));
+    // Not so heavy that the screen behind goes black: the rider should still see where they were.
+    expect(BBScrim.strongDark.a, lessThanOrEqualTo(0.65));
     // Light is tuned already: the dialog is white over a dimmed white sheet.
     final lc = BBColors.light;
     expect(contrast(lc.surface, _over(BBScrim.strong, lc.surface)), greaterThanOrEqualTo(1.3));
