@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -18,6 +20,7 @@ import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
 import '../../state/arrival_alert_providers.dart';
+import '../../state/board_open_store.dart';
 import '../../state/follow_providers.dart';
 import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
@@ -191,8 +194,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   final _retiredSheets = <BBSheetController>[];
 
   // A newly opened card goes to half once its sheet is built (it may not be yet: a link opened before the schedule
-  // loaded), and a stop's card brings the camera to its stop once there is a camera.
-  bool _halfPending = false;
+  // loaded), and a stop's card brings the camera to its stop once there is a camera. "Open board" asks for full.
+  BBSheetDetent? _detentPending;
+
+  /// The last layout's: the side panel (a tablet) rather than the pull-up sheet.
+  bool _wide = false;
   String? _centrePending;
 
   // An armed arrival alert's stop, polled while the alert is armed so the alert keeps being re-timed with the stop's
@@ -211,6 +217,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_enableMyLocation(request: false));
+    unawaited(_restoreBoard());
     _journeyFitPending = ref.read(journeyOnMapProvider) != null;
     // A follow set before the map existed (the Board's live row): its card
     // replaces any selection.
@@ -297,6 +304,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _appResumed = true;
       _resumeTicker();
     }
+    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) _rememberBoard();
     if (state == AppLifecycleState.paused) {
       _appResumed = false;
       _ticker?.stop();
@@ -727,7 +735,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _opened = sheet;
     switch (sheet) {
       case HomeSheetHome():
-        _halfPending = false;
+        _detentPending = null;
         _centrePending = null;
       case StopSheet(:final stopId):
         _toHalfAfterBuild();
@@ -753,17 +761,133 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The sheet is re-keyed by what it shows: opens the new card at half once built. Until a sheet is built (the
   /// schedule still loading) it stays due, and the next build tries again. The side panel has no detents.
-  void _toHalfAfterBuild() {
-    _halfPending = true;
-    _scheduleHalf();
+  void _toHalfAfterBuild() => _toDetentAfterBuild(BBSheetDetent.half);
+
+  void _toDetentAfterBuild(BBSheetDetent detent) {
+    _detentPending = detent;
+    _scheduleDetent();
   }
 
-  void _scheduleHalf() {
+  void _scheduleDetent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_halfPending || !_sheet.isAttached) return;
-      _halfPending = false;
-      unawaited(_sheet.animateToDetent(BBSheetDetent.half));
+      final detent = _detentPending;
+      if (!mounted || detent == null) return;
+      if (_wide) {
+        // The panel has no detents; its full height is the departures, scrolled to once the header is measured (a
+        // new selection's is not yet: the measure's rebuild tries again).
+        if (detent != BBSheetDetent.full || _showMore(wide: true)) {
+          _detentPending = null;
+        } else {
+          _scheduleHeaderMeasure();
+        }
+        return;
+      }
+      if (!_sheet.isAttached) return;
+      _detentPending = null;
+      if (detent == BBSheetDetent.full && _sheetAtFull) {
+        // Already the Board: back up to the next buses, just under the pinned header; already there, say so.
+        if (!_scrollSheetToTop()) _sayBoardOpen();
+      } else {
+        unawaited(_sheet.animateToDetent(detent));
+      }
     });
+  }
+
+  /// "Open board" (a stop's sheet just opened, or already showing): full height, or the panel's departures.
+  void _onBoardRequest(BoardRequest? request) {
+    if (request == null || ref.read(homeSheetProvider) != StopSheet(request.stopId)) return;
+    _toDetentAfterBuild(BBSheetDetent.full);
+  }
+
+  /// The pull-up sheet's list back to its top. False when it is there already.
+  bool _scrollSheetToTop() {
+    final header = _headerKey.currentContext;
+    final scrollable = header == null ? null : Scrollable.maybeOf(header);
+    if (scrollable == null || !scrollable.position.hasPixels || scrollable.position.pixels <= 0) return false;
+    unawaited(scrollable.position.animateTo(0, duration: BBMotion.of(context, BBMotion.sheet), curve: BBMotion.curve));
+    return true;
+  }
+
+  /// "Open board" on the Board itself, with nothing to move: a tick, and a word for screen readers.
+  void _sayBoardOpen() {
+    unawaited(HapticFeedback.selectionClick());
+    unawaited(SemanticsService.sendAnnouncement(View.of(context), 'Board open', Directionality.of(context)));
+  }
+
+  /// The pull-up sheet is at its full height.
+  bool _sheetAtFull = false;
+
+  bool _onSheetExtent(DraggableScrollableNotification n) {
+    final wasAtFull = _sheetAtFull;
+    _sheetAtFull = n.extent >= n.maxExtent - 0.004;
+    // Collapsed below full: the Board is no longer open.
+    if (wasAtFull && !_sheetAtFull) _forgetBoard();
+    return false;
+  }
+
+  // ─── Reopen the way the rider left it ─────────────────────
+
+  /// The stop id saved as the open Board ([BoardOpenStore]), as far as this screen knows.
+  String? _savedBoard;
+
+  /// The stop whose Board is showing: its sheet at full height, or in the side panel (which has no detents).
+  String? get _boardShowing {
+    final sheet = ref.read(homeSheetProvider);
+    return sheet is StopSheet && (_wide || _sheetAtFull) ? sheet.stopId : null;
+  }
+
+  /// The app is going to the background: remember the Board if one is open, else forget any. With none open the
+  /// store is cleared whatever this screen thinks it holds: a restore that failed may have left an id there.
+  void _rememberBoard() {
+    final id = _boardShowing;
+    if (id == null) {
+      _savedBoard = null;
+      unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
+      return;
+    }
+    if (id == _savedBoard) return;
+    _savedBoard = id;
+    unawaited(ref.read(boardOpenStoreProvider).save(id).catchError((Object e) => _log('Board not saved: $e')));
+  }
+
+  /// The rider collapsed, closed or left the Board.
+  void _forgetBoard() {
+    if (_savedBoard == null) return;
+    _savedBoard = null;
+    unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
+  }
+
+  /// A cold start: the Board left open is opened again, at full height, once the app has checked for a notification
+  /// that launched it and the schedule says the stop still exists. A link or a notification opened at launch wins,
+  /// and the Board is forgotten.
+  Future<void> _restoreBoard() async {
+    final store = ref.read(boardOpenStoreProvider);
+    final launchChecked = ref.read(launchLinkCheckedProvider).future;
+    String? id;
+    try {
+      id = await store.read();
+      if (id == null || !mounted) return;
+      // A notification plugin that never answers must not hold the Board back: after 3 s, no launch link.
+      final launchLink = await launchChecked.timeout(const Duration(seconds: 3), onTimeout: () => false);
+      final repo = await ref.read(gtfsRepositoryProvider.future);
+      if (!mounted) return;
+      final stillThere = repo.stopsById[id] != null;
+      if (launchLink ||
+          !stillThere ||
+          ref.read(homeSheetProvider) is! HomeSheetHome ||
+          ref.read(followProvider) != null) {
+        await store.clear();
+        return;
+      }
+      ref.read(homeSheetProvider.notifier).openBoard(id);
+      // Written back: a background while this waited (no Board showing then) cleared the store.
+      _savedBoard = id;
+      await store.save(id);
+    } catch (e) {
+      // The id is still stored: the next background, or a collapse, must clear it.
+      if (mounted) _savedBoard ??= id;
+      _log('Board not restored: $e');
+    }
   }
 
   /// System back: ends a map pick first, then walks the sheet back.
@@ -842,6 +966,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   BBSheetController _sheetFor(Object? key) {
     if (key != _sheetKey) {
       _sheetKey = key;
+      _sheetAtFull = false;
       _headerKey = GlobalKey();
       _headerHeight = null;
       _actionsKey = GlobalKey();
@@ -858,20 +983,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return _sheet;
   }
 
-  /// "Choose your stop", "See all stops": the sheet is pulled up to the rest of its content; the side panel is
-  /// scrolled down past its header to it.
-  void _showMore({required bool wide}) {
-    if (!wide) return unawaited(_sheet.animateToDetent(BBSheetDetent.full));
+  /// "Choose your stop", "See all stops", "Open board": the sheet is pulled up to the rest of its content; the side
+  /// panel is scrolled down past its header to it. False when the panel's header is not laid out and measured yet.
+  bool _showMore({required bool wide}) {
+    if (!wide) {
+      unawaited(_sheet.animateToDetent(BBSheetDetent.full));
+      return true;
+    }
     final header = _headerKey.currentContext;
     final scrollable = header == null ? null : Scrollable.maybeOf(header);
     final headerHeight = _headerHeight;
-    if (scrollable == null || headerHeight == null) return;
+    if (scrollable == null || headerHeight == null || !scrollable.position.hasContentDimensions) return false;
     final position = scrollable.position;
     unawaited(position.animateTo(
       math.min(headerHeight, position.maxScrollExtent),
       duration: BBMotion.of(context, BBMotion.sheet),
       curve: BBMotion.curve,
     ));
+    return true;
   }
 
   void _openRouteFilter() {
@@ -912,9 +1041,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     });
     // Every card opens at half, however it was reached; a stop's brings the map to it (spec §3.2, §3.4).
     ref.listen<HomeSheet>(homeSheetProvider, (prev, next) {
-      if (prev != next) _onSheetOpened(next);
+      if (prev == next) return;
+      // Closed, back, or another card: the Board left open is no longer the one showing.
+      _forgetBoard();
+      _onSheetOpened(next);
     });
     ref.listen<int>(homeSheetReopenedProvider, (_, _) => _onSheetOpened(ref.read(homeSheetProvider), again: true));
+    ref.listen<BoardRequest?>(boardRequestProvider, (_, next) => _onBoardRequest(next));
     final journey = ref.watch(journeyOnMapProvider);
     final pick = ref.watch(mapPickProvider);
     _syncFollow(ref.watch(followProvider));
@@ -938,7 +1071,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
 
     // A card opened while the schedule loaded has a sheet now.
-    if (_halfPending) _scheduleHalf();
+    if (_detentPending != null) _scheduleDetent();
     final settings = ref.watch(settingsProvider);
     final myStop = settings.selectedStopId == null ? null : ref.watch(stopInfoProvider(settings.selectedStopId!));
     final filter = ref.watch(mapRouteFilterProvider);
@@ -978,8 +1111,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return LayoutBuilder(builder: (context, constraints) {
       // On a tablet the sheet is a fixed panel at the left and everything else is laid out to its right.
       final wide = constraints.maxWidth >= homeSidePanelBreakpoint;
-      // The panel has no detents: nothing to open at half.
-      if (wide) _halfPending = false;
+      _wide = wide;
+      // The panel has no detents: nothing to open at half (full is its departures).
+      if (wide && _detentPending != BBSheetDetent.full) _detentPending = null;
       // The panel stands clear of a notch on its side, and everything else of the panel.
       final panelLeft = media.padding.left + BBSpace.s;
       final panelInset = wide ? panelLeft + homeSidePanelWidth : 0.0;
@@ -1199,7 +1333,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               )
             else
               Positioned.fill(
-                child: BBSheet(
+                child: NotificationListener<DraggableScrollableNotification>(
+                  onNotification: _onSheetExtent,
+                  child: BBSheet(
                   key: ValueKey(sheetKey),
                   controller: sheetController,
                   peekFraction: peek,
@@ -1216,6 +1352,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   onDismiss: homeShowing ? null : _sheetBack,
                   header: panelHeader,
                   slivers: panelSlivers,
+                  ),
                 ),
               ),
             if (follow != null && follow.paused)

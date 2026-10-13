@@ -10,5 +10,5 @@ bool openNotificationRoute(String? route, void Function(String location) go) {
   return true;
 }
 
-/// [openNotificationRoute] on the app's router.
-void openAlertRoute(String? route) => openNotificationRoute(route, appRouter.go);
+/// [openNotificationRoute] on the app's router. True when it navigated.
+bool openAlertRoute(String? route) => openNotificationRoute(route, appRouter.go);
