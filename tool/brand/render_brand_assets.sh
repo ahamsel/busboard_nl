@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Regenerates every brand PNG from assets/brand/*.svg (spec §3.2).
+# Regenerates every brand PNG from assets/brand/*.svg (visual refresh spec §6.2).
 # Requires ImageMagick 7 (`magick`). Run from anywhere.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 B=assets/brand
 I=assets/icon
-BLUE='#3E7CB1'
-CREAM='#F7F2EA'
+GREEN='#3FAE4F'
+INK='#0F2414'
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -16,7 +16,7 @@ render() { magick -background none -density 1200 "$1" -resize "$2" "$3"; }
 
 # 1. iOS/launcher master: full icon, opaque, 1024.
 render "$B/busboard_icon.svg" 1024x1024 "$TMP/icon.png"
-magick "$TMP/icon.png" -background "$BLUE" -alpha remove -alpha off "$I/app_icon.png"
+magick "$TMP/icon.png" -background "$GREEN" -alpha remove -alpha off "$I/app_icon.png"
 
 # 2. Android adaptive foreground: mark at ~60% of a 1024 transparent canvas
 #    (inside the 66% safe zone).
@@ -36,9 +36,9 @@ magick "$I/app_icon.png" -resize 512x512 "$I/app_icon_gplay.png"
 
 # 6. Play feature graphic 1024x500: mark left, wordmark right.
 render "$B/busboard_mark.svg" 340x340 "$TMP/mark340.png"
-magick -size 1024x500 "xc:$BLUE" \
+magick -size 1024x500 "xc:$GREEN" \
   "$TMP/mark340.png" -gravity west -geometry +80+0 -composite \
-  -fill "$CREAM" -gravity west \
+  -fill "$INK" -gravity west \
   -font assets/fonts/Figtree-ExtraBold.ttf -pointsize 88 -annotate +460-24 'BusBoard NL' \
   -font assets/fonts/Figtree-SemiBold.ttf -pointsize 34 -annotate +464+56 "Live arrivals for St. John's buses" \
   -alpha off "$I/feature_graph_gplay.png"   # Play rejects a feature graphic with alpha.
