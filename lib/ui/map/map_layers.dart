@@ -300,7 +300,7 @@ class MapLayers {
         badge,
         () => MarkerImages.badge(label: m.label, hue: m.hue, stale: m.stale, brightness: brightness, pixelRatio: pixelRatio),
       );
-      await _ensureImage(notch, () => MarkerImages.notch(hue: m.hue, stale: m.stale, pixelRatio: pixelRatio));
+      await _ensureImage(notch, () => MarkerImages.notch(hue: m.hue, stale: m.stale, brightness: brightness, pixelRatio: pixelRatio));
       final ready = markers.where(_hasImages).length;
       if (ready > published && ready < markers.length) {
         published = ready;

@@ -5,6 +5,10 @@ import 'package:busboard_nl/ui/kit/tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../tool/src/harbour_style.dart';
+
+Color _hex(String h) => Color(int.parse('FF${h.substring(1)}', radix: 16));
+
 double contrast(Color a, Color b) {
   final la = a.computeLuminance();
   final lb = b.computeLuminance();
@@ -41,24 +45,67 @@ void main() {
     expect(deltaE(const Color(0xFF000000), const Color(0xFFFFFFFF)), closeTo(1.0, 0.001));
   });
 
-  test('no route line sits within ΔE 0.08 of brand, live, accent or warn, in either mode (spec §2.3)', () {
-    for (final c in [BBColors.light, BBColors.dark]) {
-      for (final (uiName, ui) in [('brand', c.brand), ('live', c.live), ('accent', c.accent), ('warn', c.warnInk)]) {
+  test('no route line sits within ΔE 0.08 of brand, live, accent or warn (or their inks), in either mode (spec §2.3)', () {
+    for (final b in Brightness.values) {
+      final c = b == Brightness.dark ? BBColors.dark : BBColors.light;
+      for (final (uiName, ui) in [
+        ('brand', c.brand),
+        ('brandInk', c.brandInk),
+        ('live', c.live),
+        ('liveInk', c.liveInk),
+        ('accent', c.accent),
+        ('warn', c.warnInk),
+      ]) {
         for (final hue in RouteHue.values) {
-          expect(deltaE(hue.line, ui), greaterThanOrEqualTo(0.08),
-              reason: '${hue.name} line is ${deltaE(hue.line, ui).toStringAsFixed(3)} from $uiName');
+          // Both the light line and the one drawn on the dark map are checked against both UI palettes.
+          for (final line in {hue.line, hue.lineFor(Brightness.dark)}) {
+            expect(deltaE(line, ui), greaterThanOrEqualTo(0.08),
+                reason: '${hue.name} line is ${deltaE(line, ui).toStringAsFixed(3)} from $b $uiName');
+          }
         }
       }
     }
   });
 
-  test('route lines stay apart from each other (ΔE ≥ 0.09)', () {
-    for (var i = 0; i < RouteHue.values.length; i++) {
-      for (var j = i + 1; j < RouteHue.values.length; j++) {
-        final a = RouteHue.values[i], b = RouteHue.values[j];
-        expect(deltaE(a.line, b.line), greaterThanOrEqualTo(0.09), reason: '${a.name} vs ${b.name}');
+  test('route lines stay apart from each other (ΔE ≥ 0.09), in both map modes', () {
+    for (final b in Brightness.values) {
+      for (var i = 0; i < RouteHue.values.length; i++) {
+        for (var j = i + 1; j < RouteHue.values.length; j++) {
+          final a = RouteHue.values[i], c = RouteHue.values[j];
+          expect(deltaE(a.lineFor(b), c.lineFor(b)), greaterThanOrEqualTo(0.09), reason: '${a.name} vs ${c.name} $b');
+        }
       }
     }
+  });
+
+  test('every route line is visible on the dark map: 3:1 on the land and on the roads', () {
+    final land = _hex(HarbourPalette.dark.land), road = _hex(HarbourPalette.dark.road);
+    for (final hue in RouteHue.values) {
+      final line = hue.lineFor(Brightness.dark);
+      expect(contrast(line, land), greaterThanOrEqualTo(3.0), reason: '${hue.name} on dark land');
+      expect(contrast(line, road), greaterThanOrEqualTo(3.0), reason: '${hue.name} on dark roads');
+    }
+  });
+
+  test('light route lines read on the light map land', () {
+    final land = _hex(HarbourPalette.light.land);
+    for (final hue in RouteHue.values) {
+      // The drawn line has a dark casing (map_layers), so the floor is 2:1 rather than 3:1: orange, yellow and
+      // sky are the lighter lines (see the report).
+      expect(contrast(hue.lineFor(Brightness.light), land), greaterThanOrEqualTo(2.0), reason: hue.name);
+    }
+  });
+
+  test('a dark variant exists only where the light line is too dim for the dark map', () {
+    final land = _hex(HarbourPalette.dark.land);
+    for (final hue in RouteHue.values) {
+      if (contrast(hue.line, land) >= 3.0) {
+        expect(hue.lineFor(Brightness.dark), hue.line, reason: '${hue.name} keeps its one line colour');
+      } else {
+        expect(hue.lineFor(Brightness.dark), isNot(hue.line), reason: '${hue.name} is lightened');
+      }
+    }
+    expect(RouteHue.indigo.lineFor(Brightness.light), RouteHue.indigo.line);
   });
 
   test('route number text is readable (4.5:1) on every fill in both modes', () {

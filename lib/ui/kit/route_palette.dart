@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 /// Ten jellybean route hues (spec §4.2). `fill` is the badge/pill background
-/// in light mode, `fillDark` in dark mode, `line` the route shape on the map.
+/// in light mode, `fillDark` in dark mode, `line` the route shape on the light
+/// map and `lineDark` on the dark map (the same colour wherever `line` already
+/// reads at 3:1 on the dark land, otherwise a lighter shade of the hue).
 enum RouteHue {
   red(Color(0xFFFFC9C2), Color(0xFFFFB3A8), Color(0xFFD63B3B)),
   orange(Color(0xFFFFD9B8), Color(0xFFFFC28F), Color(0xFFE07A1F)),
@@ -13,19 +15,25 @@ enum RouteHue {
   ocean(Color(0xFFB9DDF0), Color(0xFF8FC6E6), Color(0xFF2D7BB2)),
   teal(Color(0xFFC4ECE8), Color(0xFF93DDD6), Color(0xFF1F8F86)),
   sky(Color(0xFFCFE3FA), Color(0xFFA9CDF5), Color(0xFF65ADE0)),
-  // Lines moved away from the indigo accent.
-  indigo(Color(0xFFD6DAFA), Color(0xFFB3BAF5), Color(0xFF2E4E99)),
+  // Lines moved away from the indigo accent. The dark-map line is lighter (#2E4E99 is 2.2:1 on the dark land) and
+  // pushed a little toward violet so it stays clear of ocean.
+  indigo(Color(0xFFD6DAFA), Color(0xFFB3BAF5), Color(0xFF2E4E99), Color(0xFF5673F0)),
   lilac(Color(0xFFE3D6FA), Color(0xFFCDB6F5), Color(0xFFA855C7)),
   pink(Color(0xFFFAD3E4), Color(0xFFF5B0CD), Color(0xFFC9417E));
 
-  const RouteHue(this.fill, this.fillDark, this.line);
+  const RouteHue(this.fill, this.fillDark, this.line, [Color? lineDark]) : lineDark = lineDark ?? line;
 
   final Color fill;
   final Color fillDark;
   final Color line;
+  final Color lineDark;
 
   Color fillFor(Brightness brightness) =>
       brightness == Brightness.dark ? fillDark : fill;
+
+  /// The route's line on a map of the given brightness.
+  Color lineFor(Brightness brightness) =>
+      brightness == Brightness.dark ? lineDark : line;
 }
 
 /// The same route always gets the same colour everywhere in the app.

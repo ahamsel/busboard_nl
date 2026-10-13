@@ -121,10 +121,22 @@ void main() {
     expect(clear, greaterThan(MarkerImages.badgeSize('10A').height / 2 + 1));
   });
 
+  testWidgets('the notch takes the line colour for the map it sits on', (tester) async {
+    await tester.runAsync(() async {
+      const pr = 2.0;
+      for (final b in Brightness.values) {
+        final image = await _decode(
+            await MarkerImages.notch(hue: RouteHue.indigo, stale: false, brightness: b, pixelRatio: pr));
+        addTearDown(image.dispose);
+        _near(await _pixel(image, image.width ~/ 2, (6 * pr).round()), RouteHue.indigo.lineFor(b));
+      }
+    });
+  });
+
   testWidgets('the notch points up from the top edge and leaves the centre clear', (tester) async {
     await tester.runAsync(() async {
       const pr = 2.0;
-      final image = await _decode(await MarkerImages.notch(hue: RouteHue.ocean, stale: false, pixelRatio: pr));
+      final image = await _decode(await MarkerImages.notch(hue: RouteHue.ocean, stale: false, brightness: Brightness.light, pixelRatio: pr));
       addTearDown(image.dispose);
       expect(image.width, (64 * pr).ceil());
       expect(image.height, image.width);

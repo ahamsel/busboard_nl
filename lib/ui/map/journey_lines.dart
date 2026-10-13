@@ -1,5 +1,5 @@
 import 'dart:math' as math;
-import 'dart:ui' show Color;
+import 'dart:ui' show Brightness, Color;
 
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
@@ -34,9 +34,11 @@ class JourneyLines {
 }
 
 /// The lines for [j]. A ride follows its trip's shape between the stops it is boarded and left at; with no shape
-/// (or stops that can't be placed on it), it runs stop to stop. A walk's pin end is [from] (at the start) or
-/// [to] (at the end); a walk whose ends aren't known is left out.
-JourneyLines journeyLines(Journey j, GtfsRepository repo, RouteGeometry geometry, {Place? from, Place? to}) {
+/// (or stops that can't be placed on it), it runs stop to stop, in its route's line colour for a map of
+/// [brightness]. A walk's pin end is [from] (at the start) or [to] (at the end); a walk whose ends aren't
+/// known is left out.
+JourneyLines journeyLines(Journey j, GtfsRepository repo, RouteGeometry geometry,
+    {required Brightness brightness, Place? from, Place? to}) {
   List<double>? stopAt(String? id) {
     final s = id == null ? null : repo.stopsById[id];
     return s == null ? null : [s.stopLon, s.stopLat];
@@ -57,7 +59,7 @@ JourneyLines journeyLines(Journey j, GtfsRepository repo, RouteGeometry geometry
             [?stopAt(leg.boardStopId), ?stopAt(leg.alightStopId)];
         if (line.length < 2) continue;
         final name = repo.routesById[leg.routeId]?.routeShortName ?? leg.routeId;
-        rides.add((line: line, color: RoutePalette.ofName(name).line));
+        rides.add((line: line, color: RoutePalette.ofName(name).lineFor(brightness)));
       case WalkLeg():
         final start = leg.fromStopId == null ? placeAt(from) : stopAt(leg.fromStopId);
         final end = leg.toStopId == null ? placeAt(to) : stopAt(leg.toStopId);

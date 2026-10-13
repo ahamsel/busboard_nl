@@ -247,7 +247,7 @@ class _StopStrip extends StatelessWidget {
     final stops = snapshot.stops;
     if (stops.isEmpty) return const SizedBox.shrink();
     final idx = _safeIndices(snapshot);
-    final routeLine = RoutePalette.ofName(routeLabel).line;
+    final routeLine = RoutePalette.ofName(routeLabel).lineFor(bb.brightness);
     final yours = idx.yours;
     final atOrPast = yours != null && yours <= idx.bus;
 

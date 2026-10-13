@@ -81,7 +81,12 @@ abstract final class MarkerImages {
     }).whenComplete(text.dispose);
   }
 
-  static Future<Uint8List> notch({required RouteHue hue, required bool stale, required double pixelRatio}) {
+  static Future<Uint8List> notch({
+    required RouteHue hue,
+    required bool stale,
+    required Brightness brightness,
+    required double pixelRatio,
+  }) {
     const size = Size.square(notchBox);
     return _render(size, pixelRatio, (canvas) {
       const mid = notchBox / 2;
@@ -90,7 +95,7 @@ abstract final class MarkerImages {
         ..lineTo(mid + 6, 10.5)
         ..lineTo(mid - 6, 10.5)
         ..close();
-      canvas.drawPath(path, Paint()..color = stale ? staleNotch : hue.line);
+      canvas.drawPath(path, Paint()..color = stale ? staleNotch : hue.lineFor(brightness));
       canvas.drawPath(
         path,
         Paint()

@@ -78,7 +78,7 @@ class _Follow {
   DateTime? routeAt;
   double? routeProgress;
   String? routeShapeId;
-  ({List<List<double>> driven, List<List<double>> ahead, Color color})? route;
+  ({List<List<double>> driven, List<List<double>> ahead, RouteHue hue})? route;
 }
 
 /// The app's home (spec 2026-10-12 §3): the map, the floating controls and one sheet whose content
@@ -362,7 +362,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final follow = _follow;
       final route = follow?.route;
       if (route != null) {
-        await layers.updateRoute(driven: route.driven, ahead: route.ahead, color: route.color);
+        await layers.updateRoute(
+            driven: route.driven, ahead: route.ahead, color: route.hue.lineFor(layers.brightness));
         if (!mounted || generation != _styleGeneration) return;
         // The follow ended (or moved to another bus) while the line was being
         // drawn: this style must not keep it. The next frame draws the new one.
@@ -537,10 +538,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           f.routeAt = now;
           f.routeProgress = progress;
           f.routeShapeId = shapeId;
-          final color = RoutePalette.ofName(_routeLabel(repo, snap) ?? busLabel(bus)).line;
-          f.route = (driven: split.driven, ahead: split.ahead, color: color);
+          final hue = RoutePalette.ofName(_routeLabel(repo, snap) ?? busLabel(bus));
+          f.route = (driven: split.driven, ahead: split.ahead, hue: hue);
           unawaited(layers
-              .updateRoute(driven: split.driven, ahead: split.ahead, color: color)
+              .updateRoute(driven: split.driven, ahead: split.ahead, color: hue.lineFor(layers.brightness))
               .catchError((Object e) => _log('Could not draw the route line: $e')));
         }
       }
@@ -619,7 +620,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final geometry = ref.read(routeGeometryProvider);
     if (repo == null || geometry == null) return null;
     final shown = ref.read(journeyOnMapProvider.notifier);
-    return journeyLines(j, repo, geometry, from: shown.from, to: shown.to);
+    final brightness = _layers?.brightness ??
+        MapStyle.brightnessFor(context.bb.brightness, ref.read(settingsProvider).mapThemeMode);
+    return journeyLines(j, repo, geometry, brightness: brightness, from: shown.from, to: shown.to);
   }
 
   /// Draws the journey as it is when this update's turn comes (none clears it).

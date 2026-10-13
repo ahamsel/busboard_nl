@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:busboard_nl/ui/kit/tokens.dart';
+import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../tool/src/harbour_style.dart';
@@ -44,30 +46,30 @@ void main() {
     final dark = buildHarbourStyle(_upstream(), HarbourPalette.dark);
 
     test('paints land, water and parks in the palette', () {
-      expect(_layer(light, 'background')['paint']['background-color'], '#EEF1F4');
-      expect(_layer(light, 'water')['paint']['fill-color'], '#BFD6EA');
-      expect(_layer(light, 'waterway')['paint']['line-color'], '#BFD6EA');
-      expect(_layer(light, 'park')['paint']['fill-color'], '#DCE8DC');
-      expect(_layer(light, 'landcover_wood')['paint']['fill-color'], '#DCE8DC');
+      expect(_layer(light, 'background')['paint']['background-color'], '#EEF3EF');
+      expect(_layer(light, 'water')['paint']['fill-color'], '#C2DCE6');
+      expect(_layer(light, 'waterway')['paint']['line-color'], '#C2DCE6');
+      expect(_layer(light, 'park')['paint']['fill-color'], '#D5EAD7');
+      expect(_layer(light, 'landcover_wood')['paint']['fill-color'], '#D5EAD7');
       expect((_layer(light, 'landcover_wood')['paint'] as Map).containsKey('fill-pattern'), isFalse);
-      expect(_layer(dark, 'background')['paint']['background-color'], '#141C25');
-      expect(_layer(dark, 'water')['paint']['fill-color'], '#0E2A40');
-      expect(_layer(dark, 'park')['paint']['fill-color'], '#16261F');
+      expect(_layer(dark, 'background')['paint']['background-color'], '#151A26');
+      expect(_layer(dark, 'water')['paint']['fill-color'], '#0D1A2E');
+      expect(_layer(dark, 'park')['paint']['fill-color'], '#15231F');
     });
 
     test('roads are white on a light casing (dark: road on casing)', () {
       expect(_layer(light, 'highway_major_inner')['paint']['line-color'], '#FFFFFF');
-      expect(_layer(light, 'highway_major_casing')['paint']['line-color'], '#D5DCE3');
-      expect(_layer(dark, 'highway_major_inner')['paint']['line-color'], '#24303C');
-      expect(_layer(dark, 'highway_major_casing')['paint']['line-color'], '#2E3B48');
+      expect(_layer(light, 'highway_major_casing')['paint']['line-color'], '#D4DED7');
+      expect(_layer(dark, 'highway_major_inner')['paint']['line-color'], '#232A3A');
+      expect(_layer(dark, 'highway_major_casing')['paint']['line-color'], '#2C3447');
       expect(_layer(light, 'highway_major_inner')['paint']['line-width'], 2, reason: 'widths are kept');
     });
 
     test('labels use the label colour with a land halo', () {
       for (final id in ['highway-name-minor', 'label_city']) {
-        expect(_layer(light, id)['paint']['text-color'], '#7A8794');
-        expect(_layer(light, id)['paint']['text-halo-color'], '#EEF1F4');
-        expect(_layer(dark, id)['paint']['text-color'], '#7D8B99');
+        expect(_layer(light, id)['paint']['text-color'], '#738579');
+        expect(_layer(light, id)['paint']['text-halo-color'], '#EEF3EF');
+        expect(_layer(dark, id)['paint']['text-color'], '#7C869B');
       }
     });
 
@@ -101,9 +103,9 @@ void main() {
   });
 
   group('committed styles', () {
-    for (final (path, land) in [
-      ('assets/map/harbour_light.json', '#EEF1F4'),
-      ('assets/map/harbour_dark.json', '#141C25'),
+    for (final (path, palette, land) in [
+      ('assets/map/harbour_light.json', HarbourPalette.light, '#EEF3EF'),
+      ('assets/map/harbour_dark.json', HarbourPalette.dark, '#151A26'),
     ]) {
       test('$path is a generated Harbour style', () {
         final style = jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
@@ -117,6 +119,25 @@ void main() {
         expect('${style['glyphs']}', startsWith('https://tiles.openfreemap.org/'));
         expect(jsonEncode(style).toLowerCase(), isNot(contains('key=')));
       });
+
+      test('$path is painted entirely in the current palette', () {
+        final text = File(path).readAsStringSync();
+        final style = jsonDecode(text) as Map<String, dynamic>;
+        expect(encodeHarbourStyle(buildHarbourStyle(style, palette)), text,
+            reason: 'run: dart run tool/build_map_styles.dart --recolour');
+      });
     }
+  });
+
+  test('the dark map is a greyer, darker navy than the sheet floating on it (spec §2.4)', () {
+    Color hex(String h) => Color(int.parse('FF${h.substring(1)}', radix: 16));
+    final land = hex(HarbourPalette.dark.land);
+    final road = hex(HarbourPalette.dark.road);
+    expect(land.computeLuminance(), lessThan(BBColors.dark.surface.computeLuminance()));
+    // "Greyer": less blue than the sheet, so the sheet reads bluer even where it sits over a road (which is
+    // about as light as the sheet; the highlight edge and the shadow carry that edge).
+    double blueShift(Color c) => c.b - (c.r + c.g) / 2;
+    expect(blueShift(land), lessThan(blueShift(BBColors.dark.surface)));
+    expect(blueShift(road), lessThan(blueShift(BBColors.dark.surface)));
   });
 }

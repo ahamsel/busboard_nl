@@ -28,24 +28,26 @@ class HarbourPalette {
 
   static const light = HarbourPalette(
     name: 'Harbour light',
-    land: '#EEF1F4',
-    water: '#BFD6EA',
-    park: '#DCE8DC',
+    land: '#EEF3EF',
+    water: '#C2DCE6',
+    park: '#D5EAD7',
     road: '#FFFFFF',
-    roadCasing: '#D5DCE3',
-    label: '#7A8794',
-    building: '#E4E8EC',
+    roadCasing: '#D4DED7',
+    label: '#738579',
+    building: '#E3EAE5',
   );
 
+  /// A greyer, cooler navy than the app's dark `bg`/`surface`, so sheets, cards and map
+  /// buttons stand clear of the map (visual refresh spec §2.4).
   static const dark = HarbourPalette(
     name: 'Harbour dark',
-    land: '#141C25',
-    water: '#0E2A40',
-    park: '#16261F',
-    road: '#24303C',
-    roadCasing: '#2E3B48',
-    label: '#7D8B99',
-    building: '#19222D',
+    land: '#151A26',
+    water: '#0D1A2E',
+    park: '#15231F',
+    road: '#232A3A',
+    roadCasing: '#2C3447',
+    label: '#7C869B',
+    building: '#1A2030',
   );
 }
 
@@ -127,3 +129,6 @@ Map<String, dynamic> buildHarbourStyle(Map<String, dynamic> upstream, HarbourPal
   style['layers'] = out;
   return style;
 }
+
+/// The committed file format: two-space JSON with a trailing newline.
+String encodeHarbourStyle(Map<String, dynamic> style) => '${const JsonEncoder.withIndent('  ').convert(style)}\n';
