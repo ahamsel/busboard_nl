@@ -173,6 +173,23 @@ void main() {
     }
   });
 
+  testWidgets('on a phone the sheet slides in and out solid: nothing behind it shows through', (tester) async {
+    tester.view.physicalSize = const Size(390, 844) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await _open(tester);
+    // Close, and look half-way down.
+    await tester.tap(find.byKey(BBWhenPicker.closeKey));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(find.byKey(BBWhenPicker.sheetKey), findsOneWidget, reason: 'still on its way down');
+    final fades = tester.widgetList<FadeTransition>(
+      find.ancestor(of: find.byKey(BBWhenPicker.sheetKey), matching: find.byType(FadeTransition)),
+    );
+    expect(fades.where((f) => f.opacity.value < 1), isEmpty, reason: 'the sheet itself never fades');
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('quick picks set the day and time at once and move the wheels', (tester) async {
     final opened = await _open(tester);
     await _tapIn(tester, find.text('In 30 min'));

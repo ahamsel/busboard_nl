@@ -50,13 +50,21 @@ Future<DateTime?> showBBWhenPicker(
       onDone: (picked) => Navigator.of(dialogContext).pop(picked),
     ),
     transitionBuilder: (_, animation, _, child) {
+      if (!wide) {
+        // The sheet slides up from below the screen, solid: fading it would show the options through it.
+        // The plain curve, not the spring, so an overshoot never lifts it off the bottom edge.
+        return SlideTransition(
+          position: animation.drive(CurveTween(curve: BBMotion.curve)).drive(
+                Tween(begin: const Offset(0, 1), end: Offset.zero),
+              ),
+          child: child,
+        );
+      }
       final rise = animation.drive(CurveTween(curve: BBMotion.emphasisCurve));
       return FadeTransition(
         // Opacity stays within 0..1: it follows the plain curve, not the spring.
         opacity: animation.drive(CurveTween(curve: BBMotion.curve)),
-        child: wide
-            ? ScaleTransition(scale: rise.drive(Tween(begin: 0.94, end: 1.0)), child: child)
-            : SlideTransition(position: rise.drive(Tween(begin: const Offset(0, 0.4), end: Offset.zero)), child: child),
+        child: ScaleTransition(scale: rise.drive(Tween(begin: 0.94, end: 1.0)), child: child),
       );
     },
   );
