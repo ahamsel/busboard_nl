@@ -6,6 +6,7 @@ import '../state/home_sheet_provider.dart';
 import '../state/map_pick_provider.dart';
 import '../ui/alerts/alerts_screen.dart';
 import '../ui/home/home_screen.dart';
+import '../ui/kit/kit.dart';
 import '../ui/search/search_screen.dart';
 import '../ui/settings/settings_screen.dart';
 
@@ -36,6 +37,7 @@ Page<void> _page(GoRouterState state, Widget child) => MaterialPage<void>(
 GoRouter buildAppRouter({String initialLocation = '/'}) {
   return GoRouter(
     initialLocation: initialLocation,
+    errorPageBuilder: (context, state) => _page(state, const _NotFound()),
     routes: [
       GoRoute(
         path: '/',
@@ -74,4 +76,32 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
       ),
     ],
   );
+}
+
+/// An unknown link: says so, and goes back to the map.
+class _NotFound extends StatelessWidget {
+  const _NotFound();
+
+  @override
+  Widget build(BuildContext context) => BBScaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(BBSpace.screen),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const BBEmptyState(
+                    icon: BBIcons.error,
+                    title: 'Page not found',
+                    message: "This link doesn't go anywhere in BusBoard.",
+                  ),
+                  const SizedBox(height: BBSpace.l),
+                  BBButton(label: 'Home', icon: BBIcons.board, onPressed: () => context.go('/')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
 }
