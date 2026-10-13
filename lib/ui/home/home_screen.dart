@@ -18,6 +18,7 @@ import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
 import '../../state/arrival_alert_providers.dart';
+import '../../state/board_open_store.dart';
 import '../../state/follow_providers.dart';
 import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
@@ -214,6 +215,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_enableMyLocation(request: false));
+    unawaited(_restoreBoard());
     _journeyFitPending = ref.read(journeyOnMapProvider) != null;
     // A follow set before the map existed (the Board's live row): its card
     // replaces any selection.
@@ -300,6 +302,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _appResumed = true;
       _resumeTicker();
     }
+    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) _rememberBoard();
     if (state == AppLifecycleState.paused) {
       _appResumed = false;
       _ticker?.stop();
@@ -806,8 +809,59 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   bool _sheetAtFull = false;
 
   bool _onSheetExtent(DraggableScrollableNotification n) {
+    final wasAtFull = _sheetAtFull;
     _sheetAtFull = n.extent >= n.maxExtent - 0.004;
+    // Collapsed below full: the Board is no longer open.
+    if (wasAtFull && !_sheetAtFull) _forgetBoard();
     return false;
+  }
+
+  // ─── Reopen the way the rider left it ─────────────────────
+
+  /// The stop id saved as the open Board ([BoardOpenStore]), as far as this screen knows.
+  String? _savedBoard;
+
+  /// The stop whose Board is showing: its sheet at full height, or in the side panel (which has no detents).
+  String? get _boardShowing {
+    final sheet = ref.read(homeSheetProvider);
+    return sheet is StopSheet && (_wide || _sheetAtFull) ? sheet.stopId : null;
+  }
+
+  /// The app is going to the background: remember the Board if one is open, else forget any.
+  void _rememberBoard() {
+    final id = _boardShowing;
+    if (id == null) return _forgetBoard();
+    if (id == _savedBoard) return;
+    _savedBoard = id;
+    unawaited(ref.read(boardOpenStoreProvider).save(id).catchError((Object e) => _log('Board not saved: $e')));
+  }
+
+  /// The rider collapsed, closed or left the Board.
+  void _forgetBoard() {
+    if (_savedBoard == null) return;
+    _savedBoard = null;
+    unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
+  }
+
+  /// A cold start: the Board left open is opened again, at full height, once the schedule says its stop still
+  /// exists. A link or a notification opened at launch wins, and the Board is forgotten.
+  Future<void> _restoreBoard() async {
+    final store = ref.read(boardOpenStoreProvider);
+    try {
+      final id = await store.read();
+      if (id == null || !mounted) return;
+      final repo = await ref.read(gtfsRepositoryProvider.future);
+      if (!mounted) return;
+      final stillThere = repo.stopsById[id] != null;
+      if (!stillThere || ref.read(homeSheetProvider) is! HomeSheetHome || ref.read(followProvider) != null) {
+        await store.clear();
+        return;
+      }
+      ref.read(homeSheetProvider.notifier).openBoard(id);
+      _savedBoard = id;
+    } catch (e) {
+      _log('Board not restored: $e');
+    }
   }
 
   /// System back: ends a map pick first, then walks the sheet back.
@@ -961,7 +1015,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     });
     // Every card opens at half, however it was reached; a stop's brings the map to it (spec §3.2, §3.4).
     ref.listen<HomeSheet>(homeSheetProvider, (prev, next) {
-      if (prev != next) _onSheetOpened(next);
+      if (prev == next) return;
+      // Closed, back, or another card: the Board left open is no longer the one showing.
+      _forgetBoard();
+      _onSheetOpened(next);
     });
     ref.listen<int>(homeSheetReopenedProvider, (_, _) => _onSheetOpened(ref.read(homeSheetProvider), again: true));
     ref.listen<BoardRequest?>(boardRequestProvider, (_, next) => _onBoardRequest(next));
