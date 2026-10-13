@@ -87,12 +87,16 @@ class NoFixGeolocator extends GeolocatorPlatform {
 }
 
 /// A stand-in for MapLibre that keeps the config it was last built with, so a test can tap or long-press the "map".
+/// [color] is the map's land colour (the light Harbour land by default).
 class StubMap {
+  StubMap({this.color = const Color(0xFFEEF3EF)});
+
+  final Color color;
   MapViewConfig? config;
 
   Widget build(MapViewConfig c) {
     config = c;
-    return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4));
+    return ColoredBox(key: const ValueKey('stub-map'), color: color);
   }
 
   void tap(double lat, double lon) => config!.onTap(LatLng(lat, lon));

@@ -7,6 +7,7 @@ import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart' show PlanMode;
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
@@ -15,6 +16,8 @@ import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +28,7 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/planner_app.dart';
+import '../../tool/src/harbour_style.dart';
 import '../kit/kit_test_helpers.dart';
 import '../trip_planner/test_network.dart';
 
@@ -89,6 +93,12 @@ TestNetwork _munToAvalon() {
   return net;
 }
 
+/// The Harbour map's land colour for [b], so the sheet's separation from the map shows in the goldens.
+Color _land(Brightness b) {
+  final hex = (b == Brightness.dark ? HarbourPalette.dark : HarbourPalette.light).land;
+  return Color(int.parse('FF${hex.substring(1)}', radix: 16));
+}
+
 /// The real app at [initial] on a 390x844 phone at 3x: stop 1150 is the rider's stop, one saved place, one alert
 /// that applies to routes 29 and 23 and to the stop, and four fixed departures (so the picture does not move).
 Future<void> _pumpApp(WidgetTester tester, Brightness b, {String initial = '/'}) async {
@@ -100,6 +110,7 @@ Future<void> _pumpApp(WidgetTester tester, Brightness b, {String initial = '/'})
     net: _munToAvalon(),
     now: DateTime(testDay.year, testDay.month, testDay.day, 8, 1),
     initial: initial,
+    mapView: StubMap(color: _land(b)).build,
     theme: b == Brightness.dark ? BBTheme.dark() : BBTheme.light(),
     alerts: [
       ServiceAlert(
@@ -193,5 +204,31 @@ void main() {
       await tester.pumpAndSettle();
       await expectLater(find.byType(SettingsScreen), matchesGoldenFile('goldens/settings_${b.name}.png'));
     });
+
+    testWidgets('when picker ${b.name}', (tester) async {
+      await _pumpApp(tester, b);
+      final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      c.read(planQueryProvider.notifier)
+        ..setTrip(StopPlace(stopId: '1150', name: 'MUN Centre'), StopPlace(stopId: 'C', name: 'Avalon Mall'))
+        ..setMode(PlanMode.leaveBy);
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(OptionsSheetContent.whenButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(OptionsSheetContent.whenButtonKey));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/when_picker_${b.name}.png'));
+    });
   }
+
+  testWidgets('home at half dark', (tester) async {
+    await _pumpApp(tester, Brightness.dark);
+    final peek = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+    await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -250));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, lessThan(peek - 100), reason: 'the sheet is up at half');
+    expect(tester.takeException(), isNull);
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/home_half_dark.png'));
+  });
 }

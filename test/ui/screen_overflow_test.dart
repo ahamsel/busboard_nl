@@ -17,6 +17,7 @@ import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart' show PlanMode;
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/saved_place_providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
@@ -24,6 +25,8 @@ import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/options_sheet.dart';
+import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -608,6 +611,55 @@ void main() {
       await tester.pumpAndSettle();
       expect(tip, findsNothing);
       expect(tester.takeException(), isNull);
+    });
+  }
+
+  // Search on its frosted page, with results, at 2x text on the two smallest phones (spec §5).
+  for (final size in _sizes) {
+    testWidgets('search at ${size.width.toInt()}x${size.height.toInt()}, 2.0x text', (tester) async {
+      tester.view.physicalSize = size * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: DateTime(2026, 10, 12, 13, 0), initial: '/search', textScale: 2.0);
+      expect(tester.takeException(), isNull, reason: 'initial layout');
+      await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop');
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'with results');
+      await _scrollThrough(tester);
+    });
+  }
+
+  // The day-and-time picker at 2x text on the smallest supported width, in both themes (spec §4.2).
+  for (final dark in [false, true]) {
+    testWidgets('the When picker at 320x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
+      tester.view.physicalSize = const Size(320, 640) * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: DateTime(testDay.year, testDay.month, testDay.day, 8, 1),
+        textScale: 2.0,
+        use24h: false,
+        theme: dark ? BBTheme.dark() : BBTheme.light(),
+      );
+      final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      c.read(planQueryProvider.notifier)
+        ..setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'C', name: 'Stop C'))
+        ..setMode(PlanMode.arriveBy);
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(OptionsSheetContent.whenButtonKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(OptionsSheetContent.whenButtonKey));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'the picker opens');
+      await tester.ensureVisible(find.text('In 1 hr'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(BBWhenPicker.confirmKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(BBWhenPicker.confirmKey).hitTestable(), findsOneWidget, reason: 'Set … is reachable');
+      expect(tester.takeException(), isNull, reason: 'scrolled to the button');
     });
   }
 }
