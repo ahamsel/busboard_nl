@@ -946,6 +946,20 @@ void main() {
       expect(surface.fits, hasLength(2), reason: 'the camera moves at once on resume');
     });
 
+    testWidgets('Back to bus only shows with the sheet down: pulled up, the sheet covers its spot', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await pan(tester);
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      await tester.drag(find.byType(FollowCardHeader), const Offset(0, -300));
+      await _frames(tester, 30);
+      expect(find.text('Back to bus 2573'), findsNothing, reason: 'the card is pulled up over that spot');
+      expect(find.text('Following bus 2573'), findsOneWidget, reason: 'the top chip still leads back to the bus');
+      await tester.drag(find.byType(FollowCardHeader), const Offset(0, 400));
+      await _frames(tester, 30);
+      expect(find.text('Back to bus 2573'), findsOneWidget, reason: 'down at peek again, it comes back');
+    });
+
     testWidgets('a plain tap on the map does not pause', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);

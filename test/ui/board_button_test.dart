@@ -94,35 +94,39 @@ void main() {
     _expectAtFull(tester);
   });
 
-  testWidgets('at full, Open board stays and brings the departures back into view', (tester) async {
-    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/board/C', overrides: _overrides);
-    await tester.tap(_openBoard);
-    await tester.pumpAndSettle();
-    _expectAtFull(tester);
-    // Scrolled down the departures, the button (pinned in the header) takes the rider back to the next bus.
-    await tester.drag(find.byType(ArrivalRowTile).at(2), const Offset(0, -300));
-    await tester.pumpAndSettle();
-    final first = find.byType(ArrivalRowTile).first.hitTestable();
-    expect(first, findsNothing, reason: 'the next bus is scrolled under the header');
-    await tester.tap(_openBoard);
-    await tester.pumpAndSettle();
-    _expectAtFull(tester);
-    expect(first, findsOneWidget, reason: 'the next bus is back in view');
-  });
-
-  testWidgets('at full with the next bus in view, Open board tells the rider the Board is already open',
+  testWidgets('with the Board open the button turns into Show map, which brings the sheet back to half over the stop',
       (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/board/C', overrides: _overrides);
     await tester.tap(_openBoard);
     await tester.pumpAndSettle();
     _expectAtFull(tester);
-    tester.takeAnnouncements();
-    await tester.tap(_openBoard);
+    expect(_openBoard, findsNothing, reason: 'no button that does nothing while the Board is open');
+    final showMap = find.bySemanticsLabel('Show the map, Stop C');
+    expect(showMap, findsOneWidget);
+    // Scrolled down the departures, it still works: the header button is pinned.
+    await tester.drag(find.byType(ArrivalRowTile).at(2), const Offset(0, -300));
     await tester.pumpAndSettle();
-    expect(tester.takeAnnouncements(), contains(isAccessibilityAnnouncement('Board open')));
+    await tester.tap(showMap);
+    await tester.pumpAndSettle();
+    final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
+    final area = tester.view.physicalSize.height / tester.view.devicePixelRatio - 2 * BBSpace.s;
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * area, 1),
+        reason: 'the sheet is back at half, the map above it');
+    expect(_openBoard, findsOneWidget, reason: 'and the button is Open board again');
+    expect(showMap, findsNothing);
   });
 
-  testWidgets('at 2x text on a 320 wide phone, Open board reads in full in both places, light and dark',
+  testWidgets('dragging the Board down below full turns Show map back into Open board', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/board/C', overrides: _overrides);
+    await tester.tap(_openBoard);
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Show the map, Stop C'), findsOneWidget);
+    await tester.drag(find.byKey(BBSheet.cardKey), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    expect(_openBoard, findsOneWidget);
+  });
+
+  testWidgets('at 2x text on a 320 wide phone, Open board and Show map read in full, light and dark',
       (tester) async {
     for (final theme in [BBTheme.light(), BBTheme.dark()]) {
       tester.view.physicalSize = const Size(320, 640);
@@ -134,7 +138,7 @@ void main() {
       await tester.tap(_openBoard);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('Open board'), findsOneWidget);
+      expect(find.text('Show map'), findsOneWidget, reason: 'its other face reads in full too');
       _expectAtFull(tester);
     }
   });

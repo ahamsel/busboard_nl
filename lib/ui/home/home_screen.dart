@@ -838,8 +838,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _sheetAtFull = n.extent >= n.maxExtent - 0.004;
     // Collapsed below full: the Board is no longer open.
     if (wasAtFull && !_sheetAtFull) _forgetBoard();
+    final abovePeek = n.extent > n.minExtent + 0.02;
+    if (wasAtFull != _sheetAtFull || abovePeek != _sheetAbovePeek) {
+      // The notification can come mid-layout: what it changes is built on the next frame.
+      void apply() {
+        if (!mounted) return;
+        ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull);
+        if (abovePeek != _sheetAbovePeek) setState(() => _sheetAbovePeek = abovePeek);
+      }
+      if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+        apply();
+      } else {
+        SchedulerBinding.instance.addPostFrameCallback((_) => apply());
+        SchedulerBinding.instance.ensureVisualUpdate();
+      }
+    }
     return false;
   }
+
+  /// The pull-up sheet is above its peek: it covers the bottom of the map, where "Back to bus" sits.
+  bool _sheetAbovePeek = false;
 
   // ─── Reopen the way the rider left it ─────────────────────
 
@@ -1402,7 +1420,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   ),
                 ),
               ),
-            if (follow != null && follow.paused)
+            // Only while the sheet is down at its peek: pulled up, the sheet covers this spot, and the "Following
+            // bus" chip at the top does the same (back to the bus, sheet down).
+            if (follow != null && follow.paused && !_sheetAbovePeek)
               Positioned(
                 left: panelInset,
                 right: 0,

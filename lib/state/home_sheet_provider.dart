@@ -102,6 +102,9 @@ class HomeSheetNotifier extends Notifier<HomeSheet> {
     ref.read(boardRequestProvider.notifier)._request(stopId);
   }
 
+  /// "Show map", from a Board at full height: the card on top back to half, its stop centred on the map.
+  void showMap() => ref.read(homeSheetReopenedProvider.notifier)._bump();
+
   /// False when already home (the caller lets the system leave the app).
   bool back() {
     if (_stack.length <= 1) return false;
@@ -145,4 +148,17 @@ class BoardRequestNotifier extends Notifier<BoardRequest?> {
   BoardRequest? build() => null;
 
   void _request(String stopId) => state = BoardRequest(stopId);
+}
+
+/// The phone's pull-up sheet is at its full height: a stop's sheet there is its Board, and its header button turns
+/// from "Open board" into "Show map". Always false on the tablet panel, which has no detents.
+final sheetAtFullProvider = NotifierProvider<SheetAtFullNotifier, bool>(SheetAtFullNotifier.new);
+
+class SheetAtFullNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool atFull) {
+    if (state != atFull) state = atFull;
+  }
 }
