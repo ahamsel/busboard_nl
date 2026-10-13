@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
@@ -6,12 +8,17 @@ import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
 import '../helpers/planner_app.dart';
+import '../map/support/fake_map_surface.dart';
 import '../trip_planner/test_network.dart';
 
 class _StopASettings extends SettingsNotifier {
@@ -80,5 +87,44 @@ void main() {
     await settlesWithin100ms(tester, 'opening options');
     await tester.tap(find.text('Leave by'));
     await settlesWithin100ms(tester, 'choosing Leave by');
+
+    // The picker: opening, a quick pick turning the wheels, closing.
+    await tester.tap(find.byKey(OptionsSheetContent.whenButtonKey));
+    await settlesWithin100ms(tester, 'opening the picker');
+    await tester.ensureVisible(find.text('In 30 min'));
+    await tester.pump();
+    await tester.tap(find.text('In 30 min'));
+    await settlesWithin100ms(tester, 'a quick pick turning the wheels');
+    await tester.tap(find.byKey(BBWhenPicker.closeKey));
+    await settlesWithin100ms(tester, 'closing the picker');
+  });
+
+  testWidgets('with Reduce Motion, My location centres the map but the ping draws nothing and no frames linger',
+      (tester) async {
+    final surface = FakeMapSurface()..location = const LatLng(47.55, -52.70);
+    Widget map(MapViewConfig config) {
+      scheduleMicrotask(() => config.onReady(surface, surface));
+      return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4));
+    }
+
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: DateTime(testDay.year, testDay.month, testDay.day, 8, 1),
+      reduceMotion: true,
+      geolocator: FixedGeolocator(47.55, -52.70),
+      mapView: map,
+    );
+    await settlesWithin100ms(tester, 'home at rest');
+    expect(find.byType(BBPing), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('My location'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(surface.moves, hasLength(1), reason: 'the tap went through: the camera moved to the rider');
+    expect(find.byType(BBPing), findsOneWidget, reason: 'the ping was asked for (not skipped), so this is not vacuous');
+    expect(find.byKey(BBPing.ringKey), findsNothing, reason: 'Reduce Motion: no rings are drawn');
+    await settlesWithin100ms(tester, 'the location ping');
   });
 }

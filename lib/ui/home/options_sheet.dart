@@ -140,8 +140,8 @@ class SaveTripButton extends ConsumerWidget {
 abstract final class OptionsSheetContent {
   static const fromRowKey = ValueKey('plan-from');
   static const toRowKey = ValueKey('plan-to');
-  static const timeButtonKey = ValueKey('plan-time');
-  static const dateButtonKey = ValueKey('plan-date');
+  /// Leave by / Arrive by: the day and time, which open BusBoard's picker (spec §4).
+  static const whenButtonKey = ValueKey('plan-when');
   static Widget header() => const _OptionsHeader();
   static List<Widget> slivers() => const [SliverToBoxAdapter(child: _OptionsBody())];
 }
@@ -278,14 +278,16 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
     onMap.show(first);
   }
 
-  Future<void> _pickTime(DateTime current) async {
-    final t = await showBBTimePicker(context, initial: current);
+  Future<void> _pickWhen(DateTime current, DateTime now, GtfsRepository? repo, PlanMode mode) async {
+    final t = await showBBWhenPicker(
+      context,
+      title: mode == PlanMode.arriveBy ? 'Arrive by' : 'Leave by',
+      initial: current,
+      first: now,
+      last: feedEndDate(repo, now),
+      use24h: BBTime.use24h(context),
+    );
     if (t != null && mounted) ref.read(planQueryProvider.notifier).setTime(t);
-  }
-
-  Future<void> _pickDate(DateTime current, DateTime now, GtfsRepository? repo) async {
-    final d = await showBBDatePicker(context, initial: current, first: now, last: feedEndDate(repo, now));
-    if (d != null && mounted) ref.read(planQueryProvider.notifier).setTime(d);
   }
 
   Future<void> _save(Place from, Place to) async {
@@ -334,19 +336,12 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
           if (draft.mode != PlanMode.leaveNow) ...[
             const SizedBox(height: BBSpace.m),
             _FieldButton(
-              key: OptionsSheetContent.timeButtonKey,
+              key: OptionsSheetContent.whenButtonKey,
               icon: BBIcons.schedule,
-              label: BBTime.of(when, use24h: use24h),
-              semanticLabel: 'Time, ${BBTime.of(when, use24h: use24h)}',
-              onTap: () => _pickTime(when),
-            ),
-            const SizedBox(height: BBSpace.s),
-            _FieldButton(
-              key: OptionsSheetContent.dateButtonKey,
-              icon: BBIcons.calendar,
-              label: dayLabel(when, now),
-              semanticLabel: 'Date, ${dayLabel(when, now)}',
-              onTap: () => _pickDate(when, now, repo),
+              label: '${BBTime.of(when, use24h: use24h)} · ${dayLabel(when, now)}',
+              semanticLabel: '${draft.mode == PlanMode.arriveBy ? 'Arrive by' : 'Leave by'} '
+                  '${BBTime.of(when, use24h: use24h)}, ${dayLabel(when, now)}. Change',
+              onTap: () => _pickWhen(when, now, repo, draft.mode),
             ),
           ],
           const SizedBox(height: BBSpace.l),
@@ -482,7 +477,7 @@ class _EndRow extends StatelessWidget {
   }
 }
 
-/// A form value that opens a picker: the time, or the day.
+/// The When row: the day and time, which opens the picker.
 class _FieldButton extends StatelessWidget {
   const _FieldButton({
     super.key,

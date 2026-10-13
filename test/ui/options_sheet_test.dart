@@ -32,6 +32,20 @@ String _textIn(WidgetTester tester, Key key) => tester
     .map((t) => t.data ?? '')
     .join(' ');
 
+/// Turns the picker's [wheel] to [item].
+Future<void> _turn(WidgetTester tester, Key wheel, int item) async {
+  final w = tester.widget<ListWheelScrollView>(find.byKey(wheel));
+  (w.controller! as FixedExtentScrollController).jumpToItem(item);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _confirmPicker(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(BBWhenPicker.confirmKey));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(BBWhenPicker.confirmKey));
+  await tester.pumpAndSettle();
+}
+
 /// Home's providers, also while the search is pushed over it.
 ProviderContainer _container(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(HomeScreen, skipOffstage: false)));
@@ -127,22 +141,18 @@ void main() {
 
   testWidgets('Arrive by 8:25 shows only journeys that get there by 8:25', (tester) async {
     await _openAtoC(tester);
-    expect(find.byKey(OptionsSheetContent.timeButtonKey), findsNothing);
+    expect(find.byKey(OptionsSheetContent.whenButtonKey), findsNothing);
     await tester.tap(find.text('Arrive by'));
     await tester.pumpAndSettle();
-    expect(find.byKey(OptionsSheetContent.timeButtonKey), findsOneWidget);
+    expect(find.byKey(OptionsSheetContent.whenButtonKey), findsOneWidget);
 
-    await tester.tap(find.byKey(OptionsSheetContent.timeButtonKey));
+    await tester.tap(find.byKey(OptionsSheetContent.whenButtonKey));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Switch to text input mode'));
-    await tester.pumpAndSettle();
-    final fields = find.descendant(of: find.byType(TimePickerDialog), matching: find.byType(TextField));
-    await tester.enterText(fields.at(0), '8');
-    await tester.enterText(fields.at(1), '25');
-    await tester.tap(find.text('OK'));
-    await tester.pumpAndSettle();
+    expect(find.text('Arrive by'), findsWidgets, reason: 'the picker is titled for the mode');
+    await _turn(tester, BBWhenPicker.minuteWheelKey, 25); // it opens on 8:35, the Arrive by default
+    await _confirmPicker(tester);
 
-    expect(_textIn(tester, OptionsSheetContent.timeButtonKey), contains('8:25'));
+    expect(_textIn(tester, OptionsSheetContent.whenButtonKey), contains('8:25'));
     final cards = tester.widgetList<JourneyCard>(find.byType(JourneyCard)).toList();
     expect(cards, isNotEmpty);
     final by = DateTime(testDay.year, testDay.month, testDay.day, 8, 25);
@@ -155,7 +165,7 @@ void main() {
     await _openAtoC(tester);
     await tester.tap(find.text('Arrive by'));
     await tester.pumpAndSettle();
-    expect(_textIn(tester, OptionsSheetContent.timeButtonKey), contains('8:35'));
+    expect(_textIn(tester, OptionsSheetContent.whenButtonKey), contains('8:35'));
     expect(find.text('No buses get you there at that time'), findsNothing);
     expect(find.byType(JourneyCard), findsWidgets);
   });
@@ -221,22 +231,36 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('the date button reads Today, then Tomorrow once tomorrow is picked', (tester) async {
+  testWidgets('the When row reads Today, then Tomorrow once tomorrow is picked, keeping the time', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
     await _openOptions(tester);
     await tester.tap(find.text('Leave by'));
     await tester.pumpAndSettle();
-    expect(_textIn(tester, OptionsSheetContent.dateButtonKey), contains('Today'));
-    await tester.tap(find.byKey(OptionsSheetContent.dateButtonKey));
+    expect(_textIn(tester, OptionsSheetContent.whenButtonKey), contains('Today'));
+    await tester.tap(find.byKey(OptionsSheetContent.whenButtonKey));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('${testDay.day + 1}'));
+    await tester.ensureVisible(find.byKey(BBWhenPicker.dayKey(1)));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('OK'));
+    await tester.tap(find.byKey(BBWhenPicker.dayKey(1)));
     await tester.pumpAndSettle();
-    expect(_textIn(tester, OptionsSheetContent.dateButtonKey), contains('Tomorrow'));
+    await _confirmPicker(tester);
+    expect(_textIn(tester, OptionsSheetContent.whenButtonKey), contains('Tomorrow'));
     final time = _container(tester).read(planQueryProvider).time!;
-    // Leave by starts at 8:35 (8:01 + 30 min, rounded up); the date picker keeps that time of day.
+    // Leave by starts at 8:35 (8:01 + 30 min, rounded up); picking a day keeps that time.
     expect((time.day, time.hour, time.minute), (testDay.day + 1, 8, 35));
+  });
+
+  testWidgets('closing the picker leaves the time as it was', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
+    await _openOptions(tester);
+    await tester.tap(find.text('Leave by'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(OptionsSheetContent.whenButtonKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(BBWhenPicker.closeKey));
+    await tester.pumpAndSettle();
+    expect(_container(tester).read(planQueryProvider).time, isNull);
+    expect(find.byKey(BBWhenPicker.sheetKey), findsNothing);
   });
 
   testWidgets('an Arrive by time never picked moves on with the clock, and the plan with it', (tester) async {
@@ -245,14 +269,14 @@ void main() {
     await _openOptions(tester, from: _a, to: _c);
     await tester.tap(find.text('Arrive by'));
     await tester.pumpAndSettle();
-    expect(_textIn(tester, OptionsSheetContent.timeButtonKey), contains('8:35')); // 8:01 + 30 min, rounded up
+    expect(_textIn(tester, OptionsSheetContent.whenButtonKey), contains('8:35')); // 8:01 + 30 min, rounded up
     bool arrivesAt840(PlanOutcome? o) => o is PlanFound && o.journeys.any((j) => j.arrives == 8 * 3600 + 40 * 60);
     expect(arrivesAt840(_container(tester).read(planResultsProvider).value), isFalse);
 
     clock = _now.add(const Duration(minutes: 5));
     await tester.pump(const Duration(minutes: 5));
     await tester.pumpAndSettle();
-    expect(_textIn(tester, OptionsSheetContent.timeButtonKey), contains('8:40'));
+    expect(_textIn(tester, OptionsSheetContent.whenButtonKey), contains('8:40'));
     expect(_container(tester).read(planQueryProvider).time, isNull, reason: 'still not picked');
     expect(arrivesAt840(_container(tester).read(planResultsProvider).value), isTrue);
     await tester.pumpWidget(const SizedBox());
@@ -413,7 +437,7 @@ void main() {
     await tester.tap(find.text('Arrive by'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.byKey(OptionsSheetContent.dateButtonKey));
+    await tester.ensureVisible(find.byKey(OptionsSheetContent.whenButtonKey));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.ensureVisible(find.text('Leave now'));
@@ -488,8 +512,7 @@ void main() {
     expect(tester.getSemantics(find.byType(JourneyCard).first).label, contains('Leave 8:10'));
     await tester.tap(find.text('Leave by'));
     await tester.pumpAndSettle();
-    expect(find.bySemanticsLabel(RegExp(r'^Time, ')), findsOneWidget);
-    expect(find.bySemanticsLabel('Date, Today'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^Leave by .+, Today\. Change$')), findsOneWidget);
     handle.dispose();
   });
 
