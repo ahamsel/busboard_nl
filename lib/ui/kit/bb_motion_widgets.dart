@@ -26,6 +26,9 @@ class BBRollingText extends StatelessWidget {
       transitionBuilder: (child, animation) {
         // The outgoing value's animation runs in reverse, so "up" for both reads as a roll.
         final incoming = child.key == ValueKey(text);
+        // Only the new value is announced: mid-roll the old one is decoration (a merged row would
+        // otherwise read "7 6").
+        if (!incoming) child = ExcludeSemantics(child: child);
         return ClipRect(
           child: FadeTransition(
             opacity: animation,
@@ -63,6 +66,11 @@ class _BBNowPulseState extends State<BBNowPulse> with SingleTickerProviderStateM
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reduced = BBMotion.reduced(context);
+    if (_reduced) {
+      // Reduce Motion turned on mid-pulse: stop at rest.
+      _pulse.stop();
+      _pulse.value = 0;
+    }
   }
 
   @override
@@ -199,7 +207,13 @@ class _BBPingState extends State<BBPing> with SingleTickerProviderStateMixin {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _reduced = BBMotion.reduced(context);
-    if (_started || _reduced) return;
+    if (_reduced) {
+      // Reduce Motion (now or turned on mid-ping): stop the rings; build shows nothing.
+      _ring.stop();
+      _ring.value = 0;
+      return;
+    }
+    if (_started) return;
     _started = true;
     _ring.repeat(count: widget.rings).whenCompleteOrCancel(() {
       if (mounted) setState(() => _done = true);

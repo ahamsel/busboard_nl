@@ -63,7 +63,7 @@ class _RenderMoveAnchor extends RenderProxyBox {}
 
 /// One item of a [BBListMotion] list. [index] is its place, for the entrance stagger.
 class BBListItem extends StatefulWidget {
-  const BBListItem({super.key, required this.index, required this.child});
+  const BBListItem({required Key super.key, required this.index, required this.child});
 
   final int index;
   final Widget child;
@@ -115,6 +115,8 @@ class _BBListItemState extends State<BBListItem> with SingleTickerProviderStateM
     if (shown != null) {
       child = FadeTransition(
         opacity: shown,
+        // Opacity 0 would drop the subtree from semantics until the item's fade starts.
+        alwaysIncludeSemantics: true,
         child: SlideTransition(
           position: shown.drive(Tween(begin: const Offset(0, 0.15), end: Offset.zero)),
           child: child,
@@ -150,6 +152,7 @@ class RenderBBSlideOnMove extends RenderProxyBox {
   set enabled(bool value) {
     if (value == _enabled) return;
     _enabled = value;
+    _lastPlace = null; // stale while disabled: re-enabling must not slide from the old place
     _from = Offset.zero;
     _start = null;
     markNeedsPaint();

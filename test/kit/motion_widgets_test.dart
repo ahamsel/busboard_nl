@@ -10,6 +10,14 @@ Widget _reduced(Widget child) => Builder(
       builder: (context) => MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: child),
     );
 
+/// [child] with Reduce Motion following [reduce], so a test can turn it on or off mid-animation.
+Widget _reducedWhen(ValueNotifier<bool> reduce, Widget child) => ValueListenableBuilder<bool>(
+      valueListenable: reduce,
+      builder: (context, on, child) =>
+          MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: on), child: child!),
+      child: child,
+    );
+
 void main() {
   group('BBRollingText', () {
     testWidgets('rolls the old value out and the new one in, then shows only the new one', (tester) async {
@@ -22,6 +30,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('7'), findsNothing);
       expect(find.text('6'), findsOneWidget);
+    });
+
+    testWidgets('mid-roll, a merged row announces only the new value', (tester) async {
+      final handle = tester.ensureSemantics();
+      Widget host(String t) => kitHost(
+            Center(child: MergeSemantics(child: BBRollingText(t, style: const TextStyle(fontSize: 26)))),
+          );
+      await tester.pumpWidget(host('7'));
+      await tester.pumpWidget(host('6'));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('7'), findsOneWidget, reason: 'mid-roll, both show');
+      expect(tester.getSemantics(find.byType(MergeSemantics)).label, '6');
+      await tester.pumpAndSettle();
+      expect(tester.getSemantics(find.byType(MergeSemantics)).label, '6');
+      handle.dispose();
     });
 
     testWidgets('Reduce Motion: the new value replaces the old at once', (tester) async {
@@ -68,6 +91,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(scaleOf(tester), 1);
       expect(tester.hasRunningAnimations, isFalse);
+    });
+
+    testWidgets('Reduce Motion switched on mid-pulse stops it at rest', (tester) async {
+      final reduce = ValueNotifier(false);
+      addTearDown(reduce.dispose);
+      Widget host(bool now) => kitHost(_reducedWhen(reduce, BBNowPulse(active: now, child: const Text('row'))));
+      await tester.pumpWidget(host(false));
+      await tester.pumpWidget(host(true));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(tester.hasRunningAnimations, isTrue);
+      expect(scaleOf(tester), greaterThan(1));
+      reduce.value = true;
+      await tester.pump();
+      expect(tester.hasRunningAnimations, isFalse);
+      expect(scaleOf(tester), 1);
     });
   });
 
@@ -184,6 +223,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(BBPing.ringKey), findsNothing);
       expect(tester.hasRunningAnimations, isFalse);
+    });
+
+    testWidgets('Reduce Motion switched on mid-ping stops it and removes the ring', (tester) async {
+      final reduce = ValueNotifier(false);
+      addTearDown(reduce.dispose);
+      await tester.pumpWidget(kitHost(_reducedWhen(reduce, Center(child: BBPing(color: BBColors.light.brand)))));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(BBPing.ringKey), findsOneWidget);
+      expect(tester.hasRunningAnimations, isTrue);
+      reduce.value = true;
+      await tester.pump();
+      expect(find.byKey(BBPing.ringKey), findsNothing);
+      expect(tester.hasRunningAnimations, isFalse);
+      await tester.pump(const Duration(seconds: 4));
+      expect(tester.binding.hasScheduledFrame, isFalse);
     });
 
     testWidgets('Reduce Motion: no ping at all', (tester) async {

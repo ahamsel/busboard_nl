@@ -70,6 +70,42 @@ void main() {
     expect(tester.getTopLeft(find.text('a')).dy, greaterThan(tester.getTopLeft(find.text('b')).dy));
   });
 
+  testWidgets('items still waiting for their fade are in the semantics tree at frame 0', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(_list(['a', 'b', 'c']));
+    expect(_opacity(tester, 'c'), 0, reason: 'invisible, but...');
+    expect(find.bySemanticsLabel('c'), findsOneWidget, reason: '...still announced');
+    await tester.pumpAndSettle();
+    handle.dispose();
+  });
+
+  testWidgets('turning Reduce Motion back off does not slide from a stale place', (tester) async {
+    final state = ValueNotifier<(bool, List<String>)>((false, ['a', 'b']));
+    addTearDown(state.dispose);
+    await tester.pumpWidget(kitHost(ValueListenableBuilder<(bool, List<String>)>(
+      valueListenable: state,
+      builder: (context, v, _) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(disableAnimations: v.$1),
+        child: BBListMotion(
+          child: Column(children: [
+            for (final (i, id) in v.$2.indexed)
+              BBListItem(key: ValueKey(id), index: i, child: SizedBox(height: 50, child: Text(id))),
+          ]),
+        ),
+      ),
+    )));
+    await tester.pumpAndSettle();
+    state.value = (true, ['b', 'a']); // reorder while Reduce Motion is on: no slide
+    await tester.pump();
+    expect(_slide(tester, 'a').lastShift, Offset.zero);
+    state.value = (false, ['b', 'a']); // motion back on, nothing moved since
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(_slide(tester, 'a').lastShift, Offset.zero, reason: 'no spurious slide');
+    expect(_slide(tester, 'b').lastShift, Offset.zero);
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
   testWidgets('Reduce Motion: no entrance and no slide', (tester) async {
     await tester.pumpWidget(_list(['a', 'b'], reduce: true));
     expect(_fade('a'), findsNothing);
