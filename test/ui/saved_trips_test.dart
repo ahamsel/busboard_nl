@@ -108,6 +108,18 @@ void main() {
     );
   });
 
+  testWidgets('the Trip name field keeps a visible label once the user types', (tester) async {
+    await _pump(tester);
+    await tester.tap(_more);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText), 'Work');
+    await tester.pump();
+    // The hint is faded out in place, so look for a 'Trip name' that is not inside the field.
+    final labels = find.text('Trip name').evaluate().where((e) => e.findAncestorWidgetOfExactType<BBTextField>() == null);
+    expect(labels, hasLength(1), reason: 'the label stays above the field once the hint is gone');
+    expect(find.text('Work'), findsOneWidget);
+  });
+
   testWidgets('long-pressing the card opens the same dialog', (tester) async {
     await _pump(tester);
     await tester.longPress(find.text('Stop A → Stop C'));

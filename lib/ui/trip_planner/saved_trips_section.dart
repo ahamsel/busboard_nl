@@ -240,11 +240,22 @@ class _NameFieldState extends State<_NameField> {
   }
 
   @override
-  Widget build(BuildContext context) => BBTextField(
-    controller: _controller,
-    hint: 'Trip name',
-    autofocus: true,
-    onChanged: widget.onChanged,
-    inputFormatters: [LengthLimitingTextInputFormatter(savedTripNameMax)],
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      // The hint vanishes once the user types, so the field keeps a label above it.
+      Padding(
+        padding: const EdgeInsets.only(bottom: BBSpace.xs),
+        child: Text('Trip name', style: context.bb.text.caption),
+      ),
+      BBTextField(
+        controller: _controller,
+        hint: 'Trip name',
+        autofocus: true,
+        onChanged: widget.onChanged,
+        inputFormatters: [LengthLimitingTextInputFormatter(savedTripNameMax)],
+      ),
+    ],
   );
 }

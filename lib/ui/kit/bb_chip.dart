@@ -6,7 +6,7 @@ import 'bb_pressable.dart';
 import 'tokens.dart';
 
 /// Floating map chip (your stop, route filter, "Back to bus"): a 44 pt pill on
-/// the floating surface. [selected] uses the brand fill. [leading] (e.g. a
+/// the floating surface. [selected] uses the brand fill, cross-fading over BBMotion.standard. [leading] (e.g. a
 /// [BBGlyph]) replaces [icon].
 ///
 /// The parent must bound the chip's width (e.g. Positioned with both left and
@@ -44,8 +44,10 @@ class BBChip extends StatelessWidget {
       child: BBPressable(
         onTap: onTap,
         semanticLabel: semanticLabel ?? label,
-        child: Container(
+        child: AnimatedContainer(
           key: surfaceKey,
+          duration: BBMotion.of(context, BBMotion.standard),
+          curve: BBMotion.curve,
           constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.s),
           // On the map a chip floats; on a sheet it is a field-surface pill (spec §2.1).

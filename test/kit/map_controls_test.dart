@@ -25,7 +25,7 @@ void main() {
   testWidgets('a selected chip uses the brand fill and says so', (tester) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(kitHost(Center(child: BBChip(label: 'Route 10', selected: true, onTap: () {}))));
-    final box = tester.widget<Container>(find.byKey(BBChip.surfaceKey)).decoration as BoxDecoration;
+    final box = tester.widget<AnimatedContainer>(find.byKey(BBChip.surfaceKey)).decoration as BoxDecoration;
     expect(box.color, BBColors.light.brand);
     expect(tester.getSemantics(find.byType(BBChip)), isSemantics(label: 'Route 10', isSelected: true));
     handle.dispose();

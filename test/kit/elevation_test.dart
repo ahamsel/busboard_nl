@@ -98,7 +98,7 @@ void main() {
 
   testWidgets('a BBChip floats on surfaceFloat on the map, and sits on surfaceField on a sheet', (tester) async {
     BoxDecoration chip() =>
-        tester.widget<Container>(find.byKey(BBChip.surfaceKey)).decoration! as BoxDecoration;
+        tester.widget<AnimatedContainer>(find.byKey(BBChip.surfaceKey)).decoration! as BoxDecoration;
     await tester.pumpWidget(kitHost(Center(child: BBChip(label: 'All routes', onTap: () {})), brightness: Brightness.dark));
     expect(chip().color, BBColors.dark.surfaceFloat);
     expect(chip().boxShadow, isNotEmpty);

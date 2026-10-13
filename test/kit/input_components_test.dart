@@ -119,7 +119,7 @@ void main() {
       // Every segment takes the tallest one's height, and still at least 44.
       final heights = {
         for (final l in ['Leave now', 'Leave by', 'Arrive by'])
-          tester.getSize(find.ancestor(of: find.text(l), matching: find.byType(AnimatedContainer))).height,
+          tester.getSize(find.ancestor(of: find.text(l), matching: find.byType(Expanded))).height,
       };
       expect(heights, hasLength(1));
       expect(heights.single, greaterThanOrEqualTo(44));
@@ -155,7 +155,7 @@ void main() {
     expect(tester.getSize(pressable).height, greaterThanOrEqualTo(44));
   });
 
-  testWidgets('selected BBSegmented segment uses brand fill, ink label and a 1.5 px brand-edge border in both modes', (tester) async {
+  testWidgets('the selection pill is a brand-soft fill with a 1.5 px brand-edge border, in both modes', (tester) async {
     for (final (brightness, tokens) in [(Brightness.light, BBTokens.light), (Brightness.dark, BBTokens.dark)]) {
       final colors = tokens.colors;
       await tester.pumpWidget(kitHost(
@@ -167,20 +167,56 @@ void main() {
         brightness: brightness,
       ));
       await tester.pumpAndSettle();
-      BoxDecoration segmentBox(String label) => tester
-          .widget<AnimatedContainer>(find.ancestor(of: find.text(label), matching: find.byType(AnimatedContainer)))
-          .decoration! as BoxDecoration;
-      final selected = segmentBox('Near me');
-      expect(selected.color, colors.brandSoft, reason: '${brightness.name} selected fill');
-      expect((selected.border! as Border).top.color, tokens.brandEdge, reason: '${brightness.name} selected border');
-      expect((selected.border! as Border).top.width, 1.5);
+      final pill = tester
+          .widget<DecoratedBox>(find.descendant(of: find.byKey(BBSegmented.pillKey), matching: find.byType(DecoratedBox)))
+          .decoration as BoxDecoration;
+      expect(pill.color, colors.brandSoft, reason: '${brightness.name} pill fill');
+      expect((pill.border! as Border).top.color, tokens.brandEdge, reason: '${brightness.name} pill edge');
+      expect((pill.border! as Border).top.width, 1.5);
       expect(tester.widget<Text>(find.text('Near me')).style!.color, colors.brandInk);
-
-      final unselected = segmentBox('Stop number');
-      expect(unselected.color, const Color(0x00000000));
-      expect((unselected.border! as Border).top.color, const Color(0x00000000));
       expect(tester.widget<Text>(find.text('Stop number')).style!.color, colors.muted);
     }
+  });
+
+  Widget slidingHost({bool reduce = false}) {
+    var selected = 'near';
+    final control = StatefulBuilder(
+      builder: (context, setState) => BBSegmented<String>(
+        segments: const [BBSegment(value: 'near', label: 'Near me'), BBSegment(value: 'id', label: 'Stop number')],
+        selected: selected,
+        onChanged: (v) => setState(() => selected = v),
+      ),
+    );
+    return kitHost(reduce
+        ? Builder(
+            builder: (context) =>
+                MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: control))
+        : control);
+  }
+
+  Rect pillRect(WidgetTester tester) =>
+      tester.getRect(find.descendant(of: find.byKey(BBSegmented.pillKey), matching: find.byType(DecoratedBox)));
+  Rect segmentRect(WidgetTester tester, String label) =>
+      tester.getRect(find.ancestor(of: find.text(label), matching: find.byType(Expanded)));
+
+  testWidgets('the selection pill slides to the tapped segment', (tester) async {
+    await tester.pumpWidget(slidingHost());
+    expect(pillRect(tester).center.dx, closeTo(segmentRect(tester, 'Near me').center.dx, 1));
+    await tester.tap(find.text('Stop number'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+    expect(pillRect(tester).center.dx,
+        inExclusiveRange(segmentRect(tester, 'Near me').center.dx, segmentRect(tester, 'Stop number').center.dx));
+    await tester.pumpAndSettle();
+    expect(pillRect(tester).center.dx, closeTo(segmentRect(tester, 'Stop number').center.dx, 1));
+  });
+
+  testWidgets('Reduce Motion: the pill moves at once', (tester) async {
+    await tester.pumpWidget(slidingHost(reduce: true));
+    await tester.tap(find.text('Stop number'));
+    await tester.pump();
+    expect(pillRect(tester).center.dx, closeTo(segmentRect(tester, 'Stop number').center.dx, 1));
+    expect(tester.hasRunningAnimations, isFalse);
   });
 
   testWidgets('BBSegmented scales a pressed segment', (tester) async {

@@ -283,4 +283,19 @@ void main() {
     expect(calls, 2);
     handle.dispose();
   });
+
+  testWidgets('a toast rises in on the emphasis spring (spec §3.2)', (tester) async {
+    await tester.pumpWidget(kitHost(Builder(
+      builder: (context) => BBButton(label: 'go', onPressed: () => BBToast.show(context, 'Saved')),
+    )));
+    await tester.tap(find.text('go'));
+    await tester.pump(); // inserts the toast
+    await tester.pump(); // its first tick
+    final slide = find.ancestor(of: find.byKey(BBToast.cardKey), matching: find.byType(SlideTransition));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.widget<SlideTransition>(slide).position.value.dy, greaterThan(0), reason: 'still rising at 200 ms');
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.widget<SlideTransition>(slide).position.value.dy, 0);
+    await tester.pump(const Duration(seconds: 4)); // the toast leaves
+  });
 }

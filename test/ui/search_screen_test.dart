@@ -281,6 +281,16 @@ void main() {
     expect(c.read(homeSheetProvider), const HomeSheetHome());
   });
 
+  testWidgets('save=1: the Name field keeps a visible label once the user types', (tester) async {
+    await _openSearch(tester, location: '/search?save=1');
+    await _findMun(tester);
+    await tester.enterText(find.byWidgetPredicate((w) => w is BBTextField && w.hint == 'Name'), 'My place');
+    await tester.pump();
+    // The hint is faded out in place, so look for a 'Name' that is not inside the field.
+    final labels = find.text('Name').evaluate().where((e) => e.findAncestorWidgetOfExactType<BBTextField>() == null);
+    expect(labels, hasLength(1), reason: 'the label stays above the field once the hint is gone');
+  });
+
   testWidgets('save=1: a blank name keeps the place name; Cancel saves nothing', (tester) async {
     await _openSearch(tester, location: '/search?save=1');
     await _findMun(tester);

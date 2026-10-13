@@ -279,4 +279,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the sheet is a surface scope: its chips are field pills, not floating map pills', (tester) async {
+    await _pump(tester, Builder(builder: (context) => BBButton(
+          label: 'open',
+          onPressed: () => showLeadTimeSheet(context, arrival: _row(20), initialLead: 5, explainPermission: false),
+        )));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final colors = BBTokens.light.colors;
+    final unselected = tester.widget<AnimatedContainer>(
+      find.ancestor(of: find.text('3 min'), matching: find.byKey(BBChip.surfaceKey)),
+    ).decoration! as BoxDecoration;
+    expect(unselected.color, colors.surfaceField);
+    expect(unselected.boxShadow, anyOf(isNull, isEmpty), reason: 'no map shadow inside a dialog');
+    final selected = tester.widget<AnimatedContainer>(
+      find.ancestor(of: find.text('5 min'), matching: find.byKey(BBChip.surfaceKey)),
+    ).decoration! as BoxDecoration;
+    expect(selected.color, colors.brand);
+    expect(selected.boxShadow, anyOf(isNull, isEmpty));
+  });
 }

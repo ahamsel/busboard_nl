@@ -385,6 +385,11 @@ class _SaveFieldsState extends State<_SaveFields> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
+        // The hint vanishes once the user types, so the field keeps a label above it.
+        Padding(
+          padding: const EdgeInsets.only(bottom: BBSpace.xs),
+          child: Text('Name', style: context.bb.text.caption),
+        ),
         BBTextField(
           controller: _controller,
           hint: 'Name',

@@ -54,6 +54,10 @@ class _ToastView extends StatefulWidget {
 
 class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMixin {
   late final AnimationController _anim = AnimationController(vsync: this);
+  late final CurvedAnimation _rise =
+      CurvedAnimation(parent: _anim, curve: BBMotion.emphasisCurve, reverseCurve: BBMotion.curve);
+  // Opacity must stay within 0..1, so it doesn't follow the spring's overshoot.
+  late final CurvedAnimation _fade = CurvedAnimation(parent: _anim, curve: BBMotion.curve);
   Timer? _timer;
   bool _started = false;
 
@@ -72,9 +76,8 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
     super.didChangeDependencies();
     // Honours reduce-motion: a zero duration makes forward()/reverse() complete
     // immediately. The duration must be set before the first forward().
-    final d = BBMotion.of(context, BBMotion.standard);
-    _anim.duration = d;
-    _anim.reverseDuration = d;
+    _anim.duration = BBMotion.of(context, BBMotion.emphasis);
+    _anim.reverseDuration = BBMotion.of(context, BBMotion.standard);
     if (!_started) {
       _started = true;
       _anim.forward();
@@ -84,6 +87,8 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
   @override
   void dispose() {
     _timer?.cancel();
+    _rise.dispose();
+    _fade.dispose();
     _anim.dispose();
     super.dispose();
   }
@@ -91,7 +96,6 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
-    final curved = CurvedAnimation(parent: _anim, curve: BBMotion.curve);
     return Positioned(
       left: BBSpace.l,
       right: BBSpace.l,
@@ -102,9 +106,9 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
           ) +
           BBSpace.s,
       child: FadeTransition(
-        opacity: curved,
+        opacity: _fade,
         child: SlideTransition(
-          position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(curved),
+          position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(_rise),
           child: Semantics(
             liveRegion: true,
             child: Container(
