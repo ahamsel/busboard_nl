@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
@@ -9,6 +12,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/planner_app.dart';
@@ -149,5 +153,60 @@ void main() {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/board/C', overrides: _overrides);
     await _background(tester);
     expect(await _saved(), 'C');
+  });
+
+  testWidgets('a restore that fails (no schedule) still forgets the Board at the next background', (tester) async {
+    final schedule = Completer<GtfsRepository>();
+    await pumpPlannerApp(tester,
+        net: TestNetwork(), now: _now, overrides: _overrides, asyncPrefs: {_key: 'C'}, repoFuture: schedule.future, settle: false);
+    schedule.completeError(StateError('no schedule'));
+    await tester.pumpAndSettle();
+    expect(find.text("Couldn't load the schedule"), findsOneWidget);
+    await _background(tester);
+    expect(await _saved(), isNull, reason: 'a stale Board would reopen on a later good start');
+  });
+
+  for (final link in ['A', 'C']) {
+    testWidgets('a Board link for stop $link landing after the restore wins: at half, and the Board is forgotten',
+        (tester) async {
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, overrides: _overrides, asyncPrefs: {_key: 'C'});
+      expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+      _expectAt(tester, (s) => s.fullFraction, 'full');
+
+      GoRouter.of(routerElement(tester)).go('/board/$link');
+      await tester.pumpAndSettle();
+      expect(_c(tester).read(homeSheetProvider), StopSheet(link));
+      expect(_c(tester).read(homeSheetProvider.notifier).stack, hasLength(2), reason: 'one card over home');
+      _expectAt(tester, (s) => s.halfFraction, 'half');
+      expect(await _saved(), isNull);
+    });
+  }
+
+  testWidgets('the restore waits for the launch check: a notification that launched the app opens alone',
+      (tester) async {
+    final checked = Completer<bool>();
+    await pumpPlannerApp(tester,
+        net: TestNetwork(), now: _now, overrides: _overrides, asyncPrefs: {_key: 'C'}, launchLinkChecked: checked);
+    expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>(), reason: 'no Board before the check is done');
+
+    // The plugin answers late with the notification's Board link.
+    GoRouter.of(routerElement(tester)).go('/board/A');
+    checked.complete(true);
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('A'));
+    expect(_c(tester).read(homeSheetProvider.notifier).stack, hasLength(2));
+    _expectAt(tester, (s) => s.halfFraction, 'half');
+    expect(await _saved(), isNull);
+  });
+
+  testWidgets('with no launch link, the restore goes ahead once the check is done', (tester) async {
+    final checked = Completer<bool>();
+    await pumpPlannerApp(tester,
+        net: TestNetwork(), now: _now, overrides: _overrides, asyncPrefs: {_key: 'C'}, launchLinkChecked: checked);
+    expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+    checked.complete(false);
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    _expectAt(tester, (s) => s.fullFraction, 'full');
   });
 }

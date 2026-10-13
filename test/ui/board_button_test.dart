@@ -92,6 +92,18 @@ void main() {
     expect(first, findsOneWidget, reason: 'the next bus is back in view');
   });
 
+  testWidgets('at full with the next bus in view, Open board tells the rider the Board is already open',
+      (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/board/C', overrides: _overrides);
+    await tester.tap(_openBoard);
+    await tester.pumpAndSettle();
+    _expectAtFull(tester);
+    tester.takeAnnouncements();
+    await tester.tap(_openBoard);
+    await tester.pumpAndSettle();
+    expect(tester.takeAnnouncements(), contains(isAccessibilityAnnouncement('Board open')));
+  });
+
   testWidgets('at 2x text on a 320 wide phone, Open board reads in full in both places, light and dark',
       (tester) async {
     for (final theme in [BBTheme.light(), BBTheme.dark()]) {

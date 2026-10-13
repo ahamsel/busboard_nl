@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -783,8 +785,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       if (!_sheet.isAttached) return;
       _detentPending = null;
       if (detent == BBSheetDetent.full && _sheetAtFull) {
-        // Already the Board: back up to the next buses, just under the pinned header.
-        _scrollSheetToTop();
+        // Already the Board: back up to the next buses, just under the pinned header; already there, say so.
+        if (!_scrollSheetToTop()) _sayBoardOpen();
       } else {
         unawaited(_sheet.animateToDetent(detent));
       }
@@ -797,12 +799,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _toDetentAfterBuild(BBSheetDetent.full);
   }
 
-  /// The pull-up sheet's list back to its top.
-  void _scrollSheetToTop() {
+  /// The pull-up sheet's list back to its top. False when it is there already.
+  bool _scrollSheetToTop() {
     final header = _headerKey.currentContext;
     final scrollable = header == null ? null : Scrollable.maybeOf(header);
-    if (scrollable == null || !scrollable.position.hasPixels || scrollable.position.pixels <= 0) return;
+    if (scrollable == null || !scrollable.position.hasPixels || scrollable.position.pixels <= 0) return false;
     unawaited(scrollable.position.animateTo(0, duration: BBMotion.of(context, BBMotion.sheet), curve: BBMotion.curve));
+    return true;
+  }
+
+  /// "Open board" on the Board itself, with nothing to move: a tick, and a word for screen readers.
+  void _sayBoardOpen() {
+    unawaited(HapticFeedback.selectionClick());
+    unawaited(SemanticsService.sendAnnouncement(View.of(context), 'Board open', Directionality.of(context)));
   }
 
   /// The pull-up sheet is at its full height.
@@ -827,10 +836,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return sheet is StopSheet && (_wide || _sheetAtFull) ? sheet.stopId : null;
   }
 
-  /// The app is going to the background: remember the Board if one is open, else forget any.
+  /// The app is going to the background: remember the Board if one is open, else forget any. With none open the
+  /// store is cleared whatever this screen thinks it holds: a restore that failed may have left an id there.
   void _rememberBoard() {
     final id = _boardShowing;
-    if (id == null) return _forgetBoard();
+    if (id == null) {
+      _savedBoard = null;
+      unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
+      return;
+    }
     if (id == _savedBoard) return;
     _savedBoard = id;
     unawaited(ref.read(boardOpenStoreProvider).save(id).catchError((Object e) => _log('Board not saved: $e')));
@@ -843,23 +857,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
   }
 
-  /// A cold start: the Board left open is opened again, at full height, once the schedule says its stop still
-  /// exists. A link or a notification opened at launch wins, and the Board is forgotten.
+  /// A cold start: the Board left open is opened again, at full height, once the app has checked for a notification
+  /// that launched it and the schedule says the stop still exists. A link or a notification opened at launch wins,
+  /// and the Board is forgotten.
   Future<void> _restoreBoard() async {
     final store = ref.read(boardOpenStoreProvider);
+    final launchChecked = ref.read(launchLinkCheckedProvider).future;
+    String? id;
     try {
-      final id = await store.read();
+      id = await store.read();
       if (id == null || !mounted) return;
+      final launchLink = await launchChecked;
       final repo = await ref.read(gtfsRepositoryProvider.future);
       if (!mounted) return;
       final stillThere = repo.stopsById[id] != null;
-      if (!stillThere || ref.read(homeSheetProvider) is! HomeSheetHome || ref.read(followProvider) != null) {
+      if (launchLink ||
+          !stillThere ||
+          ref.read(homeSheetProvider) is! HomeSheetHome ||
+          ref.read(followProvider) != null) {
         await store.clear();
         return;
       }
       ref.read(homeSheetProvider.notifier).openBoard(id);
       _savedBoard = id;
     } catch (e) {
+      // The id is still stored: the next background, or a collapse, must clear it.
+      if (mounted) _savedBoard ??= id;
       _log('Board not restored: $e');
     }
   }

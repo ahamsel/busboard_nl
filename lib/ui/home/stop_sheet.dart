@@ -110,6 +110,8 @@ class _StopHeader extends ConsumerWidget {
           // its departures). Kept at full too, where it brings the departures back into view: the header keeps one
           // height, so the sheet's detents never move under a drag.
           Padding(
+            // The header is padded l on the left but s on the right (for the icon buttons' own hit area): this evens
+            // the filled button's sides.
             padding: const EdgeInsets.only(right: BBSpace.l - BBSpace.s),
             child: BBButton(
               key: StopSheetContent.openBoardKey,
