@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/semantics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -286,6 +286,9 @@ class _BBSheetState extends State<BBSheet> {
           _moreBelow = more;
         });
       });
+      // A post-frame callback does not schedule a frame: without one, a change that is not a scroll
+      // (rows added or removed) would leave the fade stale until something else drew.
+      WidgetsBinding.instance.ensureVisualUpdate();
     }
     return false;
   }
@@ -381,22 +384,9 @@ class _BBSheetState extends State<BBSheet> {
                   onNotification: _onList,
                   // The list fades out over its last 24 px while more is below; never at peek, where the
                   // last row showing must stay crisp (spec §5).
-                  child: ShaderMask(
+                  child: _BottomFade(
                     key: BBSheet.fadeKey,
-                    blendMode: BlendMode.dstIn,
-                    shaderCallback: (rect) {
-                      final on = _moreBelow && _nearest != BBSheetDetent.peek;
-                      return LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          const Color(0xFF000000),
-                          const Color(0xFF000000),
-                          on ? const Color(0x00000000) : const Color(0xFF000000),
-                        ],
-                        stops: BBSheet.fadeStops(rect.height, on: on),
-                      ).createShader(rect);
-                    },
+                    on: _moreBelow && _nearest != BBSheetDetent.peek,
                     child: CustomScrollView(
                       controller: scrollController,
                       slivers: [
@@ -424,5 +414,57 @@ class _BBSheetState extends State<BBSheet> {
         ),
       ),
     );
+  }
+}
+
+/// Fades its child to clear over the last [BBSheet.fadeExtent] when [on]. Off, it paints the child
+/// as is, with no offscreen layer. It is one widget either way (swapping a `ShaderMask` in and out
+/// would reparent the list and break a drag in flight).
+class _BottomFade extends SingleChildRenderObjectWidget {
+  const _BottomFade({super.key, required this.on, required super.child});
+
+  final bool on;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderBottomFade(on);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderBottomFade renderObject) => renderObject.on = on;
+}
+
+class _RenderBottomFade extends RenderProxyBox {
+  _RenderBottomFade(this._on);
+
+  bool _on;
+  set on(bool value) {
+    if (value == _on) return;
+    _on = value;
+    markNeedsCompositingBitsUpdate();
+    markNeedsPaint();
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => _on && child != null;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (!_on || child == null) {
+      layer = null;
+      super.paint(context, offset);
+      return;
+    }
+    final shaderLayer = layer is ShaderMaskLayer ? layer! as ShaderMaskLayer : ShaderMaskLayer();
+    final rect = Offset.zero & size;
+    shaderLayer
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: const [Color(0xFF000000), Color(0xFF000000), Color(0x00000000)],
+        stops: BBSheet.fadeStops(size.height, on: true),
+      ).createShader(rect)
+      ..maskRect = offset & size
+      ..blendMode = BlendMode.dstIn;
+    layer = shaderLayer;
+    context.pushLayer(shaderLayer, super.paint, offset);
   }
 }

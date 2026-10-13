@@ -43,17 +43,32 @@ class _BBScrollPageState extends State<BBScrollPage> {
   bool _under = false;
   double _inset = 0;
 
+  /// The list is back at the top and the title is growing back to large: the bar passes through
+  /// every height on the way, and the inset must not follow it down (the content would dip).
+  bool _returning = false;
+
   bool _onScroll(ScrollNotification n) {
     if (n.depth != 0 || n.metrics.axis != Axis.vertical) return false;
     final under = n.metrics.pixels > 0.5;
-    if (under != _under) setState(() => _under = under);
+    if (under != _under) {
+      setState(() {
+        _under = under;
+        _returning = !under;
+      });
+    }
     return false;
   }
 
   /// The inset follows the bar at rest only: while condensed the bar is shorter, and moving the
-  /// list's padding then would make the content jump.
+  /// list's padding then would make the content jump. On the way back to large it may only grow,
+  /// and the first height that reaches the resting inset ends the return.
   void _onBarHeight(double height) {
-    if (!mounted || _under || (height - _inset).abs() <= 0.5) return;
+    if (!mounted || _under) return;
+    if (_returning) {
+      if (height < _inset - 0.5) return;
+      _returning = false;
+    }
+    if ((height - _inset).abs() <= 0.5) return;
     setState(() => _inset = height);
   }
 

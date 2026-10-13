@@ -55,6 +55,9 @@ Widget _sheet({bool fadeUnderHeader = false}) => kitHost(MediaQuery(
       ),
     ));
 
+/// Whether the bottom fade is painting (the fade widget is private; `on` is its one field).
+bool fadeOn(WidgetTester tester) => (tester.widget(find.byKey(BBSheet.fadeKey)) as dynamic).on as bool;
+
 BoxDecoration _header(WidgetTester tester) =>
     tester.widget<DecoratedBox>(find.byKey(BBSheet.headerKey)).decoration as BoxDecoration;
 
@@ -96,6 +99,38 @@ void main() {
       expect((_bar(tester).border! as Border).bottom.color, BBColors.light.line);
     });
 
+    testWidgets('returning to the top: the first row never dips while the title grows back', (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(kitHost(SizedBox(
+        height: 600,
+        child: BBScrollPage(
+          title: 'Service alerts',
+          large: true,
+          onBack: () {},
+          body: (context, topInset) => ListView(
+            controller: controller,
+            padding: EdgeInsets.only(top: topInset),
+            children: [for (var i = 0; i < 40; i++) SizedBox(height: 44, child: Text('row $i'))],
+          ),
+        ),
+      )));
+      await tester.pumpAndSettle();
+      final settled = tester.getTopLeft(find.text('row 0')).dy;
+      controller.jumpTo(200);
+      await tester.pumpAndSettle();
+      expect(_titleSize(tester), BBTokens.light.text.title.fontSize);
+
+      controller.jumpTo(0);
+      for (var i = 0; i < 24; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getTopLeft(find.text('row 0')).dy, greaterThanOrEqualTo(settled - 0.01),
+            reason: 'frame $i: row 0 must not rise above its resting place');
+      }
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.text('row 0')).dy, closeTo(settled, 0.01));
+    });
+
     testWidgets('content starts below the bar at 2× text', (tester) async {
       await tester.pumpWidget(_page(textScale: 2));
       await tester.pumpAndSettle();
@@ -133,6 +168,65 @@ void main() {
       await tester.drag(find.text('row 5'), const Offset(0, -200));
       await tester.pumpAndSettle();
       expect(fade(), 1);
+    });
+
+    testWidgets('the bottom fade follows content that changes without a scroll', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      Widget sheet(int rows) => kitHost(MediaQuery(
+            data: const MediaQueryData(size: Size(390, 800)),
+            child: SizedBox(
+              height: 800,
+              child: Stack(children: [
+                BBSheet(
+                  peekFraction: 0.15,
+                  initialFraction: 0.9,
+                  header: const SizedBox(height: 48, child: Text('MUN Centre')),
+                  slivers: [
+                    SliverList.builder(itemCount: rows, itemBuilder: (_, i) => SizedBox(height: 44, child: Text('row $i'))),
+                  ],
+                ),
+              ]),
+            ),
+          ));
+      await tester.pumpWidget(sheet(3));
+      await tester.pumpAndSettle();
+      expect(fadeOn(tester), isFalse, reason: 'nothing below: no fade');
+      await tester.pumpWidget(sheet(40));
+      await tester.pumpAndSettle();
+      expect(fadeOn(tester), isTrue, reason: 'rows were added: the fade turns on with no scroll');
+      await tester.pumpWidget(sheet(3));
+      await tester.pumpAndSettle();
+      expect(fadeOn(tester), isFalse, reason: 'rows were removed: the fade turns off');
+    });
+
+    testWidgets('the fade comes and goes without losing the scroll position', (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_sheet());
+      await tester.pumpAndSettle();
+      expect(fadeOn(tester), isTrue);
+      final state = tester.state<ScrollableState>(find.byType(Scrollable));
+
+      state.position.jumpTo(120);
+      await tester.pumpAndSettle();
+      expect(fadeOn(tester), isTrue);
+      expect(state.position.pixels, 120);
+
+      state.position.jumpTo(state.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(fadeOn(tester), isFalse, reason: 'at the end of the list: no fade, no offscreen layer');
+      expect(tester.state<ScrollableState>(find.byType(Scrollable)), same(state), reason: 'the list keeps its state');
+      final end = state.position.maxScrollExtent;
+      expect(state.position.pixels, end);
+
+      state.position.jumpTo(end - 100);
+      await tester.pumpAndSettle();
+      expect(fadeOn(tester), isTrue);
+      expect(tester.state<ScrollableState>(find.byType(Scrollable)), same(state));
+      expect(state.position.pixels, end - 100);
     });
 
     test('the bottom fade covers the last 24 px, and nothing when off', () {
