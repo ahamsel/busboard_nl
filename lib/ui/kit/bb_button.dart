@@ -14,6 +14,7 @@ class BBButton extends StatelessWidget {
     this.icon,
     this.expand = false,
     this.wrap = false,
+    this.semanticLabel,
   });
 
   final String label;
@@ -24,6 +25,9 @@ class BBButton extends StatelessWidget {
 
   /// Let a long label wrap onto several lines (large text) instead of ellipsising.
   final bool wrap;
+
+  /// What a screen reader says instead of [label], when the label alone is too short out of context.
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +56,7 @@ class BBButton extends StatelessWidget {
       opacity: onPressed == null ? 0.45 : 1,
       child: BBPressable(
         onTap: onPressed,
+        semanticLabel: semanticLabel,
         child: Container(
           constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),

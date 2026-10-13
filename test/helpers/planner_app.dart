@@ -8,6 +8,7 @@ import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
 import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/routing/router.dart';
+import 'package:busboard_nl/state/board_open_store.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/home/home_tip.dart';
@@ -22,6 +23,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import '../trip_planner/test_network.dart';
 import 'fake_alerts.dart';
@@ -101,6 +104,8 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 
 /// Pumps the app's route tree on [net] at [now] ([clock], when given, tells the time instead), starting at [initial].
 /// [use24h], when given, sets the device's clock format. [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
+/// [asyncPrefs] is what SharedPreferencesAsync holds at launch. [launchLinkChecked], when given, is the app's check for
+/// a notification that launched it (already done, with no link, otherwise).
 /// The one-time home tip is already seen unless [homeTipSeen] is false (it sits above "Where to?" and moves the peek).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
@@ -122,6 +127,8 @@ Future<void> pumpPlannerApp(
   AlertRunner? alertRunner,
   bool? use24h,
   bool homeTipSeen = true,
+  Map<String, Object> asyncPrefs = const {},
+  Completer<bool>? launchLinkChecked,
 }) async {
   // flutter_test's own 800x600 is a tablet to the home screen (its side panel starts at 700): a test that has not
   // picked a size gets a phone, so the sheet is a pull-up sheet. A test that sets its own size keeps it.
@@ -132,6 +139,8 @@ Future<void> pumpPlannerApp(
   }
   SharedPreferences.setMockInitialValues({});
   useInMemoryAlertStore();
+  // What SharedPreferencesAsync holds at launch (a cold start's saved state).
+  if (asyncPrefs.isNotEmpty) SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.withData(asyncPrefs);
   final previousGeo = GeolocatorPlatform.instance;
   GeolocatorPlatform.instance = geolocator ?? LocationOffGeolocator();
   addTearDown(() => GeolocatorPlatform.instance = previousGeo);
@@ -158,6 +167,7 @@ Future<void> pumpPlannerApp(
         mapViewBuilderProvider.overrideWithValue(mapView ?? StubMap().build),
         // No live buses unless a test overrides this: the real poll's timer would outlive the test.
         busTrackingStreamProvider.overrideWith((ref) => Stream.value(const <String, BusTrackingState>{})),
+        launchLinkCheckedProvider.overrideWithValue(launchLinkChecked ?? (Completer<bool>()..complete(false))),
         if (homeTipSeen) homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
         ...fakeAlertOverridesWith(alertRunner),
         ...overrides,

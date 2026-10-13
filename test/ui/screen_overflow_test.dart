@@ -31,6 +31,7 @@ import 'package:busboard_nl/ui/map/bus_card.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -576,4 +577,29 @@ void main() {
     expect(tester.takeException(), isNull);
     handle.dispose();
   });
+
+  // At 2x text the tip is taller than the peek: it still reads in full (no line is cut), nothing overflows, and once
+  // pulled up its Got it can be tapped.
+  for (final dark in [false, true]) {
+    testWidgets('the one-time tip at 360x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
+      const size = Size(360, 640);
+      tester.view.physicalSize = size * 3;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      await pumpHomeAtPeek(tester, size: size, textScale: 2.0, dark: dark, tip: true);
+      expect(tester.takeException(), isNull, reason: 'initial layout');
+      final tip = find.textContaining('Your Board is still here');
+      expect(tip, findsOneWidget);
+      expect(tester.renderObject<RenderParagraph>(tip).didExceedMaxLines, isFalse, reason: 'the tip is cut short');
+      // Pulled up by the tip itself (at peek it may hide everything under it).
+      await tester.drag(find.byKey(BBSheet.handleKey), const Offset(0, -700));
+      await tester.pumpAndSettle();
+      expect(find.text('Got it').hitTestable(), findsOneWidget, reason: 'Got it can be tapped');
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(tip, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
