@@ -26,28 +26,29 @@ class HarbourPalette {
   final String label;
   final String building;
 
+  /// Neutral greys (spec 2026-10-14 §2.4): water stays blue-grey and parks a muted green, the only coloured land.
   static const light = HarbourPalette(
     name: 'Harbour light',
-    land: '#EEF3EF',
-    water: '#C2DCE6',
-    park: '#D5EAD7',
+    land: '#EEF0F2',
+    water: '#C9D9E4',
+    park: '#DCE8DD',
     road: '#FFFFFF',
-    roadCasing: '#D4DED7',
-    label: '#738579',
-    building: '#E3EAE5',
+    roadCasing: '#D9DCE0',
+    label: '#737880',
+    building: '#E4E6E9',
   );
 
-  /// A greyer, cooler navy than the app's dark `bg`/`surface`, so sheets, cards and map
-  /// buttons stand clear of the map (visual refresh spec §2.4).
+  /// A neutral dark grey a step below the app's dark `surface` (#1F2024), so sheets, cards and map buttons stand
+  /// clear of the map; their shadow and top highlight do the rest.
   static const dark = HarbourPalette(
     name: 'Harbour dark',
-    land: '#151A26',
-    water: '#0D1A2E',
-    park: '#15231F',
-    road: '#232A3A',
-    roadCasing: '#2C3447',
-    label: '#7C869B',
-    building: '#1A2030',
+    land: '#17181B',
+    water: '#0F1820',
+    park: '#172019',
+    road: '#26282C',
+    roadCasing: '#2F3237',
+    label: '#80848C',
+    building: '#1E1F23',
   );
 }
 

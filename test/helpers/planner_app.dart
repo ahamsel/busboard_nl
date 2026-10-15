@@ -89,7 +89,7 @@ class NoFixGeolocator extends GeolocatorPlatform {
 /// A stand-in for MapLibre that keeps the config it was last built with, so a test can tap or long-press the "map".
 /// [color] is the map's land colour (the light Harbour land by default).
 class StubMap {
-  StubMap({this.color = const Color(0xFFEEF3EF)});
+  StubMap({this.color = const Color(0xFFEEF0F2)});
 
   final Color color;
   MapViewConfig? config;
