@@ -606,7 +606,7 @@ void main() {
 
       await pumpHomeAtPeek(tester, size: size, textScale: 2.0, dark: dark, tip: true);
       expect(tester.takeException(), isNull, reason: 'initial layout');
-      final tip = find.textContaining('Your Board is still here');
+      final tip = find.textContaining('Your Board is one tap away');
       expect(tip, findsOneWidget);
       expect(tester.renderObject<RenderParagraph>(tip).didExceedMaxLines, isFalse, reason: 'the tip is cut short');
       // Pulled up by the tip itself (at peek it may hide everything under it).

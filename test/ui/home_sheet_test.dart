@@ -157,9 +157,16 @@ void main() {
       expect(await SharedPreferencesAsync().getBool('home_tip_seen.v1'), isTrue);
     });
 
-    testWidgets('tells riders used to the Board tab where it went', (tester) async {
+    testWidgets('tells riders used to the Board tab where it went, without naming a button the bar lacks', (tester) async {
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: false);
-      expect(find.textContaining('Your Board is still here: tap Open board, or pull your stop up.'), findsOneWidget);
+      expect(find.textContaining('Your Board is one tap away: tap your stop below.'), findsOneWidget);
+      // The bar has no Open board button: the stop line opens the Board (final review I5, WCAG 3.3.2).
+      expect(homeTipText, isNot(contains('Open board')));
+      expect(
+        homeTipText,
+        'Everything\'s on the map now: tap "Where to?" to plan, a stop for its buses, the bell for alerts. '
+        'Your Board is one tap away: tap your stop below.',
+      );
     });
 
     testWidgets('a seen tip never shows', (tester) async {

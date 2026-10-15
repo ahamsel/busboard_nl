@@ -5,8 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../kit/kit.dart';
 
 const _key = 'home_tip_seen.v1';
+// Shared by the phone's bar (your stop's line, below the tip, opens the Board) and the tablet panel (your stop's row
+// and Open board, below it): so it names your stop, not a button only one of them has.
 const homeTipText = 'Everything\'s on the map now: tap "Where to?" to plan, a stop for its buses, the bell for '
-    'alerts. Your Board is still here: tap Open board, or pull your stop up.';
+    'alerts. Your Board is one tap away: tap your stop below.';
 
 class HomeTipSeenNotifier extends AsyncNotifier<bool> {
   HomeTipSeenNotifier();
