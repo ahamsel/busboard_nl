@@ -10,6 +10,7 @@ import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/routing/router.dart';
 import 'package:busboard_nl/state/board_open_store.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/state/seen_flags.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -110,7 +111,8 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 /// [use24h], when given, sets the device's clock format. [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
 /// [asyncPrefs] is what SharedPreferencesAsync holds at launch. [launchLinkChecked], when given, is the app's check for
 /// a notification that launched it (already done, with no link, otherwise). [reduceMotion] turns on the OS Reduce Motion setting.
-/// The one-time home tip is already seen unless [homeTipSeen] is false (it sits above "Where to?" and moves the peek).
+/// The one-time home tip is already seen unless [homeTipSeen] is false (it sits above "Where to?" and moves the peek),
+/// and so is the bar's one-time lift unless [barHintSeen] is false.
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -131,6 +133,7 @@ Future<void> pumpPlannerApp(
   AlertRunner? alertRunner,
   bool? use24h,
   bool homeTipSeen = true,
+  bool barHintSeen = true,
   Map<String, Object> asyncPrefs = const {},
   Completer<bool>? launchLinkChecked,
   bool reduceMotion = false,
@@ -174,6 +177,7 @@ Future<void> pumpPlannerApp(
         busTrackingStreamProvider.overrideWith((ref) => Stream.value(const <String, BusTrackingState>{})),
         launchLinkCheckedProvider.overrideWithValue(launchLinkChecked ?? (Completer<bool>()..complete(false))),
         if (homeTipSeen) homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
+        if (barHintSeen) barHintSeenProvider.overrideWith(() => SeenFlagNotifier.seen(barHintSeenKey)),
         ...fakeAlertOverridesWith(alertRunner),
         ...overrides,
       ],

@@ -27,6 +27,7 @@ import '../../state/journey_on_map_provider.dart';
 import '../../state/map_pick_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
+import '../../state/seen_flags.dart';
 import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../copy/legal_copy.dart';
@@ -118,6 +119,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   static const double _cardHalf = 0.5;
   static const double _maxActionsPeek = 0.8;
   static const _panPauseDistance = 18.0;
+
+  /// How far the bar's one-time hint lifts the sheet (spec 2026-10-14 §3.6).
+  static const _barHintLift = 24.0;
   static const _routeInterval = Duration(seconds: 1);
   static const _routeMoveMeters = 20.0;
 
@@ -214,6 +218,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The card [_onSheetOpened] last handled: the first build's check and the listener may both see one card open.
   HomeSheet _opened = const HomeSheetHome();
+
+  /// The bar's one-time lift has been tried this run (it plays at most once, and only if never seen before).
+  bool _barHintTried = false;
 
   void _log(String msg) {
     if (kDebugMode) debugPrint('[Map] $msg');
@@ -323,6 +330,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void _onReady(MapSurface surface, MapCamera camera) {
     _surface = surface;
     _camera = camera;
+    unawaited(_hintBar());
     _fitJourneyIfDue();
     final centre = _centrePending;
     _centrePending = null;
@@ -859,6 +867,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// The pull-up sheet is above its peek: it covers the bottom of the map, where "Back to bus" sits.
   bool _sheetAbovePeek = false;
 
+  /// The first time the bar shows with the map ready, the sheet lifts [_barHintLift] and settles back, once ever
+  /// (spec 2026-10-14 §3.6). Not under Reduce Motion (nothing is stored then, so it can play once motion is back), on
+  /// the tablet panel, while following or choosing on the map, or with a card open.
+  Future<void> _hintBar() async {
+    if (_barHintTried || !mounted || _camera == null || BBMotion.reduced(context)) return;
+    if (_wide || _follow != null || ref.read(mapPickProvider) != null) return;
+    if (ref.read(homeSheetProvider) is! HomeSheetHome) return;
+    final sheet = _sheet;
+    if (!sheet.isAttached) return;
+    _barHintTried = true;
+    final bool seen;
+    try {
+      seen = await ref.read(barHintSeenProvider.future);
+    } catch (e) {
+      _log('Bar hint flag not read: $e');
+      return;
+    }
+    if (seen || !mounted) return;
+    // Something took the bar's place while the flag was read (a card, a follow, a map pick): try again once it is back.
+    if (!identical(sheet, _sheet) || !sheet.isAttached || _follow != null || ref.read(mapPickProvider) != null) {
+      _barHintTried = false;
+      return;
+    }
+    unawaited(ref.read(barHintSeenProvider.notifier).markSeen().catchError((Object e) => _log('Bar hint not saved: $e')));
+    await sheet.nudge(_barHintLift);
+  }
+
   // ─── Reopen the way the rider left it ─────────────────────
 
   /// The stop id saved as the open Board ([BoardOpenStore]), as far as this screen knows.
@@ -1086,6 +1121,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // Closed, back, or another card: the Board left open is no longer the one showing.
       _forgetBoard();
       _onSheetOpened(next);
+      // Back at the bar (a card opened at launch has closed): the one-time lift, if it has not played yet.
+      if (next is HomeSheetHome) WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_hintBar()));
     });
     ref.listen<int>(homeSheetReopenedProvider, (_, _) => _onSheetOpened(ref.read(homeSheetProvider), again: true));
     ref.listen<BoardRequest?>(boardRequestProvider, (_, next) => _onBoardRequest(next));
@@ -1162,10 +1199,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // BBSheet pads top + s above and bottomInset + s below, and its fractions
       // apply to what is left: this is where the peeking card's top really is.
       final sheetArea = math.max(1.0, constraints.maxHeight - (media.padding.top + BBSpace.s) - (navInset + BBSpace.s));
-      // The peek shows the whole header: handle (8 + 4 + 8) and a little air
+      // The peek shows the whole header: the handle (the bar's is a 24 pt button) and a little air
       // under it. Until the header has been measured, an estimate.
       final measured = _headerHeight;
-      final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
+      final handle = homeShowing && !followShowing ? BBSheet.handleButtonExtent : BBSheet.handleExtent;
+      final peekPx =
+          measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + handle + BBSpace.s;
       // Too tall to peek in full: the follow card moves its actions up, and the
       // peek grows (if it must) to keep them in it.
       // The home sheet's bar is slim (spec 2026-10-14 §3.1); the cap only matters while the one-time tip sits in it.
@@ -1411,6 +1450,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                   bottomInset: navInset,
                   semanticLabel: 'Map sheet',
                   fadeUnderHeader: homeShowing && !followShowing,
+                  // The bar's handle is a button: "Show more" / "Show less" (spec 2026-10-14 §3.6).
+                  handleButton: homeShowing && !followShowing,
                   // A card swipes down past its peek back to what was under it (spec §3.2); the home sheet, and the
                   // follow card over it, stay.
                   dismissible: !homeShowing,

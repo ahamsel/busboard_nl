@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:busboard_nl/ui/kit/bb_sheet.dart';
 import 'package:busboard_nl/ui/kit/tokens.dart';
@@ -17,6 +18,7 @@ Widget _host(
   bool dismissible = false,
   VoidCallback? onDismiss,
   Brightness brightness = Brightness.light,
+  bool handleButton = false,
 }) {
   return kitHost(
     MediaQuery(
@@ -32,6 +34,7 @@ Widget _host(
               bottomInset: bottomInset,
               dismissible: dismissible,
               onDismiss: onDismiss,
+              handleButton: handleButton,
               slivers: [
                 SliverList.builder(itemCount: 30, itemBuilder: (_, i) => SizedBox(height: 44, child: Text('row $i'))),
               ],
@@ -171,6 +174,57 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('a handle button reads Show more at peek and Show less above it; each tap moves one stop', (tester) async {
+    final handle = tester.ensureSemantics();
+    final controller = BBSheetController();
+    await tester.pumpWidget(_host(controller, handleButton: true));
+    expect(
+      tester.getSemantics(find.byKey(BBSheet.handleKey)),
+      isSemantics(label: 'Show more', isButton: true, hasTapAction: true),
+    );
+    expect(tester.getSize(find.byKey(BBSheet.handleKey)).height, BBSheet.handleButtonExtent);
+    await tester.tap(find.byKey(BBSheet.handleKey));
+    await tester.pumpAndSettle();
+    expect(controller.size, closeTo(0.5, 0.01), reason: 'peek to half');
+    expect(tester.getSemantics(find.byKey(BBSheet.handleKey)), isSemantics(label: 'Show less', isButton: true));
+    tester.semantics.tap(find.semantics.byLabel('Show less'));
+    await tester.pumpAndSettle();
+    expect(controller.size, closeTo(0.15, 0.01), reason: 'half to peek, by a screen reader');
+    unawaited(controller.animateToDetent(BBSheetDetent.full));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(BBSheet.handleKey));
+    await tester.pumpAndSettle();
+    expect(controller.size, closeTo(0.5, 0.01), reason: 'full to half');
+    handle.dispose();
+  });
+
+  testWidgets('a handle button keeps Expand and Collapse for screen readers, and still drags', (tester) async {
+    final handle = tester.ensureSemantics();
+    final controller = BBSheetController();
+    await tester.pumpWidget(_host(controller, handleButton: true));
+    tester.semantics.customAction(find.semantics.byLabel('Show more'), const CustomSemanticsAction(label: 'Expand'));
+    await tester.pumpAndSettle();
+    expect(controller.size, closeTo(0.9, 0.01), reason: 'Expand reaches full');
+    tester.semantics.customAction(find.semantics.byLabel('Show less'), const CustomSemanticsAction(label: 'Collapse'));
+    await tester.pumpAndSettle();
+    expect(controller.size, closeTo(0.15, 0.01));
+    await tester.drag(find.byKey(BBSheet.handleKey), const Offset(0, -260));
+    await tester.pumpAndSettle();
+    expect(controller.size, closeTo(0.5, 0.01), reason: 'a drag on the handle still moves the sheet');
+    handle.dispose();
+  });
+
+  testWidgets('nudge does nothing under reduce motion', (tester) async {
+    final controller = BBSheetController();
+    await tester.pumpWidget(_host(controller, reduceMotion: true));
+    final rest = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+    unawaited(controller.nudge(24));
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, rest);
+    }
+  });
+
   testWidgets('non-dismissible sheet stays at peek when swiped down', (tester) async {
     final controller = BBSheetController();
     await tester.pumpWidget(_host(controller));
@@ -283,6 +337,24 @@ void main() {
       await settle(tester);
       expect(controller.size, closeTo(0.15, 0.01));
       expect(ticks, 2);
+    });
+
+    testWidgets('nudge lifts the sheet 24 pt and settles it back where it was, with no tick', (tester) async {
+      mockHaptics(tester);
+      final controller = BBSheetController();
+      await tester.pumpWidget(_host(controller));
+      await settle(tester);
+      final rest = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+      unawaited(controller.nudge(24));
+      var highest = rest;
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        highest = math.min(highest, tester.getRect(find.byKey(BBSheet.cardKey)).top);
+      }
+      await settle(tester);
+      expect(highest, closeTo(rest - 24, 1), reason: 'it rises about 24 pt');
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, closeTo(rest, 0.5), reason: 'and settles back');
+      expect(ticks, 0, reason: 'a hint, not a settle on a new detent');
     });
 
     testWidgets('programmatic animation to full ticks once, not when crossing half', (tester) async {

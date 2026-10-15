@@ -224,6 +224,30 @@ void main() {
     }
   });
 
+  testWidgets('the handle is a button: Show more at the bar, Show less pulled up, one stop per tap (spec 2026-10-14 §3.6)',
+      (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pumpHome(tester, arrivals: [_arrival(4)]);
+    expect(
+      tester.getSemantics(find.byKey(BBSheet.handleKey)),
+      isSemantics(label: 'Show more', isButton: true, hasTapAction: true),
+    );
+    final bar = tester.getRect(find.byKey(BBSheet.cardKey)).height;
+    await tester.tap(find.byKey(BBSheet.handleKey));
+    await tester.pumpAndSettle();
+    final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * (844 - 2 * BBSpace.s), 1));
+    expect(tester.getSemantics(find.byKey(BBSheet.handleKey)), isSemantics(label: 'Show less', isButton: true));
+    tester.semantics.tap(find.semantics.byLabel('Show less'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(bar, 1), reason: 'back down to the bar');
+    // A card's handle stays the adjustable "Map sheet" control.
+    _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
+    await tester.pumpAndSettle();
+    expect(tester.getSemantics(find.byKey(BBSheet.handleKey)), isSemantics(label: 'Map sheet', isButton: false));
+    handle.dispose();
+  });
+
   testWidgets('an alert that is not on your stop or its routes stays out of the header', (tester) async {
     final elsewhere = ServiceAlert(
       sourceIds: const {'b'},

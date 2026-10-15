@@ -19,6 +19,7 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/state/seen_flags.dart';
 import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -198,6 +199,7 @@ Future<void> _pump(
   GtfsRepository Function()? repo,
   Stream<Map<String, BusTrackingState>>? busStream,
   bool disableAnimations = false,
+  bool barHintSeen = true,
   List<Override> overrides = const [],
 }) async {
   // Not flutter_test's 800x600, which is a tablet to the home screen: the tests here are of the phone layout.
@@ -222,6 +224,8 @@ Future<void> _pump(
       gtfsRepositoryProvider.overrideWith((ref) async => (repo ?? _repo)()),
       stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
       busTrackingStreamProvider.overrideWith((ref) => busStream ?? Stream.value(buses)),
+      // The bar's one-time lift moves the sheet: off unless a test asks for it.
+      if (barHintSeen) barHintSeenProvider.overrideWith(() => SeenFlagNotifier.seen(barHintSeenKey)),
       ...fakeAlertOverrides,
       ...overrides,
     ],
@@ -238,6 +242,14 @@ Future<void> _pump(
   for (var i = 0; i < 5; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
+}
+
+/// The bar hint's flag, held until [gate] completes, so a test can watch the lift from its start.
+class _HeldFlag extends SeenFlagNotifier {
+  _HeldFlag(this.gate) : super(barHintSeenKey);
+  final Completer<bool> gate;
+  @override
+  Future<bool> build() => gate.future;
 }
 
 void main() {
@@ -777,6 +789,91 @@ void main() {
   testWidgets('the map is built with rotation off and a Harbour style asset', (tester) async {
     await _pump(tester);
     expect(_config!.styleString, 'assets/map/harbour_light.json');
+  });
+
+  group('the bar hint (spec 2026-10-14 §3.6)', () {
+    /// Pumps home with the hint not yet seen, lets the flag answer, and records the sheet's top every frame for 1.3 s.
+    Future<List<double>> watchHint(WidgetTester tester, {bool reduceMotion = false}) async {
+      final gate = Completer<bool>();
+      await _pump(tester, prefs: {'selectedStopId': '1150'}, barHintSeen: false, disableAnimations: reduceMotion,
+          overrides: [
+            barHintSeenProvider.overrideWith(() => _HeldFlag(gate)),
+            homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
+          ]);
+      final tops = [tester.getRect(find.byKey(BBSheet.cardKey)).top];
+      gate.complete(false);
+      for (var i = 0; i < 80; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        tops.add(tester.getRect(find.byKey(BBSheet.cardKey)).top);
+      }
+      return tops;
+    }
+
+    testWidgets('the first time the bar shows, the sheet lifts about 24 pt and settles back, and that is stored',
+        (tester) async {
+      final tops = await watchHint(tester);
+      expect(tops.reduce(math.min), lessThanOrEqualTo(tops.first - 20), reason: 'it lifts');
+      expect(tops.last, closeTo(tops.first, 0.5), reason: 'and settles back at the bar');
+      expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isTrue);
+    });
+
+    testWidgets('it plays once: back at the bar after a card, the sheet stays put', (tester) async {
+      await watchHint(tester);
+      final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      c.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      c.read(homeSheetProvider.notifier).home();
+      // A new home sheet measures its bar on its first frames.
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final rest = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, closeTo(rest, 0.5));
+      }
+    });
+
+    testWidgets('a card that opens while the flag is read is never lifted; the hint waits for the bar', (tester) async {
+      final gate = Completer<bool>();
+      await _pump(tester, prefs: {'selectedStopId': '1150'}, barHintSeen: false, overrides: [
+        barHintSeenProvider.overrideWith(() => _HeldFlag(gate)),
+        homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
+      ]);
+      final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      // A notification's stop card arrives first.
+      c.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final half = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+      gate.complete(false);
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, half, reason: 'the card is not nudged');
+      }
+      expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isNull, reason: 'not shown yet');
+      // Back at the bar, it plays.
+      c.read(homeSheetProvider.notifier).home();
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final tops = <double>[];
+      for (var i = 0; i < 80; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        tops.add(tester.getRect(find.byKey(BBSheet.cardKey)).top);
+      }
+      expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isTrue);
+      expect(tops.last, closeTo(tops.reduce(math.max), 0.5), reason: 'it settles back at the bar');
+    });
+
+    testWidgets('never under Reduce Motion, and nothing is stored', (tester) async {
+      final tops = await watchHint(tester, reduceMotion: true);
+      expect(tops.reduce(math.max) - tops.reduce(math.min), lessThan(0.5));
+      expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isNull);
+    });
   });
 
   testWidgets('no overflow at 320 pt and text x2.0', (tester) async {

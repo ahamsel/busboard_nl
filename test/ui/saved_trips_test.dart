@@ -56,7 +56,7 @@ Future<void> _pump(
     await saved.add(t);
   }
   await tester.pumpAndSettle();
-  await tester.drag(find.bySemanticsLabel('Map sheet'), const Offset(0, -600));
+  await tester.drag(find.byKey(BBSheet.handleKey), const Offset(0, -600));
   await tester.pumpAndSettle();
 }
 

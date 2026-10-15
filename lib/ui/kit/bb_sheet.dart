@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -30,13 +31,33 @@ class BBSheetController extends DraggableScrollableController {
   /// Same caveat as [animateToDetent]: don't await it from tests or from code
   /// that can unmount the sheet; use `unawaited(...)`.
   Future<void> collapse() => animateToDetent(BBSheetDetent.peek);
+
+  /// "There is more above": lifts the sheet [lift] logical pixels and settles it back where it was, with no haptic
+  /// tick (spec 2026-10-14 §3.6). Does nothing under reduce motion, or when detached.
+  ///
+  /// Same caveat as [animateToDetent]: don't await it from tests; use `unawaited(...)`.
+  Future<void> nudge(double lift) async {
+    final sheet = _sheet;
+    if (sheet == null || !isAttached || sheet._reduced) return;
+    final rest = size;
+    final up = math.min(rest + pixelsToSize(lift), sheet.widget.fullFraction);
+    sheet._quiet = true;
+    try {
+      await animateTo(up, duration: BBMotion.standard, curve: BBMotion.curve);
+      if (!isAttached) return;
+      await animateTo(rest, duration: BBMotion.emphasis, curve: BBMotion.curve);
+    } finally {
+      sheet._quiet = false;
+    }
+  }
 }
 
 /// Floating card sheet with three detents (peek / half / full): inset by
 /// [sideMargin], rounded on every corner, lifted above [bottomInset] (the nav
 /// bar on the map), with an optional [header] pinned above the scrolling
 /// [slivers]. One haptic tick when it settles on a detent. The grab handle is
-/// an adjustable control for screen readers (Expand / Collapse / Close).
+/// an adjustable control for screen readers (Expand / Collapse / Close), or,
+/// with [handleButton], a button that moves one stop ("Show more" / "Show less").
 /// Place it in a Stack over the content.
 class BBSheet extends StatefulWidget {
   const BBSheet({
@@ -53,6 +74,7 @@ class BBSheet extends StatefulWidget {
     this.onDismiss,
     this.semanticLabel = 'Sheet',
     this.fadeUnderHeader = false,
+    this.handleButton = false,
   })  : assert(
           peekFraction > 0 && peekFraction < halfFraction && halfFraction < fullFraction && fullFraction <= 1,
           'BBSheet fractions must satisfy 0 < peek < half < full <= 1',
@@ -79,7 +101,15 @@ class BBSheet extends StatefulWidget {
   /// Home: the top of the list fades under the pinned header once it scrolls (spec §5).
   final bool fadeUnderHeader;
 
+  /// Home (spec 2026-10-14 §3.6): the grab handle is a button, "Show more" at peek and "Show less" above it, and a
+  /// tap moves one stop: peek to half, half to peek, full to half. It is [handleButtonExtent] tall, a 24 pt target.
+  final bool handleButton;
+
   static const double sideMargin = 8;
+
+  /// The grab handle's height above the header: 8 + 4 + 8, or [handleButtonExtent] when it is a button.
+  static const double handleExtent = 20;
+  static const double handleButtonExtent = 24;
   static const cardKey = ValueKey('bb-sheet-card');
   static const handleKey = ValueKey('bb-sheet-handle');
   static const headerKey = ValueKey('bb-sheet-header');
@@ -115,6 +145,10 @@ class _BBSheetState extends State<BBSheet> {
   bool _scrolled = false;
   bool _moreBelow = false;
   Duration _snapDuration = BBMotion.emphasis;
+  bool _reduced = false;
+
+  /// While [BBSheetController.nudge] runs: leaving and coming back to a detent is not a new settle (no tick).
+  bool _quiet = false;
 
   @override
   void initState() {
@@ -147,6 +181,7 @@ class _BBSheetState extends State<BBSheet> {
     // The sheet API rejects Duration.zero, so "reduce motion" uses 1 ms.
     final d = BBMotion.of(context, BBMotion.emphasis);
     _snapDuration = d == Duration.zero ? const Duration(milliseconds: 1) : d;
+    _reduced = BBMotion.reduced(context);
   }
 
   double _fractionOf(BBSheetDetent detent) => switch (detent) {
@@ -191,7 +226,7 @@ class _BBSheetState extends State<BBSheet> {
     }
     final detent = _detentNear(n.extent);
     if (detent == null) {
-      _lastDetent = null;
+      if (!_quiet) _lastDetent = null;
       return false;
     }
     _settleTimer = Timer(_settleDelay, () {
@@ -228,6 +263,12 @@ class _BBSheetState extends State<BBSheet> {
   Widget _handle(BuildContext context) {
     final bb = context.bb;
     final at = _nearest;
+    final bar = Container(
+      width: 34,
+      height: 4,
+      decoration: BoxDecoration(color: bb.colors.line, borderRadius: BorderRadius.circular(2)),
+    );
+    if (widget.handleButton) return _handleButton(at, bar);
     final up = switch (at) {
       BBSheetDetent.peek => BBSheetDetent.half,
       _ => BBSheetDetent.full,
@@ -255,12 +296,37 @@ class _BBSheetState extends State<BBSheet> {
         if (widget.dismissible) const CustomSemanticsAction(label: 'Close'): _dismiss,
       },
       child: Center(
-        child: Container(
-          margin: const EdgeInsets.only(top: BBSpace.s, bottom: BBSpace.s),
-          width: 34,
-          height: 4,
-          decoration: BoxDecoration(color: bb.colors.line, borderRadius: BorderRadius.circular(2)),
-        ),
+        child: Padding(padding: const EdgeInsets.symmetric(vertical: BBSpace.s), child: bar),
+      ),
+    );
+  }
+
+  /// The home sheet's handle (spec 2026-10-14 §3.6): a full-width button, one stop per tap. Expand and Collapse stay
+  /// as screen-reader actions, so full height is reachable without a drag.
+  Widget _handleButton(BBSheetDetent at, Widget bar) {
+    final atPeek = at == BBSheetDetent.peek;
+    final target = switch (at) {
+      BBSheetDetent.peek => BBSheetDetent.half,
+      BBSheetDetent.half => BBSheetDetent.peek,
+      BBSheetDetent.full => BBSheetDetent.half,
+    };
+    void go() => _go(target);
+    return Semantics(
+      key: BBSheet.handleKey,
+      container: true,
+      button: true,
+      label: atPeek ? 'Show more' : 'Show less',
+      onTap: go,
+      customSemanticsActions: {
+        if (at != BBSheetDetent.full) const CustomSemanticsAction(label: 'Expand'): () => _go(BBSheetDetent.full),
+        if (at != BBSheetDetent.peek) const CustomSemanticsAction(label: 'Collapse'): () => _go(BBSheetDetent.peek),
+      },
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: go,
+        child: SizedBox(height: BBSheet.handleButtonExtent, child: Center(child: bar)),
       ),
     );
   }
