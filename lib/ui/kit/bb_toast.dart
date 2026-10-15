@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 
 import 'tokens.dart';
@@ -12,8 +13,18 @@ abstract final class BBToast {
 
   static OverlayEntry? _current;
 
-  static void show(BuildContext context, String message, {Duration duration = const Duration(seconds: 3)}) {
+  /// [announce] also tells screen readers now, for a message that answers a tap (a live region alone is not read
+  /// out by VoiceOver).
+  static void show(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(seconds: 3),
+    bool announce = false,
+  }) {
     _dismissCurrent();
+    if (announce) {
+      unawaited(SemanticsService.sendAnnouncement(View.of(context), message, Directionality.of(context)));
+    }
     final overlay = Overlay.of(context, rootOverlay: true);
     late final OverlayEntry entry;
     entry = OverlayEntry(

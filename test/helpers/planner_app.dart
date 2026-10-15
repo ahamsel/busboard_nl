@@ -112,7 +112,8 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 /// [asyncPrefs] is what SharedPreferencesAsync holds at launch. [launchLinkChecked], when given, is the app's check for
 /// a notification that launched it (already done, with no link, otherwise). [reduceMotion] turns on the OS Reduce Motion setting.
 /// The one-time home tip is already seen unless [homeTipSeen] is false (it sits above "Where to?" and moves the peek),
-/// and so is the bar's one-time lift unless [barHintSeen] is false.
+/// and so are the bar's one-time lift unless [barHintSeen] is false and the stop sheet's follow tip unless
+/// [followTipSeen] is false.
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -134,6 +135,7 @@ Future<void> pumpPlannerApp(
   bool? use24h,
   bool homeTipSeen = true,
   bool barHintSeen = true,
+  bool followTipSeen = true,
   Map<String, Object> asyncPrefs = const {},
   Completer<bool>? launchLinkChecked,
   bool reduceMotion = false,
@@ -178,6 +180,7 @@ Future<void> pumpPlannerApp(
         launchLinkCheckedProvider.overrideWithValue(launchLinkChecked ?? (Completer<bool>()..complete(false))),
         if (homeTipSeen) homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
         if (barHintSeen) barHintSeenProvider.overrideWith(() => SeenFlagNotifier.seen(barHintSeenKey)),
+        if (followTipSeen) followTipSeenProvider.overrideWith(() => SeenFlagNotifier.seen(followTipSeenKey)),
         ...fakeAlertOverridesWith(alertRunner),
         ...overrides,
       ],

@@ -4,6 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// The SharedPreferences key of the bar's one-time lift (spec 2026-10-14 §3.6).
 const barHintSeenKey = 'home_bar_hint_seen.v1';
 
+/// The SharedPreferences key of the stop sheet's one-time follow tip (spec 2026-10-14 §4.3).
+const followTipSeenKey = 'follow_tip_seen.v1';
+
 /// A one-time hint that, once seen, never shows again: a flag kept on the phone under [key].
 class SeenFlagNotifier extends AsyncNotifier<bool> {
   SeenFlagNotifier(this.key);
@@ -37,3 +40,6 @@ class _AlreadySeen extends SeenFlagNotifier {
 
 /// Whether the bar's one-time lift has played.
 final barHintSeenProvider = AsyncNotifierProvider<SeenFlagNotifier, bool>(() => SeenFlagNotifier(barHintSeenKey));
+
+/// Whether the stop sheet's one-time follow tip has been closed, or a bus followed.
+final followTipSeenProvider = AsyncNotifierProvider<SeenFlagNotifier, bool>(() => SeenFlagNotifier(followTipSeenKey));

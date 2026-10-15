@@ -13,13 +13,16 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/state/seen_flags.dart';
 import 'package:busboard_nl/ui/arrival_alerts/alert_strip.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
+import 'package:busboard_nl/ui/home/follow_tip.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -27,6 +30,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gtfs_realtime_bindings/gtfs_realtime_bindings.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/planner_app.dart';
 import '../kit/kit_test_helpers.dart';
@@ -176,6 +180,7 @@ Future<void> _pump(
   List<Override> overrides = const [],
   AlertRunner? alertRunner,
   bool use24h = true,
+  bool followTipSeen = true,
 }) async {
   await pumpPlannerApp(
     tester,
@@ -189,6 +194,7 @@ Future<void> _pump(
     settle: settle,
     alertRunner: alertRunner,
     use24h: use24h,
+    followTipSeen: followTipSeen,
     overrides: [
       metrobusMobileApiProvider.overrideWithValue(MetrobusMobileApi(client: _emptyKiosk)),
       ...overrides,
@@ -204,6 +210,20 @@ Future<void> _pullUp(WidgetTester tester) async {
 }
 
 ProviderContainer _c(WidgetTester t) => ProviderScope.containerOf(t.element(find.byType(HomeScreen)));
+
+/// Records what the app announces to screen readers.
+List<String> _announcements(WidgetTester tester) {
+  final said = <String>[];
+  tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, (m) async {
+    final event = m as Map<Object?, Object?>;
+    if (event['type'] == 'announce') said.add((event['data']! as Map<Object?, Object?>)['message']! as String);
+    return null;
+  });
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null),
+  );
+  return said;
+}
 
 Future<void> _unmount(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox());
@@ -332,15 +352,72 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('a scheduled-only row is not tappable', (tester) async {
+  testWidgets('a scheduled row explains itself: a toast, announced, and the row stays (spec 2026-10-14 §4.2)',
+      (tester) async {
+    final said = _announcements(tester);
     await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
     expect(find.text('Schedule Terminal'), findsOneWidget);
+    final before = tester.getRect(find.text('Schedule Terminal'));
     await tester.tap(find.text('Schedule Terminal'));
     await tester.pumpAndSettle();
-    expect(find.text('Schedule Terminal'), findsOneWidget);
+    expect(find.text(ArrivalRowTile.notLiveYet), findsOneWidget);
+    expect(said, [ArrivalRowTile.notLiveYet]);
+    expect(tester.getRect(find.text('Schedule Terminal')), before, reason: 'the row stays where it is');
     expect(_c(tester).read(homeSheetProvider), const StopSheet('1150'));
     expect(_c(tester).read(followProvider), isNull);
     await _unmount(tester);
+  });
+
+  testWidgets("a live row's Follow pill follows its bus (spec 2026-10-14 §4.1)", (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
+    final pill = find.byKey(ArrivalRowTile.followKey);
+    expect(pill, findsOneWidget, reason: 'only the live row has one');
+    expect(find.textContaining('Follow 2573'), findsOneWidget);
+    expect(
+      tester.getSemantics(pill),
+      isSemantics(label: 'Follow bus 2573 on the map', isButton: true, hasTapAction: true),
+    );
+    await tester.tap(pill);
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(followProvider), const FollowTarget('2573'));
+    expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+    handle.dispose();
+    await _unmount(tester);
+  });
+
+  group('the one-time follow tip (spec 2026-10-14 §4.3)', () {
+    testWidgets('shows under live departures; closing it stores that', (tester) async {
+      await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573, followTipSeen: false);
+      expect(find.text(FollowTip.text), findsOneWidget);
+      await tester.ensureVisible(find.byKey(FollowTip.closeKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(FollowTip.closeKey));
+      await tester.pumpAndSettle();
+      expect(find.text(FollowTip.text), findsNothing);
+      expect(await SharedPreferencesAsync().getBool(followTipSeenKey), isTrue);
+      await _unmount(tester);
+    });
+
+    testWidgets('a followed bus puts it away for good', (tester) async {
+      await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573, followTipSeen: false);
+      expect(find.text(FollowTip.text), findsOneWidget);
+      await tester.tap(find.text('Live Terminal'));
+      await tester.pumpAndSettle();
+      expect(await SharedPreferencesAsync().getBool(followTipSeenKey), isTrue);
+      _c(tester).read(followProvider.notifier).stop();
+      _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      await tester.pumpAndSettle();
+      expect(find.text(FollowTip.text), findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('not without a live departure', (tester) async {
+      await _pump(tester, repo: _repoWithDepartures(), followTipSeen: false);
+      expect(find.text('Schedule Terminal'), findsOneWidget);
+      expect(find.text(FollowTip.text), findsNothing);
+      await _unmount(tester);
+    });
   });
 
   ArrivalRow row({required String route, required bool live, String? vehicle}) => ArrivalRow(
@@ -353,7 +430,7 @@ void main() {
         vehicleNumber: vehicle,
       );
 
-  testWidgets('scheduled-only and vehicle-less rows are inert', (tester) async {
+  testWidgets('scheduled-only and vehicle-less rows follow nothing', (tester) async {
     await _pump(tester, repo: _repo(), overrides: [
       stopArrivalsProvider.overrideWith((ref, stopId) async => [
             row(route: '5', live: false, vehicle: '2574'),
@@ -361,10 +438,12 @@ void main() {
             row(route: '7', live: true, vehicle: ''),
           ]),
     ]);
+    expect(find.byKey(ArrivalRowTile.followKey), findsNothing, reason: 'no bus to follow, no Follow pill');
     for (final route in ['5', '6', '7']) {
       await tester.tap(find.bySemanticsLabel(RegExp('^Route $route ')));
       await tester.pumpAndSettle();
     }
+    expect(find.text(ArrivalRowTile.notLiveYet), findsOneWidget, reason: 'each says why instead');
     expect(_c(tester).read(followProvider), isNull);
     expect(_c(tester).read(homeSheetProvider), const StopSheet('1150'));
     await _unmount(tester);
@@ -442,9 +521,10 @@ void main() {
         onTapHint: 'follow bus 2573 on the map',
       ),
     );
+    // A scheduled row is a button too, but it explains itself rather than follow (spec 2026-10-14 §4.2).
     expect(
       find.semantics.byLabel('Route 5 Downtown, scheduled, 4 minutes'),
-      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: false, hasTapAction: false),
+      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: true, hasTapAction: true),
     );
     handle.dispose();
     await _unmount(tester);

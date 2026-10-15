@@ -4,22 +4,37 @@ import '../../data/gtfs/gtfs_time.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../kit/kit.dart';
 
-/// One departure on the Board: route badge · destination + status · minutes.
+/// One departure on the Board: route badge · destination + status · minutes. A live row that can be followed shows a
+/// Follow pill in its status line (spec 2026-10-14 §4.1).
 class ArrivalRowTile extends StatelessWidget {
   const ArrivalRowTile({
     super.key,
     required this.arrival,
     this.onTap,
+    this.onExplain,
     this.action,
   });
 
   final ArrivalRow arrival;
 
-  /// Starts following this row's bus; null leaves the row inert.
+  /// Starts following this row's bus: the row and its Follow pill both call it. Null for a row with no bus to follow.
   final VoidCallback? onTap;
+
+  /// A tap on a row with no bus to follow ([onTap] null): the caller says why (spec 2026-10-14 §4.2). Null leaves
+  /// such a row inert.
+  final VoidCallback? onExplain;
 
   /// A trailing control with its own semantics (the alert bell).
   final Widget? action;
+
+  /// The Follow pill's tap target.
+  static const followKey = ValueKey('arrival-follow');
+
+  /// What a scheduled row's tap says (spec 2026-10-14 §4.2).
+  static const notLiveYet = "No bus on this trip yet. You can follow it once it's live.";
+
+  /// The Follow pill's screen-reader label.
+  static String followLabel(String vehicle) => 'Follow bus $vehicle on the map';
 
   /// Minutes at or below which the countdown uses the `soon` colour.
   static const int soonThresholdMinutes = 5;
@@ -68,9 +83,12 @@ class ArrivalRowTile extends StatelessWidget {
     final use24h = BBTime.use24h(context);
     String clock(GtfsTime t) => BBTime.clock(t.totalSeconds, use24h: use24h);
     final (status, tone) = statusOf(a);
+    final vehicle = a.vehicleNumber;
+    // The pill names the bus, so the plain "Bus 2134" goes (spec §4.1).
+    final followable = onTap != null && a.isLive && vehicle != null && vehicle.isNotEmpty;
     final meta = [
       if (a.routeRun != null) a.routeRun!,
-      if (a.isLive && a.vehicleNumber != null) 'Bus ${a.vehicleNumber}',
+      if (a.isLive && vehicle != null && !followable) 'Bus $vehicle',
     ].join(' · ');
     final showPredicted = a.isLive && a.predictedTime != null;
     final timeLine = showPredicted
@@ -78,44 +96,54 @@ class ArrivalRowTile extends StatelessWidget {
         : clock(a.scheduledTime);
     final showSched = showPredicted && a.scheduledTime != a.predictedTime;
     final soon = a.minutesAway <= soonThresholdMinutes;
+    final tap = onTap ?? onExplain;
 
+    // The row's own sentence stands for everything in it but the Follow pill, which keeps its own node.
     final content = LayoutBuilder(
       builder: (context, box) => Row(
         children: [
-          RouteBadge.name(a.routeShortName),
+          ExcludeSemantics(child: RouteBadge.name(a.routeShortName)),
           const SizedBox(width: BBSpace.m),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  a.headsign,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: bb.text.headline,
+                ExcludeSemantics(
+                  child: Text(
+                    a.headsign,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: bb.text.headline,
+                  ),
                 ),
                 const SizedBox(height: 3),
+                // At large text the pill wraps under the status rather than truncate.
                 Wrap(
                   spacing: 6,
                   runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    BBPill(
-                      label: status,
-                      tone: tone,
-                      leadingDot: tone == BBPillTone.live,
+                    ExcludeSemantics(
+                      child: BBPill(
+                        label: status,
+                        tone: tone,
+                        leadingDot: tone == BBPillTone.live,
+                      ),
                     ),
-                    if (meta.isNotEmpty) Text(meta, style: bb.text.caption),
+                    if (meta.isNotEmpty) ExcludeSemantics(child: Text(meta, style: bb.text.caption)),
+                    if (followable) _FollowPill(vehicle: vehicle, onTap: onTap!),
                   ],
                 ),
                 if (a.isLive && (a.currentLocation?.isNotEmpty ?? false))
                   Padding(
                     padding: const EdgeInsets.only(top: 3),
-                    child: Text(
-                      'Near ${a.currentLocation}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: bb.text.caption,
+                    child: ExcludeSemantics(
+                      child: Text(
+                        'Near ${a.currentLocation}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: bb.text.caption,
+                      ),
                     ),
                   ),
               ],
@@ -126,28 +154,30 @@ class ArrivalRowTile extends StatelessWidget {
             constraints: BoxConstraints(
               maxWidth: box.maxWidth * _maxTrailingShare,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // The number rolls as it counts down (spec §3.2).
-                BBRollingText(
-                  a.minutesAway <= 0 ? 'Now' : '${a.minutesAway}',
-                  style: bb.text.minutes.copyWith(
-                    color: soon ? bb.colors.soon : bb.colors.ink,
-                  ),
-                ),
-                if (a.minutesAway > 0) Text('min', style: bb.text.minutesUnit),
-                const SizedBox(height: 2),
-                Text(timeLine, style: bb.text.caption),
-                if (showSched)
-                  Text(
-                    'sched ${clock(a.scheduledTime)}',
-                    style: bb.text.caption.copyWith(
-                      decoration: TextDecoration.lineThrough,
-                      decorationColor: bb.colors.muted,
+            child: ExcludeSemantics(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // The number rolls as it counts down (spec §3.2).
+                  BBRollingText(
+                    a.minutesAway <= 0 ? 'Now' : '${a.minutesAway}',
+                    style: bb.text.minutes.copyWith(
+                      color: soon ? bb.colors.soon : bb.colors.ink,
                     ),
                   ),
-              ],
+                  if (a.minutesAway > 0) Text('min', style: bb.text.minutesUnit),
+                  const SizedBox(height: 2),
+                  Text(timeLine, style: bb.text.caption),
+                  if (showSched)
+                    Text(
+                      'sched ${clock(a.scheduledTime)}',
+                      style: bb.text.caption.copyWith(
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: bb.colors.muted,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -157,7 +187,7 @@ class ArrivalRowTile extends StatelessWidget {
     return BBNowPulse(
       active: a.minutesAway <= 0,
       child: BBCard(
-        onTap: onTap,
+        onTap: tap,
         // The content below carries the tap and label; the card adds no second node.
         exposeSemantics: false,
         child: Row(
@@ -166,16 +196,66 @@ class ArrivalRowTile extends StatelessWidget {
               // The content's own semantics replace the card's, so the tap is
               // restated here; the action stays outside so it keeps its own.
               child: Semantics(
+                container: true,
                 label: semanticsLabel(a, use24h: use24h),
-                excludeSemantics: true,
-                button: onTap != null ? true : null,
-                onTap: onTap,
+                button: tap != null ? true : null,
+                onTap: tap,
                 onTapHint: onTap == null ? null : 'follow bus ${a.vehicleNumber} on the map',
                 child: content,
               ),
             ),
             ?action,
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Follow 2134" (spec 2026-10-14 §4.1): `brandSoft` with `brandInk` text, in a 44 pt target. It follows the bus, as
+/// the row does.
+class _FollowPill extends StatelessWidget {
+  const _FollowPill({required this.vehicle, required this.onTap});
+
+  final String vehicle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bb = context.bb;
+    final ink = bb.colors.brandInk;
+    return Semantics(
+      container: true,
+      child: BBPressable(
+        key: ArrivalRowTile.followKey,
+        semanticLabel: ArrivalRowTile.followLabel(vehicle),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            widthFactor: 1,
+            heightFactor: 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: bb.colors.brandSoft, borderRadius: BorderRadius.circular(BBRadius.pill)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: BBSpace.s, vertical: 3),
+                // One paragraph, icon and words, so on a narrow row it wraps instead of overflowing.
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: Icon(BBIcons.bus, size: 14, color: ink),
+                      ),
+                      TextSpan(text: ' Follow $vehicle'),
+                    ],
+                  ),
+                  style: bb.text.caption.copyWith(color: ink, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

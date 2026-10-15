@@ -16,6 +16,7 @@ import '../arrival_alerts/alert_bell.dart';
 import '../arrival_alerts/alert_strip.dart';
 import '../board/arrival_row_tile.dart';
 import '../kit/kit.dart';
+import 'follow_tip.dart';
 
 /// A stop's sheet: everything the Board showed (spec 2026-10-12 §3.2).
 abstract final class StopSheetContent {
@@ -190,6 +191,9 @@ class _StopBody extends ConsumerWidget {
       };
     }
 
+    // A row with no bus to follow says why, and stays where it is (spec 2026-10-14 §4.2).
+    void explain() => BBToast.show(context, ArrivalRowTile.notLiveYet, announce: true);
+
     // Rows are keyed by trip and scheduled time (a loop route can pass a stop twice on one trip), plus a count for
     // exact repeats, so no two rows ever share a key.
     final seen = <(String, int), int>{};
@@ -249,6 +253,7 @@ class _StopBody extends ConsumerWidget {
                         child: ArrivalRowTile(
                           arrival: a,
                           onTap: follow(a),
+                          onExplain: explain,
                           action: AlertBell(arrival: a, stopId: stopId, stopName: name),
                         ),
                       ),
@@ -256,6 +261,8 @@ class _StopBody extends ConsumerWidget {
                 ],
               ),
             ),
+          // While a departure is live: the one-time "tap to follow" tip (spec 2026-10-14 §4.3).
+          if (rows != null && rows.any((r) => r.followableVehicle != null)) const FollowTip(),
         ],
       ),
     );

@@ -1137,6 +1137,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     ref.listen(busTrackingStreamProvider, (_, _) {});
     ref.listen<FollowTarget?>(followProvider, (prev, next) {
       if (prev != next) _onFollowChanged(next);
+      // A bus followed, from anywhere: the stop sheet's "tap to follow" tip has done its job (spec 2026-10-14 §4.3).
+      if (next != null && prev == null) {
+        unawaited(ref.read(followTipSeenProvider.notifier).markSeen().catchError((Object e) => _log('Tip not saved: $e')));
+      }
       // A planned trip's boarding stop is marked for the follow, the saved one after it.
       final layers = _layers;
       if (prev?.stopId != next?.stopId && layers != null) unawaited(_updateMyStop(layers));

@@ -49,6 +49,14 @@ class ArrivalsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [for (final a in rows) ArrivalRowTile(arrival: a, onTap: _followable(ref, a))],
+        children: [
+          for (final a in rows)
+            ArrivalRowTile(
+              arrival: a,
+              onTap: _followable(ref, a),
+              // A row with no bus to follow says why (spec 2026-10-14 §4.2).
+              onExplain: () => BBToast.show(context, ArrivalRowTile.notLiveYet, announce: true),
+            ),
+        ],
       );
 }
