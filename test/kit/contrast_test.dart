@@ -199,6 +199,16 @@ void main() {
     expect(mid.brandSoft, BBColors.dark.brandSoft);
   });
 
+  test('nothing in lib/ still calls the brand green: it is the Harbour blue (final review M6)', () {
+    final offenders = [
+      for (final f in Directory('lib').listSync(recursive: true).whereType<File>())
+        if (f.path.endsWith('.dart'))
+          for (final (i, line) in f.readAsLinesSync().indexed)
+            if (RegExp(r"brand('s)? green|green brand", caseSensitive: false).hasMatch(line)) '${f.path}:${i + 1}: $line',
+    ];
+    expect(offenders, isEmpty, reason: offenders.join('\n'));
+  });
+
   test('no colour token, scrim or shadow in lib/ keeps the old ink-green tint or the purple accent', () {
     final offenders = [
       for (final f in Directory('lib').listSync(recursive: true).whereType<File>())

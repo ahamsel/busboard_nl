@@ -9,7 +9,7 @@ enum RouteHue {
   red(Color(0xFFFFC9C2), Color(0xFFFFB3A8), Color(0xFFD63B3B)),
   orange(Color(0xFFFFD9B8), Color(0xFFFFC28F), Color(0xFFE07A1F)),
   yellow(Color(0xFFFBE7A6), Color(0xFFF5D97A), Color(0xFFC9A219)),
-  // Was lime: too close to the brand green (spec §2.3).
+  // Was lime: too close to the green the brand used to be (spec §2.3; the brand is the Harbour blue now).
   olive(Color(0xFFE8EBB8), Color(0xFFD8DE8F), Color(0xFF7C8A1C)),
   // Green again (spec 2026-10-14 §2.3): the brand is blue now, and the old ocean line sat next to it. A purer,
   // yellower green than the live green, so it stays clear of live, liveInk, olive and teal.
