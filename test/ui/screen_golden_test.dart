@@ -140,10 +140,11 @@ void main() {
   setUpAll(loadAppFonts);
 
   for (final b in Brightness.values) {
-    testWidgets('home peek ${b.name}', (tester) async {
+    // The home at rest: the slim bar over the map (spec 2026-10-14 §3.1).
+    testWidgets('home bar ${b.name}', (tester) async {
       await _pumpApp(tester, b);
       expect(tester.takeException(), isNull);
-      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/home_peek_${b.name}.png'));
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/home_bar_${b.name}.png'));
     });
 
     testWidgets('stop sheet at full ${b.name}', (tester) async {
@@ -225,7 +226,7 @@ void main() {
   testWidgets('home at half dark', (tester) async {
     await _pumpApp(tester, Brightness.dark);
     final peek = tester.getRect(find.byKey(BBSheet.cardKey)).top;
-    await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -250));
+    await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
     await tester.pumpAndSettle();
     expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, lessThan(peek - 100), reason: 'the sheet is up at half');
     expect(tester.takeException(), isNull);
