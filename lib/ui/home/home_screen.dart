@@ -643,12 +643,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// A deliberate pan or pinch on the map (past [_panPauseDistance], so never a tap) lowers the pull-up sheet to its
   /// lowest stop, once per gesture (spec 2026-10-14 §3.4): the home sheet to its bar, a stop, bus, options or trip card
   /// to its own peek. Only the map's Listener calls it, so the sheet's own drags and scrolls never do. Not while
-  /// following (the follow card keeps its place), on the tablet panel, or while choosing on the map. Under Reduce Motion
-  /// the sheet's 1 ms snap makes it a jump.
+  /// following (the follow card keeps its place), on the tablet panel, while choosing on the map, or at full height
+  /// (the Board, opened on purpose: a pan in the strip above it must not close it). Under Reduce Motion the sheet's
+  /// 1 ms snap makes it a jump.
   void _tuckSheet() {
     if (_tucked) return;
     _tucked = true;
-    if (_wide || _follow != null || ref.read(mapPickProvider) != null) return;
+    if (_wide || _follow != null || ref.read(mapPickProvider) != null || _sheetAtFull) return;
     if (!_sheet.isAttached || _sheetExtent <= _peekFraction + 0.005) return;
     unawaited(_sheet.collapse());
   }

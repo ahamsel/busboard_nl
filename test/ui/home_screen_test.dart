@@ -988,6 +988,23 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
       expect(top(tester), closeTo(bar, 1));
     });
+
+    testWidgets('not when the sheet is at full: a pan in the strip above the Board leaves it open', (tester) async {
+      await _pump(tester, prefs: {'selectedStopId': '1150'});
+      container(tester).read(homeSheetProvider.notifier).openBoard('1150');
+      await frames(tester);
+      final full = top(tester);
+      final board = tester.widget<BBSheet>(find.byType(BBSheet));
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(board.fullFraction * (844 - 2 * BBSpace.s), 1));
+      expect(container(tester).read(sheetAtFullProvider), isTrue);
+      // Bare map above the card's top (about 91 pt) and below the chips.
+      expect(full, greaterThan(86));
+      await tester.dragFrom(const Offset(60, 58), const Offset(0, 26));
+      await frames(tester);
+      expect(top(tester), full, reason: 'the Board stays open');
+      expect(container(tester).read(sheetAtFullProvider), isTrue);
+      expect(find.byKey(StopSheetContent.showMapKey), findsOneWidget);
+    });
   });
 
   group('a replaced or resized sheet starts from its own state (final review I1–I3)', () {
