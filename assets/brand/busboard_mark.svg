@@ -1,23 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 7 78 81">
-  <!-- BusBoard NL mark on transparent (adaptive-icon foreground, splash). -->
-  <path d="M12 46 L21 37 L30 46 V70 H12Z" fill="#EF5B5B"/>
-  <path d="M30 46 L39 37 L48 46 V70 H30Z" fill="#F2B53A"/>
-  <path d="M48 46 L57 37 L66 46 V70 H48Z" fill="#2F6FE4"/>
-  <path d="M66 46 L75 37 L84 46 V70 H66Z" fill="#8C5CF6"/>
-  <rect x="18" y="47.5" width="6" height="7" rx="1" fill="#13261A" fill-opacity=".45"/>
-  <rect x="36" y="47.5" width="6" height="7" rx="1" fill="#13261A" fill-opacity=".45"/>
-  <rect x="54" y="47.5" width="6" height="7" rx="1" fill="#13261A" fill-opacity=".45"/>
-  <rect x="72" y="47.5" width="6" height="7" rx="1" fill="#13261A" fill-opacity=".45"/>
-  <rect x="14" y="58" width="66" height="22" rx="6" fill="#FFFFFF"/>
-  <rect x="19" y="62" width="10" height="8" rx="1.8" fill="#13261A"/>
-  <rect x="32" y="62" width="10" height="8" rx="1.8" fill="#13261A"/>
-  <rect x="45" y="62" width="10" height="8" rx="1.8" fill="#13261A"/>
-  <rect x="58" y="62" width="10" height="8" rx="1.8" fill="#13261A"/>
-  <rect x="71" y="62" width="6" height="13" rx="1.8" fill="#13261A"/>
-  <circle cx="28" cy="81" r="5" fill="#13261A"/>
-  <circle cx="28" cy="81" r="2.2" fill="#FFFFFF"/>
-  <circle cx="66" cy="81" r="5" fill="#13261A"/>
-  <circle cx="66" cy="81" r="2.2" fill="#FFFFFF"/>
-  <path d="M57 9c-6 0-10.5 4.5-10.5 10.5 0 7.5 10.5 17 10.5 17s10.5-9.5 10.5-17C67.5 13.5 63 9 57 9z" fill="#FFFFFF"/>
-  <circle cx="57" cy="19.5" r="4" fill="#13261A"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="11 9.5 78 81">
+  <!-- BusBoard NL mark on transparent (adaptive-icon foreground, splash), centred like the icon's. -->
+  <g transform="translate(2 2.5)">
+    <path d="M12 46 L21 37 L30 46 V70 H12Z" fill="#EF5B5B"/>
+    <path d="M30 46 L39 37 L48 46 V70 H30Z" fill="#F2B53A"/>
+    <path d="M48 46 L57 37 L66 46 V70 H48Z" fill="#3FAE4F"/>
+    <path d="M66 46 L75 37 L84 46 V70 H66Z" fill="#B65CFF"/>
+    <rect x="18" y="47.5" width="6" height="7" rx="1" fill="#16181C" fill-opacity=".45"/>
+    <rect x="36" y="47.5" width="6" height="7" rx="1" fill="#16181C" fill-opacity=".45"/>
+    <rect x="54" y="47.5" width="6" height="7" rx="1" fill="#16181C" fill-opacity=".45"/>
+    <rect x="72" y="47.5" width="6" height="7" rx="1" fill="#16181C" fill-opacity=".45"/>
+    <rect x="14" y="58" width="66" height="22" rx="6" fill="#FFFFFF"/>
+    <rect x="19" y="62" width="10" height="8" rx="1.8" fill="#16181C"/>
+    <rect x="32" y="62" width="10" height="8" rx="1.8" fill="#16181C"/>
+    <rect x="45" y="62" width="10" height="8" rx="1.8" fill="#16181C"/>
+    <rect x="58" y="62" width="10" height="8" rx="1.8" fill="#16181C"/>
+    <rect x="71" y="62" width="6" height="13" rx="1.8" fill="#16181C"/>
+    <circle cx="28" cy="81" r="5" fill="#16181C"/>
+    <circle cx="28" cy="81" r="2.2" fill="#FFFFFF"/>
+    <circle cx="66" cy="81" r="5" fill="#16181C"/>
+    <circle cx="66" cy="81" r="2.2" fill="#FFFFFF"/>
+    <path d="M57 9c-6 0-10.5 4.5-10.5 10.5 0 7.5 10.5 17 10.5 17s10.5-9.5 10.5-17C67.5 13.5 63 9 57 9z" fill="#FFFFFF"/>
+    <circle cx="57" cy="19.5" r="4" fill="#16181C"/>
+  </g>
 </svg>

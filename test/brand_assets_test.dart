@@ -19,48 +19,62 @@ Matcher _near(ui.Color expected) => predicate<ui.Color>(
       'within 2/255 of $expected',
     );
 
-const _green = ui.Color(0xFF3FAE4F);
+const _blue = ui.Color(0xFF1272C9);
 
 void main() {
-  test('pubspec: the adaptive icon and both splashes use the brand green (spec §6.2)', () {
+  test('pubspec: the adaptive icon and both splashes use the Harbour blue (spec 2026-10-14 §2.5)', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
-    expect(pubspec, contains('adaptive_icon_background: "#3FAE4F"'));
-    expect(RegExp(r'flutter_native_splash:\s*\n\s*color: "#3FAE4F"').hasMatch(pubspec), isTrue);
-    expect(pubspec, contains('icon_background_color: "#3FAE4F"'));
-    expect(pubspec, isNot(contains('#3E7CB1')));
+    expect(pubspec, contains('adaptive_icon_background: "#1272C9"'));
+    expect(RegExp(r'flutter_native_splash:\s*\n\s*color: "#1272C9"').hasMatch(pubspec), isTrue);
+    expect(pubspec, contains('icon_background_color: "#1272C9"'));
+    expect(pubspec, isNot(contains('#3FAE4F')), reason: 'the old green background is gone');
   });
 
   for (final svg in ['assets/brand/busboard_icon.svg', 'assets/brand/busboard_mark.svg']) {
-    test('$svg: coral, gold, blue and violet houses; ink #13261A; white bus and pin (spec §6.1)', () {
+    test('$svg: coral, gold, green and electric purple houses; ink #16181C; white bus and pin; centred', () {
       final text = File(svg).readAsStringSync().toUpperCase();
-      for (final c in ['#EF5B5B', '#F2B53A', '#2F6FE4', '#8C5CF6', '#13261A', '#FFFFFF']) {
+      for (final c in ['#EF5B5B', '#F2B53A', '#3FAE4F', '#B65CFF', '#16181C', '#FFFFFF']) {
         expect(text, contains(c));
       }
-      for (final old in ['#3E7CB1', '#D63B3B', '#F2C94C', '#C3A6EE', '#6FCF97', '#1C2A3A', '#F7F2EA']) {
+      // The blue house would vanish on the blue; the old violet and ink go with it.
+      for (final old in ['#2F6FE4', '#8C5CF6', '#13261A']) {
         expect(text, isNot(contains(old)), reason: 'old colour $old');
       }
+      expect(File(svg).readAsStringSync(), contains('transform="translate(2 2.5)"'), reason: 'the mark is centred');
     });
   }
 
-  test('the icon master sits on the brand green', () {
-    expect(File('assets/brand/busboard_icon.svg').readAsStringSync(), contains('<rect width="100" height="100" fill="#3FAE4F"/>'));
+  test('the icon master sits on the Harbour blue, not the old green', () {
+    final icon = File('assets/brand/busboard_icon.svg').readAsStringSync();
+    expect(icon, contains('<rect width="100" height="100" fill="#1272C9"/>'));
+    expect(icon, isNot(contains('<rect width="100" height="100" fill="#3FAE4F"/>')));
   });
 
-  testWidgets('the rendered icons and the iOS launch background are green', (tester) async {
+  test("the mark's view box is centred on the moved mark (its middle is 50, 50)", () {
+    final box = RegExp(r'viewBox="([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)"')
+        .firstMatch(File('assets/brand/busboard_mark.svg').readAsStringSync())!;
+    final v = [for (var i = 1; i <= 4; i++) double.parse(box.group(i)!)];
+    expect(v[0] + v[2] / 2, 50);
+    expect(v[1] + v[3] / 2, 50);
+  });
+
+  testWidgets('the rendered icons and the iOS launch background are blue', (tester) async {
     await tester.runAsync(() async {
-      expect(await _pixel('assets/icon/app_icon.png', 4, 4), _near(_green));
-      expect(await _pixel('assets/icon/app_icon_gplay.png', 2, 2), _near(_green));
-      expect(await _pixel('ios/Runner/Assets.xcassets/LaunchBackground.imageset/background.png', 0, 0), _near(_green));
-      expect(await _pixel('ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png', 4, 4), _near(_green));
+      expect(await _pixel('assets/icon/app_icon.png', 4, 4), _near(_blue));
+      expect(await _pixel('assets/icon/app_icon_gplay.png', 2, 2), _near(_blue));
+      expect(await _pixel('ios/Runner/Assets.xcassets/LaunchBackground.imageset/background.png', 0, 0), _near(_blue));
+      expect(await _pixel('ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png', 4, 4), _near(_blue));
     });
   });
 
-  test('the generated Android resources carry the green', () {
-    expect(File('android/app/src/main/res/values/colors.xml').readAsStringSync().toUpperCase(), contains('#3FAE4F'));
+  test('the generated Android resources carry the blue, and no green background is left', () {
+    final colors = File('android/app/src/main/res/values/colors.xml').readAsStringSync().toUpperCase();
+    expect(colors, contains('#1272C9'));
+    expect(colors, isNot(contains('#3FAE4F')));
     for (final f in ['android/app/src/main/res/values-v31/styles.xml', 'android/app/src/main/res/values-night-v31/styles.xml']) {
       final xml = File(f).readAsStringSync().toUpperCase();
-      expect(xml, contains('#3FAE4F'), reason: f);
-      expect(xml, isNot(contains('#3E7CB1')), reason: f);
+      expect(xml, contains('#1272C9'), reason: f);
+      expect(xml, isNot(contains('#3FAE4F')), reason: f);
     }
   });
 }
