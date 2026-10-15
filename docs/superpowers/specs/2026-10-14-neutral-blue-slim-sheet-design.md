@@ -30,7 +30,7 @@ The developer tried the visual refresh on their iPhone and asked for three thing
 
 ### 2.1 Rules
 
-- **Neutral surfaces.** Backgrounds, surfaces, lines, text and shadows are neutral greys with no hue tint. As a check, every neutral token's HSL saturation is at most 8%.
+- **Neutral surfaces.** Backgrounds, surfaces, lines, text and shadows are neutral greys with no hue tint. As a check, every neutral token's OKLCH chroma is at most 0.015. HSL saturation misjudges near-white and near-black greys, so it can't be the test.
 - **The brand is the brightened Harbour blue.** It's a fill for primary buttons and selected states, with `onBrand` text on it. Blue text on a surface uses `brandInk`.
 - **Status colours are unchanged:** live, warn, danger and soon.
 - **The purple accent is retired.**
@@ -204,7 +204,7 @@ In dark mode the sheet (`#1F2024`) sits a step above the land (`#17181B`). Its s
 
 ## 5. Testing
 
-- **Contrast test:** extended to every pair in §2.2, in both modes. A neutrality check makes every neutral token's saturation at most 8%.
+- **Contrast test:** extended to every pair in §2.2, in both modes. A neutrality check makes every neutral token's OKLCH chroma at most 0.015.
 - **Route palette test:** passes against the new brand. Route 10 is green.
 - **Brand assets test:** checks the new icon colours, the centring transform and that the splash is `#1272C9`. The old green background must be absent.
 - **Slim sheet:**
