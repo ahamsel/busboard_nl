@@ -129,15 +129,9 @@ void main() {
     }
   });
 
-  test('the dark map is a greyer, darker navy than the sheet floating on it (spec §2.4)', () {
+  test('the dark map sits a step below the sheet floating on it (spec 2026-10-14 §2.4)', () {
     Color hex(String h) => Color(int.parse('FF${h.substring(1)}', radix: 16));
     final land = hex(HarbourPalette.dark.land);
-    final road = hex(HarbourPalette.dark.road);
     expect(land.computeLuminance(), lessThan(BBColors.dark.surface.computeLuminance()));
-    // "Greyer": less blue than the sheet, so the sheet reads bluer even where it sits over a road (which is
-    // about as light as the sheet; the highlight edge and the shadow carry that edge).
-    double blueShift(Color c) => c.b - (c.r + c.g) / 2;
-    expect(blueShift(land), lessThan(blueShift(BBColors.dark.surface)));
-    expect(blueShift(road), lessThan(blueShift(BBColors.dark.surface)));
   });
 }

@@ -37,7 +37,7 @@ class BBChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final bb = context.bb;
     final fg = selected ? bb.colors.onBrand : bb.colors.ink;
-    final lead = leading ?? (icon == null ? null : Icon(icon, size: 18, color: selected ? fg : bb.colors.accent));
+    final lead = leading ?? (icon == null ? null : Icon(icon, size: 18, color: selected ? fg : bb.colors.brandInk));
     // Null (not false) when unselected: an ordinary button is not a toggle.
     return Semantics(
       selected: selected ? true : null,

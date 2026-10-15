@@ -45,7 +45,7 @@ void main() {
     expect(deltaE(const Color(0xFF000000), const Color(0xFFFFFFFF)), closeTo(1.0, 0.001));
   });
 
-  test('no route line sits within ΔE 0.08 of brand, live, accent or warn (or their inks), in either mode (spec §2.3)', () {
+  test('no route line sits within ΔE 0.08 of brand, live or warn (or their inks), in either mode (spec §2.3)', () {
     for (final b in Brightness.values) {
       final c = b == Brightness.dark ? BBColors.dark : BBColors.light;
       for (final (uiName, ui) in [
@@ -53,7 +53,6 @@ void main() {
         ('brandInk', c.brandInk),
         ('live', c.live),
         ('liveInk', c.liveInk),
-        ('accent', c.accent),
         ('warn', c.warnInk),
       ]) {
         for (final hue in RouteHue.values) {
@@ -120,14 +119,21 @@ void main() {
     expect(RoutePalette.ink, BBColors.light.ink);
   });
 
+  test('the retuned lines (spec 2026-10-14 §2.3)', () {
+    expect(RouteHue.green.line, const Color(0xFF0FA23F));
+    expect(RouteHue.sky.line, const Color(0xFF60B4C9));
+    expect(RouteHue.indigo.line, const Color(0xFF3C3F90));
+    expect(RouteHue.indigo.lineFor(Brightness.dark), const Color(0xFF5673F0));
+  });
+
   test('every current Metrobus route has a hand-assigned hue', () {
     for (final r in metrobusRoutes) {
       expect(RoutePalette.assigned.containsKey(r), isTrue, reason: 'route $r');
     }
   });
 
-  test('route 10 and route 23 moved off the UI greens', () {
-    expect(RoutePalette.of(10), RouteHue.ocean);
+  test('route 10 is green again; route 23 stays olive (spec 2026-10-14 §2.3)', () {
+    expect(RoutePalette.of(10), RouteHue.green);
     expect(RoutePalette.of(23), RouteHue.olive);
     expect(RoutePalette.of(29), RouteHue.sky);
     expect(RoutePalette.of(16), RouteHue.yellow);
@@ -135,19 +141,19 @@ void main() {
 
   test('routes that share stops keep different hues: the assignment table is unchanged', () {
     // Hand-assigned from GTFS stop overlap (spec §4.2 of the Harbour redesign). Only the hue
-    // names green → ocean and lime → olive changed.
+    // names changed over time (lime → olive; green → ocean → green).
     expect(RoutePalette.assigned, const {
       1: RouteHue.orange, 2: RouteHue.red, 3: RouteHue.yellow, 6: RouteHue.teal, 9: RouteHue.teal,
-      10: RouteHue.ocean, 11: RouteHue.teal, 12: RouteHue.pink, 13: RouteHue.indigo, 14: RouteHue.red,
+      10: RouteHue.green, 11: RouteHue.teal, 12: RouteHue.pink, 13: RouteHue.indigo, 14: RouteHue.red,
       15: RouteHue.lilac, 16: RouteHue.yellow, 18: RouteHue.lilac, 19: RouteHue.sky, 20: RouteHue.red,
-      21: RouteHue.olive, 22: RouteHue.ocean, 23: RouteHue.olive, 24: RouteHue.orange, 26: RouteHue.pink,
+      21: RouteHue.olive, 22: RouteHue.green, 23: RouteHue.olive, 24: RouteHue.orange, 26: RouteHue.pink,
       29: RouteHue.sky, 30: RouteHue.orange,
     });
   });
 
   test('hue positions are unchanged, so fallback hues for new routes do not move', () {
     expect(RouteHue.values.map((h) => h.name).toList(),
-        ['red', 'orange', 'yellow', 'olive', 'ocean', 'teal', 'sky', 'indigo', 'lilac', 'pink']);
+        ['red', 'orange', 'yellow', 'olive', 'green', 'teal', 'sky', 'indigo', 'lilac', 'pink']);
   });
 
   test('unknown, zero and negative route numbers are stable and do not throw', () {

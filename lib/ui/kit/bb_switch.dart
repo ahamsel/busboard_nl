@@ -52,7 +52,7 @@ class BBSwitch extends StatelessWidget {
                 color: value ? c.brand : c.surfaceSunken,
                 borderRadius: BorderRadius.circular(14),
                 // Off: a muted outline + thumb (>= 3:1, WCAG 1.4.11) so it reads as a control without a fill.
-                // On: the brandEdge border, since the bright green fill alone is ~2.85:1 on white.
+                // On: the brandEdge border as well, so the edge stays at 3:1 or more in both themes.
                 border: Border.all(color: value ? bb.brandEdge : c.muted, width: 1.5),
               ),
               child: AnimatedAlign(

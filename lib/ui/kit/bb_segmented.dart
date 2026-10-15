@@ -53,7 +53,7 @@ class BBSegmented<T> extends StatelessWidget {
                     heightFactor: 1,
                     // Brand-soft fill plus a 1.5 px brandEdge border: the fill alone is ~1.3:1 against
                     // the track, so the edge carries the state (WCAG 1.4.11). brandEdge is brandInk in
-                    // light, where bright green on white is under 3:1.
+                    // light and brand in dark.
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: bb.colors.brandSoft,

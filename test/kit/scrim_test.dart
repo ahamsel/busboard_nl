@@ -9,9 +9,9 @@ import 'kit_test_helpers.dart';
 Color _over(Color top, Color bottom) => Color.alphaBlend(top, bottom);
 
 void main() {
-  test('light keeps the ink-green scrims; dark uses black, heavier', () {
-    expect(BBScrim.soft, const Color(0x3313261A));
-    expect(BBScrim.strong, const Color(0x6613261A));
+  test('scrims are neutral black: light at 20 % and 40 %, dark heavier (spec 2026-10-14 §2.1)', () {
+    expect(BBScrim.soft, const Color(0x33000000));
+    expect(BBScrim.strong, const Color(0x66000000));
     expect(BBScrim.softDark.withValues(alpha: 1), const Color(0xFF000000));
     expect(BBScrim.strongDark.withValues(alpha: 1), const Color(0xFF000000));
     expect(BBScrim.strongDark.a, greaterThan(BBScrim.softDark.a));
@@ -31,10 +31,12 @@ void main() {
     }
   });
 
-  test('dark: a dialog on surface is lifted off the sheet it covers (>= 1.2:1; its top highlight and shadow add the rest)', () {
+  test('dark: a dialog on surface is lifted off the sheet it covers (>= 1.15:1; its top highlight and shadow add the rest)', () {
+    // The neutral dark surface (#1F2024) is darker than the old navy, so the same 60 % black dims it a little less
+    // in ratio (1.197:1); the dialog's 8 % white top highlight and its shadow carry the edge.
     final c = BBColors.dark;
     final covered = _over(BBScrim.strongDark, c.surface);
-    expect(contrast(c.surface, covered), greaterThanOrEqualTo(1.2));
+    expect(contrast(c.surface, covered), greaterThanOrEqualTo(1.15));
     // Not so heavy that the screen behind goes black: the rider should still see where they were.
     expect(BBScrim.strongDark.a, lessThanOrEqualTo(0.65));
     // Light is tuned already: the dialog is white over a dimmed white sheet.

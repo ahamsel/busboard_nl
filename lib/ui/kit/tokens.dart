@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 
-/// Colour roles for one brightness (visual refresh spec §2.1: Metrobus green,
-/// "Night Bus" dark). Raw colour values live only here and in route_palette.dart.
+/// Colour roles for one brightness (spec 2026-10-14 §2: neutral greys and the brightened Harbour blue).
+/// Only the brand, routes, live and status states carry colour; everything else is a neutral grey.
+/// Raw colour values live only here and in route_palette.dart.
 @immutable
 class BBColors {
   const BBColors({
@@ -21,8 +22,6 @@ class BBColors {
     required this.onBrand,
     required this.brandInk,
     required this.brandSoft,
-    required this.accent,
-    required this.accentSoft,
     required this.live,
     required this.liveInk,
     required this.liveSoft,
@@ -66,13 +65,9 @@ class BBColors {
   final Color brand;
   final Color onBrand;
 
-  /// Green text on surfaces.
+  /// Blue text and icons on surfaces (saved-place icons, quick-pick chips).
   final Color brandInk;
   final Color brandSoft;
-
-  /// Secondary accent (indigo): saved-place icons, a few highlights.
-  final Color accent;
-  final Color accentSoft;
   final Color live;
   final Color liveInk;
   final Color liveSoft;
@@ -83,23 +78,21 @@ class BBColors {
   final Color dangerInk;
 
   static const light = BBColors(
-    bg: Color(0xFFF6FAF6),
+    bg: Color(0xFFF4F5F7),
     surface: Color(0xFFFFFFFF),
     surfaceRaised: Color(0xFFFFFFFF),
     surfaceField: Color(0xFFFFFFFF),
     surfaceFloat: Color(0xFFFFFFFF),
-    surfaceSunken: Color(0xFFEEF4EF),
-    skeleton: Color(0xFFE6EEE8),
-    line: Color(0xFFE1EAE3),
+    surfaceSunken: Color(0xFFEEF0F2),
+    skeleton: Color(0xFFE6E8EB),
+    line: Color(0xFFE3E5E8),
     highlight: Color(0x00000000),
-    ink: Color(0xFF13261A),
-    muted: Color(0xFF5F7366),
-    brand: Color(0xFF3FAE4F),
-    onBrand: Color(0xFF0F2414),
-    brandInk: Color(0xFF237A33),
-    brandSoft: Color(0xFFE1F4E2),
-    accent: Color(0xFF5B4FD1),
-    accentSoft: Color(0xFFE9E6FB),
+    ink: Color(0xFF16181C),
+    muted: Color(0xFF5F646C),
+    brand: Color(0xFF1272C9),
+    onBrand: Color(0xFFFFFFFF),
+    brandInk: Color(0xFF0D5DA6),
+    brandSoft: Color(0xFFE3EEFA),
     live: Color(0xFF2FB67C),
     liveInk: Color(0xFF1E7A4E),
     liveSoft: Color(0xFFDFF4EA),
@@ -111,23 +104,21 @@ class BBColors {
   );
 
   static const dark = BBColors(
-    bg: Color(0xFF0E1220),
-    surface: Color(0xFF1D2540),
-    surfaceRaised: Color(0xFF252E4C),
-    surfaceField: Color(0xFF283152),
-    surfaceFloat: Color(0xFF262F4D),
-    surfaceSunken: Color(0xFF121828),
-    skeleton: Color(0xFF2E3858),
-    line: Color(0xFF36406A),
-    highlight: Color(0x1AFFFFFF),
-    ink: Color(0xFFEEF2FF),
-    muted: Color(0xFF9AA4C4),
-    brand: Color(0xFF6FDB7C),
-    onBrand: Color(0xFF0B2010),
-    brandInk: Color(0xFF7FE08B),
-    brandSoft: Color(0xFF163A1C),
-    accent: Color(0xFF9D94F2),
-    accentSoft: Color(0xFF26224A),
+    bg: Color(0xFF121316),
+    surface: Color(0xFF1F2024),
+    surfaceRaised: Color(0xFF27292E),
+    surfaceField: Color(0xFF2B2D32),
+    surfaceFloat: Color(0xFF2A2C31),
+    surfaceSunken: Color(0xFF18191C),
+    skeleton: Color(0xFF33353B),
+    line: Color(0xFF3A3D44),
+    highlight: Color(0x14FFFFFF),
+    ink: Color(0xFFF2F3F5),
+    muted: Color(0xFFA3A7AF),
+    brand: Color(0xFF5EA2F0),
+    onBrand: Color(0xFF08203A),
+    brandInk: Color(0xFF8CC0F7),
+    brandSoft: Color(0xFF16304A),
     live: Color(0xFF45D695),
     liveInk: Color(0xFF45D695),
     liveSoft: Color(0xFF123227),
@@ -156,8 +147,6 @@ class BBColors {
       onBrand: l(onBrand, other.onBrand),
       brandInk: l(brandInk, other.brandInk),
       brandSoft: l(brandSoft, other.brandSoft),
-      accent: l(accent, other.accent),
-      accentSoft: l(accentSoft, other.accentSoft),
       live: l(live, other.live),
       liveInk: l(liveInk, other.liveInk),
       liveSoft: l(liveSoft, other.liveSoft),
@@ -325,12 +314,12 @@ class BBSpringCurve extends Curve {
   }
 }
 
-/// Dimmed backdrops behind dialogs and floating cards. Light: ink-tinted. Dark: black, heavier, since dark
-/// surfaces are already deep and a faint tint would not lift a card off the sheet under it. Every modal card
+/// Dimmed backdrops behind dialogs and floating cards: neutral black (spec 2026-10-14 §2.1). Dark is heavier, since
+/// dark surfaces are already deep and a faint dim would not lift a card off the sheet under it. Every modal card
 /// (dialogs, the picker, the small cards that open over the map) uses [strongOf], so they all dim alike.
 abstract final class BBScrim {
-  static const Color soft = Color(0x3313261A);
-  static const Color strong = Color(0x6613261A);
+  static const Color soft = Color(0x33000000); // black, 20 %
+  static const Color strong = Color(0x66000000); // black, 40 %
   static const Color softDark = Color(0x59000000); // black, 35 %
   static const Color strongDark = Color(0x99000000); // black, 60 %
 
@@ -360,14 +349,14 @@ class BBTokens extends ThemeExtension<BBTokens> {
 
   bool get isDark => brightness == Brightness.dark;
 
-  /// Focus rings and selection edges: `brand` in dark; `brandInk` in light, where
-  /// bright green on white is under 3:1 (spec §2.2, WCAG 1.4.11).
+  /// Focus rings and selection edges: `brand` in dark; the deeper `brandInk` in light, which keeps
+  /// every edge well over 3:1 on white and on `brandSoft` (WCAG 1.4.11).
   Color get brandEdge => isDark ? colors.brand : colors.brandInk;
 
-  /// Dark floating layers: a deep black shadow (spec §2.1, 45–55%). Light: a soft green-tinted one (8–14%).
+  /// Dark floating layers: a deep black shadow (45–55%). Light: a soft black one (8–14%). Neutral in both.
   List<BoxShadow> get _floatShadow => isDark
       ? const [BoxShadow(color: Color(0x80000000), blurRadius: 24, offset: Offset(0, 8))]
-      : const [BoxShadow(color: Color(0x2313261A), blurRadius: 16, offset: Offset(0, 4))];
+      : const [BoxShadow(color: Color(0x23000000), blurRadius: 16, offset: Offset(0, 4))];
 
   /// Dark layers catch the light on their top edge: a 1 px `highlight`. Light mode has none.
   Border? get _topEdge => isDark ? Border(top: BorderSide(color: colors.highlight)) : null;
@@ -389,12 +378,12 @@ class BBTokens extends ThemeExtension<BBTokens> {
       floating(radius: radius, color: selected ? colors.brand : colors.surfaceFloat);
 
   /// A card: `surface` on a page, `surfaceRaised` on a sheet or panel ([raised]). Light: white with
-  /// a faint green-tinted shadow. Dark: the top-edge highlight, depth from lightness alone.
+  /// a faint black shadow. Dark: the top-edge highlight, depth from lightness alone.
   BoxDecoration card({double radius = BBRadius.card, bool raised = false}) {
     return BoxDecoration(
       color: raised ? colors.surfaceRaised : colors.surface,
       borderRadius: BorderRadius.circular(radius),
-      boxShadow: isDark ? null : const [BoxShadow(color: Color(0x1513261A), blurRadius: 8, offset: Offset(0, 2))],
+      boxShadow: isDark ? null : const [BoxShadow(color: Color(0x15000000), blurRadius: 8, offset: Offset(0, 2))],
       border: _topEdge,
     );
   }

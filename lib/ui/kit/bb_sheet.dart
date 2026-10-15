@@ -305,7 +305,7 @@ class _BBSheetState extends State<BBSheet> {
         boxShadow: _scrolled
             ? [
                 BoxShadow(
-                  color: bb.isDark ? const Color(0x59000000) : const Color(0x1A13261A),
+                  color: bb.isDark ? const Color(0x59000000) : const Color(0x1A000000),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),

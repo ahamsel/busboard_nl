@@ -39,12 +39,12 @@ void main() {
       expect(shadow.color.a, inInclusiveRange(0.45, 0.55));
     });
 
-    test('light floating layers: white, no border, a soft green-tinted shadow (8–14%)', () {
+    test('light floating layers: white, no border, a soft neutral black shadow (8–14%)', () {
       final d = BBTokens.light.floating();
       expect(d.color, BBColors.light.surface);
       expect(d.border, isNull);
       final shadow = d.boxShadow!.single;
-      expect(shadow.color.withValues(alpha: 1), BBColors.light.ink);
+      expect(shadow.color.withValues(alpha: 1), const Color(0xFF000000));
       expect(shadow.color.a, inInclusiveRange(0.08, 0.14));
     });
 
@@ -71,6 +71,7 @@ void main() {
       expect((BBTokens.dark.card().border! as Border).top.color, BBColors.dark.highlight);
       expect(BBTokens.light.card().border, isNull);
       expect(BBTokens.light.card().boxShadow!.single.color.a, inInclusiveRange(0.08, 0.14));
+      expect(BBTokens.light.card().boxShadow!.single.color.withValues(alpha: 1), const Color(0xFF000000));
     });
 
     test('fields: surfaceField with a 1.5 px line outline; focused, a 2 px brandEdge ring; error, dangerInk', () {
@@ -144,7 +145,7 @@ void main() {
     expect(offenders, isEmpty, reason: 'Fields use context.bb.field(), not surfaceSunken: $offenders');
   });
 
-  test('bright green is a fill only: no icon, text or cursor uses colors.brand (spec §2.1)', () {
+  test('the brand is a fill only: no icon, text or cursor uses colors.brand (spec 2026-10-14 §2.1)', () {
     final greenForeground = RegExp(r'(Icon\(|copyWith\(color:|cursorColor:|TextStyle\()[^;]*colors\.brand\b(?!Ink|Soft)');
     final offenders = [
       for (final f in Directory('lib/ui').listSync(recursive: true).whereType<File>())

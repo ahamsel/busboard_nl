@@ -11,13 +11,15 @@ enum RouteHue {
   yellow(Color(0xFFFBE7A6), Color(0xFFF5D97A), Color(0xFFC9A219)),
   // Was lime: too close to the brand green (spec §2.3).
   olive(Color(0xFFE8EBB8), Color(0xFFD8DE8F), Color(0xFF7C8A1C)),
-  // Was green: blended into the brand and live greens (spec §2.3).
-  ocean(Color(0xFFB9DDF0), Color(0xFF8FC6E6), Color(0xFF2D7BB2)),
+  // Green again (spec 2026-10-14 §2.3): the brand is blue now, and the old ocean line sat next to it. A purer,
+  // yellower green than the live green, so it stays clear of live, liveInk, olive and teal.
+  green(Color(0xFFCFEEDB), Color(0xFFA6E3BF), Color(0xFF0FA23F)),
   teal(Color(0xFFC4ECE8), Color(0xFF93DDD6), Color(0xFF1F8F86)),
-  sky(Color(0xFFCFE3FA), Color(0xFFA9CDF5), Color(0xFF65ADE0)),
-  // Lines moved away from the indigo accent. The dark-map line is lighter (#2E4E99 is 2.2:1 on the dark land) and
-  // pushed a little toward violet so it stays clear of ocean.
-  indigo(Color(0xFFD6DAFA), Color(0xFFB3BAF5), Color(0xFF2E4E99), Color(0xFF5673F0)),
+  // Moved toward cyan, off the dark brand blue (#5EA2F0) and its ink.
+  sky(Color(0xFFCFE3FA), Color(0xFFA9CDF5), Color(0xFF60B4C9)),
+  // The light line moved toward violet, off the light brandInk (#0D5DA6). The dark-map line stays lighter
+  // (#3C3F90 is under 3:1 on the dark land).
+  indigo(Color(0xFFD6DAFA), Color(0xFFB3BAF5), Color(0xFF3C3F90), Color(0xFF5673F0)),
   lilac(Color(0xFFE3D6FA), Color(0xFFCDB6F5), Color(0xFFA855C7)),
   pink(Color(0xFFFAD3E4), Color(0xFFF5B0CD), Color(0xFFC9417E));
 
@@ -38,8 +40,8 @@ enum RouteHue {
 
 /// The same route always gets the same colour everywhere in the app.
 abstract final class RoutePalette {
-  /// Text/number colour on every route fill, in both modes.
-  static const Color ink = Color(0xFF13261A);
+  /// Text/number colour on every route fill, in both modes: the app's light ink.
+  static const Color ink = Color(0xFF16181C);
 
   /// Hand-assigned from GTFS stop overlap so routes sharing stops differ.
   static const Map<int, RouteHue> assigned = {
@@ -48,7 +50,7 @@ abstract final class RoutePalette {
     3: RouteHue.yellow,
     6: RouteHue.teal,
     9: RouteHue.teal,
-    10: RouteHue.ocean,
+    10: RouteHue.green,
     11: RouteHue.teal,
     12: RouteHue.pink,
     13: RouteHue.indigo,
@@ -59,7 +61,7 @@ abstract final class RoutePalette {
     19: RouteHue.sky,
     20: RouteHue.red,
     21: RouteHue.olive,
-    22: RouteHue.ocean,
+    22: RouteHue.green,
     23: RouteHue.olive,
     24: RouteHue.orange,
     26: RouteHue.pink,
