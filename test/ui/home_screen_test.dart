@@ -817,8 +817,8 @@ void main() {
       expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isTrue);
     });
 
-    testWidgets('it plays once: back at the bar after a card, the sheet stays put', (tester) async {
-      await watchHint(tester);
+    testWidgets('it plays once: back at the bar after a card, the sheet stays put at the first bar', (tester) async {
+      final firstBar = (await watchHint(tester)).first;
       final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
       c.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
       for (var i = 0; i < 6; i++) {
@@ -830,6 +830,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 100));
       }
       final rest = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+      expect(rest, closeTo(firstBar, 0.5), reason: "the first bar's height, not the card's");
       for (var i = 0; i < 60; i++) {
         await tester.pump(const Duration(milliseconds: 16));
         expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, closeTo(rest, 0.5));
@@ -986,6 +987,80 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 16));
       expect(top(tester), closeTo(bar, 1));
+    });
+  });
+
+  group('a replaced or resized sheet starts from its own state (final review I1–I3)', () {
+    double top(WidgetTester tester) => tester.getRect(find.byKey(BBSheet.cardKey)).top;
+    double height(WidgetTester tester) => tester.getRect(find.byKey(BBSheet.cardKey)).height;
+    ProviderContainer container(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    const area = 844 - 2 * BBSpace.s;
+
+    Future<void> frames(WidgetTester tester, [int n = 6]) async {
+      for (var i = 0; i < n; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    testWidgets("back at the bar after a card, the bar is the first bar's height, and stays it", (tester) async {
+      await _pump(tester, prefs: {'selectedStopId': '1150'},
+          overrides: [homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen())]);
+      final firstBar = height(tester);
+      container(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      await frames(tester);
+      expect(height(tester), greaterThan(firstBar + 100), reason: 'the card is up at half');
+      container(tester).read(homeSheetProvider.notifier).home();
+      await frames(tester);
+      expect(height(tester), closeTo(firstBar, 0.5));
+      final peek = tester.widget<BBSheet>(find.byType(BBSheet)).peekFraction;
+      expect(peek * area, closeTo(firstBar, 0.5), reason: "the new bar's peek is its own, not the card's");
+      await frames(tester, 30);
+      expect(height(tester), closeTo(firstBar, 0.5));
+    });
+
+    testWidgets('the tip dismissed after the lift: the sheet settles at the slimmer bar, and a pan tucks it again',
+        (tester) async {
+      final gate = Completer<bool>();
+      await _pump(tester, prefs: {'selectedStopId': '1150'}, barHintSeen: false, overrides: [
+        barHintSeenProvider.overrideWith(() => _HeldFlag(gate)),
+      ]);
+      expect(find.text('Got it'), findsOneWidget, reason: 'the first-run tip sits in the bar');
+      final withTip = height(tester);
+      gate.complete(false);
+      await frames(tester, 15); // the lift plays and settles back
+      expect(height(tester), closeTo(withTip, 0.5));
+      await tester.tap(find.text('Got it'));
+      await frames(tester);
+      final peek = tester.widget<BBSheet>(find.byType(BBSheet)).peekFraction;
+      expect(height(tester), lessThan(withTip - 50), reason: 'the bar lost the tip');
+      expect(height(tester), closeTo(peek * area, 0.5), reason: 'the sheet rests at the new peek');
+      final bar = top(tester);
+      // Pulled up to half, a pan on the map lowers it to the bar again.
+      await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
+      await frames(tester);
+      expect(top(tester), lessThan(bar - 200));
+      await tester.dragFrom(const Offset(60, 170), const Offset(0, 40));
+      await frames(tester);
+      expect(top(tester), closeTo(bar, 1));
+    });
+
+    testWidgets('a stop card opened after home was pulled to full opens at half with Open board, not Show map',
+        (tester) async {
+      await _pump(tester, prefs: {'selectedStopId': '1150'},
+          overrides: [homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen())]);
+      await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
+      await frames(tester);
+      await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -400));
+      await frames(tester);
+      expect(container(tester).read(sheetAtFullProvider), isTrue, reason: 'home is at full');
+      container(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      await frames(tester);
+      final card = tester.widget<BBSheet>(find.byType(BBSheet));
+      expect(height(tester), closeTo(card.halfFraction * area, 1), reason: 'the card opens at half');
+      expect(container(tester).read(sheetAtFullProvider), isFalse);
+      expect(find.byKey(StopSheetContent.openBoardKey), findsOneWidget);
+      expect(find.byKey(StopSheetContent.showMapKey), findsNothing);
     });
   });
 
@@ -1178,6 +1253,19 @@ void main() {
       await tester.drag(find.byType(FollowCardHeader), const Offset(0, 400));
       await _frames(tester, 30);
       expect(find.text('Back to bus 2573'), findsOneWidget, reason: 'down at peek again, it comes back');
+    });
+
+    testWidgets('following from a stop card at half, a pan shows Back to bus (final review I3)', (tester) async {
+      await pumpFollow(tester);
+      containerOf(tester).read(homeSheetProvider.notifier).open(const StopSheet('s2'));
+      await _frames(tester, 6);
+      final card = tester.widget<BBSheet>(find.byType(BBSheet));
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(card.halfFraction * (844 - 2 * BBSpace.s), 1),
+          reason: 'the stop card is at half');
+      await startFollowing(tester);
+      expect(find.byType(FollowCardHeader), findsOneWidget);
+      await pan(tester);
+      expect(find.text('Back to bus 2573'), findsOneWidget);
     });
 
     testWidgets('a pan never moves the follow card: it keeps its place (spec 2026-10-14 §3.4)', (tester) async {

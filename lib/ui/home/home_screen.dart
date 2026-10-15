@@ -1070,10 +1070,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   BBSheetController _sheetFor(Object? key) {
     if (key != _sheetKey) {
       _sheetKey = key;
+      // A new sheet is built at its own peek and says nothing until it moves: nothing of the last one carries over.
       _sheetAtFull = false;
+      _sheetAbovePeek = false;
       _sheetExtent = 0;
       _headerKey = GlobalKey();
       _headerHeight = null;
+      // Its header is measured once laid out (a first layout sends no size-changed notification), and the stop card's
+      // Open board / Show map follows this sheet's height, not the last one's (provider changes wait for the frame).
+      _scheduleHeaderMeasure();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull);
+      });
       _actionsKey = GlobalKey();
       _actionsBottom = null;
       _retiredSheets.add(_sheet);
@@ -1232,6 +1240,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // BBSheet pads top + s above and bottomInset + s below, and its fractions
       // apply to what is left: this is where the peeking card's top really is.
       final sheetArea = math.max(1.0, constraints.maxHeight - (media.padding.top + BBSpace.s) - (navInset + BBSpace.s));
+      // The same header and body for the pull-up sheet and the side panel. (_sheetFor first: a new selection gets its
+      // own header key, header measure and sheet controller, so it never peeks at the last sheet's height.)
+      final sheetController = _sheetFor(sheetKey);
       // The peek shows the whole header: the handle (the bar's is a 24 pt button) and a little air
       // under it. Until the header has been measured, an estimate.
       final measured = _headerHeight;
@@ -1279,9 +1290,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           ? math.max(0.0, creditBottom - media.padding.bottom)
           : creditBottom;
 
-      // The same header and body for the pull-up sheet and the side panel. (_sheetFor first: a new selection
-      // gets its own header key and sheet controller.)
-      final sheetController = _sheetFor(sheetKey);
       final panelHeader = _measuredHeader(followShowing
           ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows, wide: wide)
           : selectionHeader(sheet, onChooseStop: () => _showMore(wide: wide), wide: wide));
