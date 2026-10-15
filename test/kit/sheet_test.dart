@@ -199,6 +199,20 @@ void main() {
     handle.dispose();
   });
 
+  // The handle is a control (a button on home, adjustable on cards): its bar needs 3:1 against the sheet (WCAG 1.4.11).
+  for (final (brightness, grey) in [(Brightness.light, const Color(0xFF8E939B)), (Brightness.dark, const Color(0xFF6E727B))]) {
+    for (final button in [false, true]) {
+      testWidgets('the handle bar is the 3:1 handle grey (${brightness.name}, ${button ? 'button' : 'adjustable'})',
+          (tester) async {
+        await tester.pumpWidget(_host(BBSheetController(), handleButton: button, brightness: brightness));
+        final bar = tester.widget<Container>(
+          find.descendant(of: find.byKey(BBSheet.handleKey), matching: find.byType(Container)),
+        );
+        expect((bar.decoration! as BoxDecoration).color, grey);
+      });
+    }
+  }
+
   testWidgets('a handle button keeps Expand and Collapse for screen readers, and still drags', (tester) async {
     final handle = tester.ensureSemantics();
     final controller = BBSheetController();

@@ -15,6 +15,7 @@ class BBColors {
     required this.surfaceSunken,
     required this.skeleton,
     required this.line,
+    required this.handle,
     required this.highlight,
     required this.ink,
     required this.muted,
@@ -56,6 +57,9 @@ class BBColors {
   /// Hairlines and field outlines.
   final Color line;
 
+  /// The sheet's grab handle: a control, so a neutral grey at 3:1 on the sheet (WCAG 1.4.11), unlike [line].
+  final Color handle;
+
   /// The 1 px top-edge highlight on dark floating layers (transparent in light).
   final Color highlight;
   final Color ink;
@@ -86,6 +90,7 @@ class BBColors {
     surfaceSunken: Color(0xFFEEF0F2),
     skeleton: Color(0xFFE6E8EB),
     line: Color(0xFFE3E5E8),
+    handle: Color(0xFF8E939B),
     highlight: Color(0x00000000),
     ink: Color(0xFF16181C),
     muted: Color(0xFF5F646C),
@@ -112,6 +117,7 @@ class BBColors {
     surfaceSunken: Color(0xFF18191C),
     skeleton: Color(0xFF33353B),
     line: Color(0xFF3A3D44),
+    handle: Color(0xFF6E727B),
     highlight: Color(0x14FFFFFF),
     ink: Color(0xFFF2F3F5),
     muted: Color(0xFFA3A7AF),
@@ -140,6 +146,7 @@ class BBColors {
       surfaceSunken: l(surfaceSunken, other.surfaceSunken),
       skeleton: l(skeleton, other.skeleton),
       line: l(line, other.line),
+      handle: l(handle, other.handle),
       highlight: l(highlight, other.highlight),
       ink: l(ink, other.ink),
       muted: l(muted, other.muted),

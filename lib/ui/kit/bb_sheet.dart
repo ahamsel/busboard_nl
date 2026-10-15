@@ -301,7 +301,7 @@ class _BBSheetState extends State<BBSheet> {
     final bar = Container(
       width: 34,
       height: 4,
-      decoration: BoxDecoration(color: bb.colors.line, borderRadius: BorderRadius.circular(2)),
+      decoration: BoxDecoration(color: bb.colors.handle, borderRadius: BorderRadius.circular(2)),
     );
     if (widget.handleButton) return _handleButton(at, bar);
     final up = switch (at) {

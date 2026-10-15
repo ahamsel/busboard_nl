@@ -71,6 +71,7 @@ void main() {
         ('soon/surfaceRaised (large minutes)', c.soon, c.surfaceRaised, 3.0),
         ('soon/bg (large minutes)', c.soon, c.bg, 3.0),
         ('muted/surface (off switch outline and thumb)', c.muted, c.surface, 3.0),
+        ('handle/surface (the grab handle, a control)', c.handle, c.surface, 3.0),
         // Focus ring and selected-segment edge (WCAG 1.4.11).
         for (final (sName, s) in [
           ('surfaceField', c.surfaceField),
@@ -106,6 +107,7 @@ void main() {
           ('surfaceSunken', c.surfaceSunken),
           ('skeleton', c.skeleton),
           ('line', c.line),
+          ('handle', c.handle),
           ('ink', c.ink),
           ('muted', c.muted),
           ('highlight', c.highlight.withValues(alpha: 1)),
@@ -165,6 +167,14 @@ void main() {
     expect(d.onBrand, const Color(0xFF08203A));
     expect(d.brandInk, const Color(0xFF8CC0F7));
     expect(d.brandSoft, const Color(0xFF16304A));
+  });
+
+  test('the grab handle grey (final review I4): 3.09:1 on white, 3.38:1 on the dark sheet', () {
+    expect(BBColors.light.handle, const Color(0xFF8E939B));
+    expect(BBColors.dark.handle, const Color(0xFF6E727B));
+    expect(contrast(BBColors.light.handle, BBColors.light.surface), closeTo(3.09, 0.01));
+    expect(contrast(BBColors.dark.handle, BBColors.dark.surface), closeTo(3.38, 0.01));
+    expect(BBColors.light.lerp(BBColors.dark, 1).handle, BBColors.dark.handle);
   });
 
   test('the status colours are unchanged', () {
