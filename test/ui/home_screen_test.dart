@@ -876,6 +876,119 @@ void main() {
     });
   });
 
+  group('the sheet tucks away on map gestures (spec 2026-10-14 §3.4)', () {
+    double top(WidgetTester tester) => tester.getRect(find.byKey(BBSheet.cardKey)).top;
+    ProviderContainer container(WidgetTester tester) =>
+        ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+
+    Future<void> frames(WidgetTester tester) async {
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    /// Home with your stop, the tip seen, and the home sheet pulled from its bar up to half. Returns the bar's top.
+    Future<double> homeAtHalf(WidgetTester tester, {bool reduceMotion = false}) async {
+      await _pump(tester, prefs: {'selectedStopId': '1150'}, disableAnimations: reduceMotion,
+          overrides: [homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen())]);
+      final bar = top(tester);
+      await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
+      await frames(tester);
+      expect(top(tester), lessThan(bar - 200), reason: 'the home sheet is up at half');
+      return bar;
+    }
+
+    /// A pan on bare map: left of the map buttons, between the chips and the sheet at half.
+    Future<void> panMap(WidgetTester tester) async {
+      await tester.dragFrom(const Offset(60, 170), const Offset(0, 40));
+      await frames(tester);
+    }
+
+    testWidgets('a pan lowers the home sheet to its bar', (tester) async {
+      final bar = await homeAtHalf(tester);
+      await panMap(tester);
+      expect(top(tester), closeTo(bar, 1));
+    });
+
+    testWidgets('a pan lowers a stop card to its own lowest position, and the card stays', (tester) async {
+      await _pump(tester, prefs: {'selectedStopId': '1150'});
+      container(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      await frames(tester);
+      final card = tester.widget<BBSheet>(find.byType(BBSheet));
+      final area = 844 - 2 * BBSpace.s;
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(card.halfFraction * area, 1));
+      await panMap(tester);
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(card.peekFraction * area, 1));
+      expect(container(tester).read(homeSheetProvider), const StopSheet('1150'));
+    });
+
+    testWidgets('a tap, or a move shorter than a pan, leaves the sheet where it is', (tester) async {
+      await _pump(tester, prefs: {'selectedStopId': '1150'});
+      container(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      await frames(tester);
+      final half = top(tester);
+      final gesture = await tester.startGesture(const Offset(60, 170));
+      await gesture.moveBy(const Offset(0, 10));
+      await frames(tester);
+      expect(top(tester), half);
+      await gesture.cancel();
+    });
+
+    testWidgets('not while choosing on the map', (tester) async {
+      await homeAtHalf(tester);
+      container(tester).read(mapPickProvider.notifier).start(MapPick.to);
+      await frames(tester);
+      final half = top(tester);
+      await panMap(tester);
+      expect(top(tester), half);
+    });
+
+    testWidgets('not on the tablet side panel, which has no detents', (tester) async {
+      await _pump(tester, size: const Size(1024, 768), prefs: {'selectedStopId': '1150'});
+      final panel = tester.getRect(find.byKey(const ValueKey('home-side-panel')));
+      await tester.dragFrom(const Offset(800, 400), const Offset(0, 40));
+      await frames(tester);
+      expect(find.byType(BBSheet), findsNothing);
+      expect(tester.getRect(find.byKey(const ValueKey('home-side-panel'))), panel);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets("a drag that starts on the sheet is the sheet's own: pulled up to full, it stays", (tester) async {
+      await homeAtHalf(tester);
+      await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -400));
+      await frames(tester);
+      final full = top(tester);
+      final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.fullFraction * (844 - 2 * BBSpace.s), 1));
+      await frames(tester);
+      expect(top(tester), full);
+    });
+
+    testWidgets('a two-finger pinch lowers the sheet once, to its bar', (tester) async {
+      final bar = await homeAtHalf(tester);
+      final a = await tester.startGesture(const Offset(60, 150), pointer: 1);
+      final b = await tester.startGesture(const Offset(60, 190), pointer: 2);
+      for (var i = 0; i < 4; i++) {
+        await a.moveBy(const Offset(0, -8));
+        await b.moveBy(const Offset(0, 8));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await a.up();
+      await b.up();
+      await frames(tester);
+      expect(top(tester), closeTo(bar, 1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('with Reduce Motion the sheet jumps down', (tester) async {
+      final bar = await homeAtHalf(tester, reduceMotion: true);
+      await tester.dragFrom(const Offset(60, 170), const Offset(0, 40));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(top(tester), closeTo(bar, 1));
+    });
+  });
+
   testWidgets('no overflow at 320 pt and text x2.0', (tester) async {
     tester.view.physicalSize = const Size(320 * 3, 640 * 3);
     tester.view.devicePixelRatio = 3;
@@ -1065,6 +1178,17 @@ void main() {
       await tester.drag(find.byType(FollowCardHeader), const Offset(0, 400));
       await _frames(tester, 30);
       expect(find.text('Back to bus 2573'), findsOneWidget, reason: 'down at peek again, it comes back');
+    });
+
+    testWidgets('a pan never moves the follow card: it keeps its place (spec 2026-10-14 §3.4)', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      await tester.drag(find.byType(FollowCardHeader), const Offset(0, -300));
+      await _frames(tester, 30);
+      final pulledUp = tester.getRect(find.byKey(BBSheet.cardKey)).top;
+      await tester.dragFrom(const Offset(60, 170), const Offset(0, 40));
+      await _frames(tester, 6);
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, pulledUp);
     });
 
     testWidgets('a plain tap on the map does not pause', (tester) async {

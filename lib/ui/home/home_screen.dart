@@ -171,6 +171,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   _Follow? _follow;
   final _pointerStarts = <int, Offset>{};
 
+  /// The map gesture under way has already tucked the sheet away (or been found not to): once per gesture.
+  bool _tucked = false;
+
+  /// The pull-up sheet's latest extent, and its peek as last laid out: the tuck-away moves only a sheet above its peek.
+  double _sheetExtent = 0;
+  double _peekFraction = 0;
+
   // A planned journey (spec §2.3): drawn one update at a time, each with the
   // journey as it is then, and fitted once the camera can move.
   Future<void> _journeyDraw = Future.value();
@@ -613,6 +620,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (f.paused) setState(() => f.paused = false);
   }
 
+  void _onPointerDown(PointerDownEvent e) {
+    // The first finger of a new gesture: it may tuck the sheet away once.
+    if (_pointerStarts.isEmpty) _tucked = false;
+    _pointerStarts[e.pointer] = e.position;
+  }
+
   void _onPointerMove(PointerMoveEvent e) {
     final f = _follow;
     final start = _pointerStarts[e.pointer];
@@ -624,6 +637,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         f?.paused = true;
       });
     }
+    _tuckSheet();
+  }
+
+  /// A deliberate pan or pinch on the map (past [_panPauseDistance], so never a tap) lowers the pull-up sheet to its
+  /// lowest stop, once per gesture (spec 2026-10-14 §3.4): the home sheet to its bar, a stop, bus, options or trip card
+  /// to its own peek. Only the map's Listener calls it, so the sheet's own drags and scrolls never do. Not while
+  /// following (the follow card keeps its place), on the tablet panel, or while choosing on the map. Under Reduce Motion
+  /// the sheet's 1 ms snap makes it a jump.
+  void _tuckSheet() {
+    if (_tucked) return;
+    _tucked = true;
+    if (_wide || _follow != null || ref.read(mapPickProvider) != null) return;
+    if (!_sheet.isAttached || _sheetExtent <= _peekFraction + 0.005) return;
+    unawaited(_sheet.collapse());
   }
 
   void _onPointerEnd(PointerEvent e) => _pointerStarts.remove(e.pointer);
@@ -842,6 +869,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   bool _sheetAtFull = false;
 
   bool _onSheetExtent(DraggableScrollableNotification n) {
+    _sheetExtent = n.extent;
     final wasAtFull = _sheetAtFull;
     _sheetAtFull = n.extent >= n.maxExtent - 0.004;
     // Collapsed below full: the Board is no longer open.
@@ -1043,6 +1071,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (key != _sheetKey) {
       _sheetKey = key;
       _sheetAtFull = false;
+      _sheetExtent = 0;
       _headerKey = GlobalKey();
       _headerHeight = null;
       _actionsKey = GlobalKey();
@@ -1212,6 +1241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final headerOverflows = peekPx > maxPeek * sheetArea;
       final actionsPx = !followShowing || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
       final peek = math.max((peekPx / sheetArea).clamp(0.12, maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
+      _peekFraction = peek;
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
       // Just above the card, but below the chips and the my-location pill. With
       // no room, stay on screen and overlap the card's top edge instead.
@@ -1273,10 +1303,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           children: [
             Positioned.fill(
               // Translucent: the map still gets every touch. Moving a pointer
-              // far enough (a pan or a pinch) pauses the follow camera.
+              // far enough (a pan or a pinch) pauses the follow camera and tucks the sheet away.
               child: Listener(
                 behavior: HitTestBehavior.translucent,
-                onPointerDown: (e) => _pointerStarts[e.pointer] = e.position,
+                onPointerDown: _onPointerDown,
                 onPointerMove: _onPointerMove,
                 onPointerUp: _onPointerEnd,
                 onPointerCancel: _onPointerEnd,
