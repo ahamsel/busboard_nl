@@ -25,6 +25,7 @@ import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/home_stop_line.dart';
 import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
@@ -474,9 +475,8 @@ void main() {
     });
   }
 
-  // The home at its peek: the real screen, so the peek is the sheet's own. Where to?, the first saved place and the
-  // top of Your stop must be visible (on screen, inside the peeking sheet) however large the text, with two saved
-  // places and an alert for you (spec §3.1).
+  // The home at rest: the real screen, so the bar is the sheet's own. Where to? and the stop line must be visible (on
+  // screen, inside the bar) however large the text, with two saved places and an alert for you (spec 2026-10-14 §3.1).
   Future<void> pumpHomeAtPeek(
     WidgetTester tester, {
     required Size size,
@@ -525,7 +525,7 @@ void main() {
   }
 
   for (final dark in [false, true]) {
-    testWidgets('home at peek, 360x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
+    testWidgets('home at the bar, 360x640, 2.0x text, ${dark ? 'dark' : 'light'}', (tester) async {
       final handle = tester.ensureSemantics();
       const size = Size(360, 640);
       tester.view.physicalSize = size * 3;
@@ -538,8 +538,7 @@ void main() {
       final whereTo = find.byKey(HomeSheetContent.whereToKey);
       expectVisibleAtPeek(tester, whereTo, 'Where to?', size);
       expect(whereTo.hitTestable(), findsOneWidget, reason: 'Where to? can be tapped at peek');
-      expectVisibleAtPeek(tester, find.text('Home'), 'the first saved place', size);
-      expectVisibleAtPeek(tester, find.bySemanticsLabel(RegExp('^Your stop')), 'the top of Your stop', size);
+      expectVisibleAtPeek(tester, find.byKey(HomeStopLine.lineKey), 'the stop line', size);
 
       // Pulled up to full, the whole sheet scrolls without overflowing.
       await tester.drag(whereTo, const Offset(0, -700));
@@ -550,7 +549,8 @@ void main() {
     });
   }
 
-  testWidgets('home at peek, 390x844, 1.0x text: Your stop and the next bus are whole above the bottom', (tester) async {
+  testWidgets('home at 390x844, 1.0x text: the stop line is whole in the bar; at half, Your stop and the next bus',
+      (tester) async {
     final handle = tester.ensureSemantics();
     const size = Size(390, 844);
     tester.view.physicalSize = size;
@@ -558,12 +558,18 @@ void main() {
     addTearDown(tester.view.reset);
 
     await pumpHomeAtPeek(tester, size: size, textScale: 1.0, dark: false);
+    final bar = tester.getRect(find.byKey(BBSheet.cardKey));
+    final line = tester.getRect(find.byKey(HomeStopLine.lineKey));
+    expect(line.top, greaterThanOrEqualTo(bar.top));
+    expect(line.bottom, lessThanOrEqualTo(bar.bottom), reason: 'the stop line is whole inside the bar');
+    await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
+    await tester.pumpAndSettle();
     final card = tester.getRect(find.byKey(BBSheet.cardKey));
-    final yourStop = tester.getRect(find.bySemanticsLabel(RegExp('^Your stop')));
+    final yourStop = tester.getRect(find.bySemanticsLabel(RegExp(r'^Your stop, .*\. Open its buses$')));
     final firstBus = tester.getRect(find.byType(ArrivalRowTile).first);
     for (final (name, r) in [('Your stop', yourStop), ('the first bus', firstBus)]) {
       expect(r.top, greaterThanOrEqualTo(card.top), reason: name);
-      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the peeking sheet');
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the sheet at half');
       expect(r.bottom, lessThanOrEqualTo(size.height), reason: '$name is on screen');
     }
     handle.dispose();

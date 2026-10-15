@@ -1168,7 +1168,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
       // Too tall to peek in full: the follow card moves its actions up, and the
       // peek grows (if it must) to keep them in it.
-      // The home sheet peeks taller (Where to?, places, alerts and your stop): spec §3.1.
+      // The home sheet's bar is slim (spec 2026-10-14 §3.1); the cap only matters while the one-time tip sits in it.
       final maxPeek = sheet is HomeSheetHome && !followShowing ? _maxHomePeek : _maxPeek;
       final headerOverflows = peekPx > maxPeek * sheetArea;
       final actionsPx = !followShowing || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
@@ -1211,10 +1211,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final sheetController = _sheetFor(sheetKey);
       final panelHeader = _measuredHeader(followShowing
           ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows, wide: wide)
-          : selectionHeader(sheet, onChooseStop: () => _showMore(wide: wide)));
+          : selectionHeader(sheet, onChooseStop: () => _showMore(wide: wide), wide: wide));
       final panelSlivers = followShowing
           ? [SliverToBoxAdapter(child: FollowCardBody(snapshot: follow.snapshot))]
-          : selectionSlivers(sheet);
+          : selectionSlivers(sheet, wide: wide);
       final routeChip = BBChip(
         label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
         icon: BBIcons.filter,

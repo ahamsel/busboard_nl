@@ -19,18 +19,89 @@ import '../kit/kit.dart';
 import '../map/stop_card.dart';
 import '../stop_picker/near_me_list.dart';
 import '../trip_planner/saved_trips_section.dart';
+import 'home_stop_line.dart';
 import 'home_tip.dart';
 
-/// The home sheet (spec 2026-10-12 §3.1). The header is what peeks: Where to, saved places, alerts for you,
-/// your stop's next buses. The body: saved trips, then nearby stops.
+/// The home sheet (spec 2026-10-12 §3.1, 2026-10-14 §3). On a phone its header is the slim bar that rests over the
+/// map: Where to? and your stop's line ([bar]); pulled up, [barBody] shows saved places, alerts for you, your stop's
+/// next buses with Open board, saved trips and nearby stops. The tablet panel keeps the full [header] and [body].
 abstract final class HomeSheetContent {
   static const whereToKey = ValueKey('where-to');
   static const openBoardKey = ValueKey('home-open-board');
 
   /// [onChooseStop] pulls the sheet up to the nearby stops (home_screen.dart passes its sheet's full detent). With no
   /// nearby stops to show (no location, or none near) "Choose your stop" opens a stop search instead (spec §4.4).
+  static Widget bar({VoidCallback? onChooseStop}) => _Bar(onChooseStop: onChooseStop);
+
+  /// Under the bar: everything the bar leaves out, then saved trips and nearby stops.
+  static Widget barBody() => const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [_Header(belowBar: true), _Body()],
+      );
+
+  /// The tablet panel's header, as before the bar (spec 2026-10-14 §3.7).
   static Widget header({VoidCallback? onChooseStop}) => _Header(onChooseStop: onChooseStop);
   static Widget body() => const _Body();
+}
+
+/// The phone's bar (spec 2026-10-14 §3.1): Where to? and the stop line, each at least 48 pt tall, under the one-time
+/// tip while it shows. An armed arrival alert's strip joins them, so it stays in sight and can be cancelled with the
+/// stop's sheet closed (F4). Its height is its content's, so it grows with the text size.
+class _Bar extends ConsumerWidget {
+  const _Bar({this.onChooseStop});
+
+  final VoidCallback? onChooseStop;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final hasAlert = ref.watch(arrivalAlertProvider.select((a) => a.value != null));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.l, BBSpace.s),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const HomeTip(),
+          const _WhereTo(),
+          const SizedBox(height: BBSpace.s),
+          HomeStopLine(onChooseStop: onChooseStop),
+          if (hasAlert) ...[const SizedBox(height: BBSpace.s), const AlertStrip()],
+        ],
+      ),
+    );
+  }
+}
+
+/// "Where to?": the search field, at least 48 pt tall.
+class _WhereTo extends StatelessWidget {
+  const _WhereTo();
+
+  @override
+  Widget build(BuildContext context) {
+    final bb = context.bb;
+    return BBPressable(
+      key: HomeSheetContent.whereToKey,
+      semanticLabel: 'Where to? Search for a place or a stop',
+      onTap: () => context.push('/search'),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: DecoratedBox(
+          decoration: bb.field(),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.s),
+            child: Row(
+              children: [
+                Icon(BBIcons.search, size: 20, color: bb.colors.muted),
+                const SizedBox(width: BBSpace.s),
+                Expanded(
+                  child: Text('Where to?', style: bb.text.title.copyWith(color: bb.colors.muted)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The icon for a saved place's kind.
@@ -42,9 +113,12 @@ IconData savedPlaceIconData(SavedPlaceIcon i) => switch (i) {
 };
 
 class _Header extends ConsumerWidget {
-  const _Header({this.onChooseStop});
+  const _Header({this.onChooseStop, this.belowBar = false});
 
   final VoidCallback? onChooseStop;
+
+  /// Under the phone's bar, which already has the tip, Where to?, "Choose your stop" and an armed alert's strip.
+  final bool belowBar;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -59,27 +133,7 @@ class _Header extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const HomeTip(),
-          BBPressable(
-            key: HomeSheetContent.whereToKey,
-            semanticLabel: 'Where to? Search for a place or a stop',
-            onTap: () => context.push('/search'),
-            child: DecoratedBox(
-              decoration: bb.field(),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: BBSpace.m, vertical: BBSpace.s),
-                child: Row(
-                  children: [
-                    Icon(BBIcons.search, size: 20, color: bb.colors.muted),
-                    const SizedBox(width: BBSpace.s),
-                    Expanded(
-                      child: Text('Where to?', style: bb.text.title.copyWith(color: bb.colors.muted)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          if (!belowBar) ...[const HomeTip(), const _WhereTo()],
           const SizedBox(height: BBSpace.s),
           Wrap(
             spacing: BBSpace.s,
@@ -117,9 +171,11 @@ class _Header extends ConsumerWidget {
           ),
           for (final a in alerts.take(2)) _AlertRow(alert: a),
           // An armed arrival alert stays in sight, and can be cancelled, once its stop's sheet is closed.
-          if (hasAlert) ...[const SizedBox(height: BBSpace.s), const AlertStrip()],
+          if (hasAlert && !belowBar) ...[const SizedBox(height: BBSpace.s), const AlertStrip()],
           const SizedBox(height: BBSpace.m),
-          if (stop == null)
+          if (stop == null && belowBar)
+            const SizedBox.shrink()
+          else if (stop == null)
             BBButton(
               label: 'Choose your stop',
               icon: BBIcons.nearMe,

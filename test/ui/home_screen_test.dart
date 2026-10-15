@@ -25,6 +25,7 @@ import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/home_stop_line.dart';
 import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/map/follow_card.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
@@ -566,7 +567,8 @@ void main() {
     });
   });
 
-  testWidgets("the peek shows Where to?, your stop and its next two buses in full", (tester) async {
+  testWidgets("the bar shows Where to? and your stop's line in full; pulled up, your stop and its next two buses",
+      (tester) async {
     ArrivalRow arrival(int minutes) => ArrivalRow(
           routeShortName: '10',
           headsign: 'Downtown',
@@ -583,18 +585,26 @@ void main() {
     final handle = tester.ensureSemantics();
     await _pump(tester, size: const Size(390, 844), prefs: {'selectedStopId': '1150'}, arrivals: [arrival(3), arrival(9), arrival(15)],
         overrides: [homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen())]);
-    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    var card = tester.getRect(find.byKey(BBSheet.cardKey));
+    // The bar: Where to? and the stop line, whole inside the resting sheet (spec 2026-10-14 §3.1).
+    for (final f in [find.byKey(HomeSheetContent.whereToKey), find.byKey(HomeStopLine.lineKey)]) {
+      expect(tester.getRect(f).top, greaterThanOrEqualTo(card.top));
+      expect(tester.getRect(f).bottom, lessThanOrEqualTo(card.bottom));
+    }
+    expect(find.byType(ArrivalRowTile).hitTestable(), findsNothing, reason: 'the buses wait under the bar');
+    // Pulled up to half: your stop's header row, then its next two buses (spec §3.3).
+    await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    card = tester.getRect(find.byKey(BBSheet.cardKey));
     final tiles = find.byType(ArrivalRowTile);
-    expect(tiles, findsAtLeastNWidgets(2));
-    // Where to?, then your stop's header row, then the next bus: all whole inside the peeking card (spec §3.1).
-    expect(tester.getRect(find.byKey(HomeSheetContent.whereToKey)).top, greaterThanOrEqualTo(card.top));
-    final yourStop = tester.getRect(find.bySemanticsLabel(RegExp('^Your stop')));
+    final yourStop = tester.getRect(find.bySemanticsLabel('Your stop, MUN Centre. Open its buses'));
     final first = tester.getRect(tiles.at(0));
     expect(yourStop.top, greaterThanOrEqualTo(card.top));
     expect(yourStop.bottom, lessThanOrEqualTo(first.top), reason: 'your stop is above its first bus');
-    expect(first.bottom, lessThanOrEqualTo(card.bottom), reason: 'the next bus fits inside the peeking card');
-    final second = tester.getRect(tiles.at(1));
-    expect(second.bottom, lessThanOrEqualTo(card.bottom), reason: 'the second bus fits inside the peeking card too');
+    expect(first.bottom, lessThanOrEqualTo(card.bottom), reason: 'the next bus fits inside the sheet at half');
+    expect(tester.getRect(tiles.at(1)).bottom, lessThanOrEqualTo(card.bottom), reason: 'the second bus too');
     handle.dispose();
   });
 

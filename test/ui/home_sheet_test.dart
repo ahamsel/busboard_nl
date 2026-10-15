@@ -19,11 +19,11 @@ import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/home_stop_line.dart';
 import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
-import 'package:busboard_nl/ui/map/stop_card.dart';
 import 'package:busboard_nl/ui/stop_picker/near_me_list.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -134,6 +134,12 @@ Future<void> _pumpHome(
       ],
     );
 
+/// Pulls the sheet from its bar up to half, where saved places, alerts for you and your stop's buses are.
+Future<void> _toHalf(WidgetTester tester) async {
+  await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
+  await tester.pumpAndSettle();
+}
+
 /// Pulls the sheet to its full height, where saved trips and nearby stops are.
 Future<void> _pullUp(WidgetTester tester) async {
   await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -700));
@@ -174,36 +180,48 @@ void main() {
     });
   });
 
-  testWidgets('at peek: Where to, saved places, alerts for you and your stop, with no taps', (tester) async {
-    final handle = tester.ensureSemantics();
+  testWidgets('at rest the sheet is the slim bar: Where to? and the stop line, whole, the rest one pull up (spec 2026-10-14 §3.1)',
+      (tester) async {
     await _pumpHome(
       tester,
       places: [_home],
       alerts: [_alertOnRoute1()],
       arrivals: [_arrival(4), _arrival(12)],
     );
-    expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
-    expect(find.text('Where to?'), findsOneWidget);
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.textContaining('Detour on 1'), findsOneWidget);
-    expect(find.text('Stop C'), findsWidgets);
-    expect(find.byType(ArrivalsPreview), findsOneWidget);
-    // Present is not enough: each is on screen and inside the peeking sheet, with no taps.
     final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
-    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    var card = tester.getRect(find.byKey(BBSheet.cardKey));
     for (final (name, f) in [
       ('Where to?', find.byKey(HomeSheetContent.whereToKey)),
+      ('the stop line', find.byKey(HomeStopLine.lineKey)),
+    ]) {
+      final r = tester.getRect(f);
+      expect(r.top, greaterThanOrEqualTo(card.top), reason: name);
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the bar');
+      expect(r.height, greaterThanOrEqualTo(48), reason: '$name is at least 48 pt tall');
+    }
+    expect(card.height, lessThan(0.2 * screen.height), reason: 'the bar leaves the map most of the screen');
+    for (final (name, f) in [
       ('the saved place', find.text('Home')),
       ('the alert for you', find.textContaining('Detour on 1')),
-      ('your stop', find.bySemanticsLabel(RegExp(r'^Your stop, Stop C'))),
+      ('the next bus', find.byType(ArrivalRowTile).first),
+    ]) {
+      expect(f.hitTestable(), findsNothing, reason: '$name waits under the bar');
+    }
+
+    // Pulled up to half: today's home content (spec §3.3).
+    await _toHalf(tester);
+    card = tester.getRect(find.byKey(BBSheet.cardKey));
+    for (final (name, f) in [
+      ('the saved place', find.text('Home')),
+      ('the alert for you', find.textContaining('Detour on 1')),
+      ('your stop', find.bySemanticsLabel('Your stop, Stop C. Open its buses')),
+      ('Open board', find.bySemanticsLabel('Open board, Stop C')),
       ('the next bus', find.byType(ArrivalRowTile).first),
     ]) {
       final r = tester.getRect(f);
       expect(r.top, greaterThanOrEqualTo(card.top), reason: name);
-      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the peeking sheet');
-      expect(r.bottom, lessThanOrEqualTo(screen.height), reason: '$name is on screen');
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: '$name is whole inside the sheet at half');
     }
-    handle.dispose();
   });
 
   testWidgets('an alert that is not on your stop or its routes stays out of the header', (tester) async {
@@ -223,6 +241,7 @@ void main() {
 
   testWidgets('a saved place opens trip options to it', (tester) async {
     await _pumpHome(tester, places: [_home]);
+    await _toHalf(tester);
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
     expect(_c(tester).read(homeSheetProvider), isA<OptionsSheet>());
@@ -234,6 +253,7 @@ void main() {
   testWidgets('a saved place starts a fresh trip: an old start, mode and time are dropped (F3, Ruling 14)',
       (tester) async {
     await _pumpHome(tester, places: [_home]);
+    await _toHalf(tester);
     _c(tester).read(planQueryProvider.notifier)
       ..setFrom(StopPlace(stopId: 'G', name: 'Stop G'))
       ..setMode(PlanMode.arriveBy)
@@ -256,6 +276,7 @@ void main() {
       geolocator: FixedGeolocator(47.57, -52.73),
       overrides: [savedPlacesProvider.overrideWith(() => _FixedPlaces([_home]))],
     );
+    await _toHalf(tester);
     _c(tester).read(planQueryProvider.notifier).setFrom(StopPlace(stopId: 'G', name: 'Stop G'));
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
@@ -292,7 +313,7 @@ void main() {
     _c(tester).read(planQueryProvider.notifier)
       ..setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'E', name: 'Stop E'))
       ..setMode(PlanMode.arriveBy);
-    await tester.tap(find.bySemanticsLabel(RegExp(r'^Your stop, Stop C')));
+    await tester.tap(find.byKey(HomeStopLine.lineKey));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Plan a trip from here'));
     await tester.pumpAndSettle();
@@ -332,6 +353,7 @@ void main() {
 
   testWidgets('a long-press on a saved place offers Remove, and Cancel keeps it', (tester) async {
     await _pumpHome(tester, places: [_home]);
+    await _toHalf(tester);
     await tester.longPress(find.text('Home'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel'));
@@ -362,6 +384,7 @@ void main() {
   testWidgets('an alert for you is one line, and opens Alerts', (tester) async {
     final handle = tester.ensureSemantics();
     await _pumpHome(tester, alerts: [_alertOnRoute1()]);
+    await _toHalf(tester);
     final row = find.bySemanticsLabel('Alert: Detour on 1. Open alerts');
     expect(row, findsOneWidget);
     await tester.tap(row);
@@ -370,9 +393,19 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('your stop opens its sheet', (tester) async {
+  testWidgets("the stop line opens your stop's Board, at full height (spec 2026-10-14 §3.2)", (tester) async {
     await _pumpHome(tester, arrivals: [_arrival(4)]);
-    await tester.tap(find.bySemanticsLabel(RegExp(r'^Your stop, Stop C')));
+    await tester.tap(find.byKey(HomeStopLine.lineKey));
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.fullFraction * (844 - 2 * BBSpace.s), 1));
+  });
+
+  testWidgets('pulled up, Your stop opens its sheet', (tester) async {
+    await _pumpHome(tester, arrivals: [_arrival(4)]);
+    await _toHalf(tester);
+    await tester.tap(find.bySemanticsLabel('Your stop, Stop C. Open its buses'));
     await tester.pumpAndSettle();
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
   });

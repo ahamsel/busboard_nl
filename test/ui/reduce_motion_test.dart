@@ -8,6 +8,7 @@ import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_stop_line.dart';
 import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -68,8 +69,8 @@ void main() {
     );
     await settlesWithin100ms(tester, 'home at rest');
 
-    // A stop sheet, from Your stop.
-    await tester.tap(find.bySemanticsLabel(RegExp('^Your stop')));
+    // A stop's Board, from the bar's stop line.
+    await tester.tap(find.byKey(HomeStopLine.lineKey));
     await settlesWithin100ms(tester, 'opening the stop sheet');
     expect(find.byType(BBLiveDot), findsWidgets, reason: 'the live dot is there, but still');
     await tester.tap(find.byKey(StopSheetContent.refreshKey));

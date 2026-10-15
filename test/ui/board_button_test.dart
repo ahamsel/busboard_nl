@@ -1,5 +1,6 @@
 import 'package:busboard_nl/data/trip_planner/saved_place_store.dart' show SavedPlaceIcon;
-import 'package:busboard_nl/ui/home/home_sheet.dart' show savedPlaceIconData;
+import 'package:busboard_nl/ui/home/home_sheet.dart' show HomeSheetContent, savedPlaceIconData;
+import 'package:busboard_nl/ui/home/home_stop_line.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
@@ -17,8 +18,8 @@ import '../helpers/planner_app.dart';
 import '../kit/kit_test_helpers.dart';
 import '../trip_planner/test_network.dart';
 
-/// "Open board" (riders used to the old Board tab): on home's Your stop and in every stop sheet's header, it opens
-/// the stop's sheet at full height, its Board; on the tablet panel it scrolls to the departures.
+/// "Open board" (riders used to the old Board tab): on home's Your stop, on the bar's stop line and in every stop
+/// sheet's header, it opens the stop's sheet at full height, its Board; on the tablet panel it scrolls to the departures.
 final _now = DateTime(2026, 10, 12, 13, 0);
 
 class _FixedSettings extends SettingsNotifier {
@@ -72,9 +73,19 @@ void main() {
     expect(inSheet.kind, onHome.kind);
   });
 
-  testWidgets("home's Your stop has Open board, which opens the stop's sheet at full height", (tester) async {
+  testWidgets("the bar's stop line opens the stop's sheet at full height (spec 2026-10-14 §3.2)", (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, overrides: _overrides);
-    expect(_openBoard, findsOneWidget);
+    await tester.tap(find.byKey(HomeStopLine.lineKey));
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    _expectAtFull(tester);
+  });
+
+  testWidgets("pulled up, home's Your stop has Open board, which opens the stop's sheet at full height", (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, overrides: _overrides);
+    await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(_openBoard.hitTestable(), findsOneWidget);
     await tester.tap(_openBoard);
     await tester.pumpAndSettle();
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
@@ -134,12 +145,15 @@ void main() {
       addTearDown(tester.view.reset);
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, textScale: 2, theme: theme, overrides: _overrides);
       expect(tester.takeException(), isNull);
-      expect(find.text('Open board'), findsOneWidget);
-      await tester.tap(_openBoard);
+      await tester.tap(find.byKey(HomeStopLine.lineKey));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('Show map'), findsOneWidget, reason: 'its other face reads in full too');
+      expect(find.text('Show map'), findsOneWidget, reason: 'the Board open, its button reads Show map in full');
       _expectAtFull(tester);
+      await tester.tap(find.bySemanticsLabel('Show the map, Stop C'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Open board'), findsOneWidget, reason: 'and Open board reads in full too');
     }
   });
 
