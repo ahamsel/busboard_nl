@@ -15,6 +15,21 @@ enum BBSheetDetent { peek, half, full }
 class BBSheetController extends DraggableScrollableController {
   _BBSheetState? _sheet;
 
+  /// Where the last move asked by code ([animateTo], [jumpTo]) takes the sheet; null once the rider drags it.
+  double? _target;
+
+  @override
+  Future<void> animateTo(double size, {required Duration duration, required Curve curve}) {
+    _target = size;
+    return super.animateTo(size, duration: duration, curve: curve);
+  }
+
+  @override
+  void jumpTo(double size) {
+    _target = size;
+    super.jumpTo(size);
+  }
+
   /// Springs to [detent] (spec §3.2: the emphasis spring, slight overshoot; 1 ms with reduce motion). No-op when detached.
   ///
   /// Don't await this from tests or from code that can unmount the sheet: the
@@ -40,12 +55,14 @@ class BBSheetController extends DraggableScrollableController {
     final sheet = _sheet;
     if (sheet == null || !isAttached || sheet._reduced) return;
     final rest = size;
+    final atPeek = (rest - sheet.widget.peekFraction).abs() < _BBSheetState._tolerance;
     final up = math.min(rest + pixelsToSize(lift), sheet.widget.fullFraction);
     sheet._quiet = true;
     try {
       await animateTo(up, duration: BBMotion.standard, curve: BBMotion.curve);
       if (!isAttached) return;
-      await animateTo(rest, duration: BBMotion.emphasis, curve: BBMotion.curve);
+      // From the peek, back to the peek as it is now: the content above it may have shrunk meanwhile.
+      await animateTo(atPeek ? sheet.widget.peekFraction : rest, duration: BBMotion.emphasis, curve: BBMotion.curve);
     } finally {
       sheet._quiet = false;
     }
@@ -173,6 +190,24 @@ class _BBSheetState extends State<BBSheet> {
         widget.halfFraction != oldWidget.halfFraction) {
       _snapSizes = _computeSnapSizes();
     }
+    if (widget.peekFraction != oldWidget.peekFraction) _followPeek(oldWidget.peekFraction);
+  }
+
+  /// The peek moved (the header grew or shrank). A sheet resting at the old peek moves to the new one. Flutter's
+  /// sheet does that by itself only until it is first moved by code: after that it keeps its size, clamped, so a
+  /// smaller peek would leave it resting taller than its content (final review I1). Not a sheet on its way somewhere
+  /// else (a card opening to half), nor one the rider has moved off its peek.
+  void _followPeek(double oldPeek) {
+    final newPeek = widget.peekFraction;
+    if (_lastDetent == oldPeek) _lastDetent = newPeek; // the same rest, moved: no tick
+    // After the frame: the inner sheet takes its new bounds in this build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.isAttached || widget.peekFraction != newPeek) return;
+      final size = _controller.size;
+      final target = _controller._target;
+      final resting = (size - oldPeek).abs() < _tolerance && (target == null || (target - oldPeek).abs() < _tolerance);
+      if (resting && (size - newPeek).abs() >= _tolerance) _controller.jumpTo(newPeek);
+    });
   }
 
   @override
@@ -333,6 +368,8 @@ class _BBSheetState extends State<BBSheet> {
 
   /// The list under the header: scrolled (hairline, shadow, top fade) and more below (bottom fade).
   bool _onList(Notification n) {
+    // The rider took hold of the sheet (or its list): what code last asked of it no longer says where it rests.
+    if (n is ScrollStartNotification && n.depth == 0 && n.dragDetails != null) _controller._target = null;
     final ScrollMetrics metrics;
     if (n is ScrollNotification && n.depth == 0) {
       metrics = n.metrics;
