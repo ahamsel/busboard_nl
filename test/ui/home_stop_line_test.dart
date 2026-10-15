@@ -220,6 +220,80 @@ void main() {
     );
   });
 
+  group("the alert mark takes the stop's most important alert (final review M5)", () {
+    ServiceAlert alert(
+      ServiceAlertEffect effect, {
+      ServiceAlertSeverity severity = ServiceAlertSeverity.unknown,
+      List<ServiceAlertTarget> targets = const [ServiceAlertTarget(stopId: 'C')],
+    }) =>
+        ServiceAlert(
+          sourceIds: {effect.name},
+          header: effect.label,
+          description: '',
+          cause: ServiceAlertCause.unknown,
+          effect: effect,
+          severity: severity,
+          activePeriods: [ServiceAlertPeriod(end: DateTime(2099))],
+          targets: targets,
+        );
+    const agency = [ServiceAlertTarget(agencyId: 'metrobus')];
+
+    test('Information and Additional service never mark the stop', () {
+      expect(stopLineAlert([alert(ServiceAlertEffect.noEffect)], routes: {'1'}, stopId: 'C'), isNull);
+      expect(stopLineAlert([alert(ServiceAlertEffect.additionalService)], routes: {'1'}, stopId: 'C'), isNull);
+    });
+
+    test('an agency-wide info alert does not mark the stop', () {
+      expect(
+        stopLineAlert([alert(ServiceAlertEffect.other, severity: ServiceAlertSeverity.info, targets: agency)],
+            routes: {'1'}, stopId: 'C'),
+        isNull,
+      );
+      expect(
+        stopLineAlert([alert(ServiceAlertEffect.noEffect, targets: const [])], routes: {'1'}, stopId: 'C'),
+        isNull,
+      );
+    });
+
+    test('an agency-wide warning still does', () {
+      final strike = alert(ServiceAlertEffect.noService, severity: ServiceAlertSeverity.severe, targets: agency);
+      expect(stopLineAlert([strike], routes: {'1'}, stopId: 'C'), strike);
+    });
+
+    test('the highest priority wins, whatever the feed order', () {
+      final info = alert(ServiceAlertEffect.noEffect);
+      final moved = alert(ServiceAlertEffect.stopMoved);
+      final none = alert(ServiceAlertEffect.noService);
+      expect(stopLineAlert([info, moved, none], routes: {'1'}, stopId: 'C'), none);
+    });
+
+    test('an alert for another stop or route is left out', () {
+      expect(
+        stopLineAlert([alert(ServiceAlertEffect.detour, targets: const [ServiceAlertTarget(stopId: 'X')])],
+            routes: {'1'}, stopId: 'C'),
+        isNull,
+      );
+    });
+
+    testWidgets('an Information alert listed first: the line names the detour after it', (tester) async {
+      await _pump(
+        tester,
+        arrivals: () => [_row(4, live: true)],
+        alerts: [alert(ServiceAlertEffect.noEffect), alert(ServiceAlertEffect.detour)],
+      );
+      expect(_inLine(find.byKey(const ValueKey('home-stop-line-alert'))), findsOneWidget);
+      expect(
+        find.bySemanticsLabel('Your stop, Stop C. Detour affects this stop. Route 1 in 4 minutes, live. Open board'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('only an Information alert: no mark', (tester) async {
+      await _pump(tester, arrivals: () => [_row(4, live: true)], alerts: [alert(ServiceAlertEffect.noEffect)]);
+      expect(_inLine(find.byKey(const ValueKey('home-stop-line-alert'))), findsNothing);
+    });
+  });
+
   testWidgets('no stop chosen: "Choose your stop"', (tester) async {
     await _pump(tester, stop: null);
     expect(_inLine(find.text('Choose your stop')), findsOneWidget);

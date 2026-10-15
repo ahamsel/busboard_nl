@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../data/realtime/service_alert_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/first_bus.dart';
 import '../../state/home_sheet_provider.dart';
@@ -11,6 +12,21 @@ import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../kit/kit.dart';
+
+/// The alert the stop line's ⚠ names: of the [active] alerts touching [stopId] or its [routes], the one with the
+/// highest [ServiceAlert.priority] (feed order breaks a tie). Information and Additional service are not warnings,
+/// and an agency-wide alert the agency marks as info is not about this stop: none of them marks it.
+ServiceAlert? stopLineAlert(Iterable<ServiceAlert> active, {required Set<String> routes, required String stopId}) {
+  ServiceAlert? best;
+  for (final a in active) {
+    if (a.effect == ServiceAlertEffect.noEffect || a.effect == ServiceAlertEffect.additionalService) continue;
+    if (!a.appliesTo(routeIds: routes, stopId: stopId)) continue;
+    final agencyWide = a.targets.every((t) => t.routeId == null && t.stopId == null && t.tripId == null);
+    if (agencyWide && a.severity == ServiceAlertSeverity.info) continue;
+    if (best == null || a.priority > best.priority) best = a;
+  }
+  return best;
+}
 
 /// What the stop line shows (spec 2026-10-14 §3.2).
 enum StopLineKind {
@@ -173,10 +189,9 @@ class HomeStopLine extends ConsumerWidget {
     final repo = ref.watch(gtfsRepositoryProvider).value;
     final updates = ref.watch(serviceUpdatesProvider).value;
     final routes = repo?.routeShortNamesForStop(stop.stopId).toSet() ?? const <String>{};
-    final alert = updates
-        ?.activeAlertsAt(DateTime.now())
-        .where((a) => a.appliesTo(routeIds: routes, stopId: stop.stopId))
-        .firstOrNull;
+    final alert = updates == null
+        ? null
+        : stopLineAlert(updates.activeAlertsAt(DateTime.now()), routes: routes, stopId: stop.stopId);
     final info = StopLineInfo.resolve(
       stopName: stop.stopName,
       arrivals: arrivals,
