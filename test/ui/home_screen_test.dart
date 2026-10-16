@@ -386,7 +386,9 @@ void main() {
     final chipsBottom = tester.getRect(find.widgetWithText(BBChip, 'All routes')).bottom;
     expect(stop.dx, greaterThan(panelRight), reason: 'the stop is not under the panel');
     expect(stop.dx, closeTo((panelRight + view.width) / 2, 12), reason: 'it is in the middle of the map beside it');
-    expect(stop.dy, closeTo((chipsBottom + view.height) / 2, 2));
+    // Between the chips and the bottom padding (under the shell, the floating tab bar's top) less its 8 pt gap.
+    final bottom = MediaQuery.paddingOf(tester.element(find.byType(HomeScreen))).bottom + BBSpace.s;
+    expect(stop.dy, closeTo((chipsBottom + view.height - bottom) / 2, 2));
   });
 
   testWidgets('with Reduce Motion the stop sheet\'s camera move jumps', (tester) async {

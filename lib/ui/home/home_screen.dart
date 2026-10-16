@@ -1227,23 +1227,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             );
       _mapSize = constraints.biggest;
       final belowChips = media.padding.top + BBSpace.s + _controlsHeight + hideTripExtra;
-      _peekWindow = EdgeInsets.fromLTRB(panelInset, belowChips, 0, wide ? 0 : peekTop);
-      _cardWindow = _peekWindow.copyWith(bottom: wide ? 0 : navInset + BBSpace.s + _cardHalf * sheetArea);
+      // The map runs under the floating tab bar: on a tablet, what must be seen keeps above it.
+      _peekWindow = EdgeInsets.fromLTRB(panelInset, belowChips, 0, wide ? navInset + BBSpace.s : peekTop);
+      _cardWindow = _peekWindow.copyWith(bottom: wide ? navInset + BBSpace.s : navInset + BBSpace.s + _cardHalf * sheetArea);
       // The follow camera keeps the bus and your stop clear of the chips, the
       // credit and the card, with room for half a followed marker on each side.
       _fitBase = EdgeInsets.fromLTRB(
         _fitMargin + panelInset,
         media.padding.top + BBSpace.s + _controlsHeight + _fitMargin / 2,
         _fitMargin,
-        wide ? _fitMargin : math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
+        wide ? navInset + _fitMargin : math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
       );
       final creditLeft = _creditLeft + panelInset;
       final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - creditLeft - BBSpace.s));
       final creditEnd = creditLeft + creditWidth + BBSpace.s;
       // iOS (MLNMapView) measures the attribution margin from the safe area, so
       // the bottom inset is already in it; Android measures from the view edge.
+      // The map runs to the screen's bottom edge, under the tab bar, so its
+      // safe area is the screen's own (the bottom padding here is the tab bar's top).
+      final view = View.of(context);
       final attributionBottom = defaultTargetPlatform == TargetPlatform.iOS
-          ? math.max(0.0, creditBottom - media.padding.bottom)
+          ? math.max(0.0, creditBottom - view.padding.bottom / view.devicePixelRatio)
           : creditBottom;
 
       final panelHeader = _measuredHeader(followShowing

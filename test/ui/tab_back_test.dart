@@ -106,15 +106,28 @@ void main() {
       tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
       addTearDown(tester.view.resetPadding);
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, tab: HomeTab.map, overrides: _overrides);
-      final tabBar = tester.getRect(find.byType(BBTabBar));
-      expect(tabBar.height, BBTabBar.height + 34, reason: 'the tab bar takes the home indicator');
+      final tabBar = tester.getRect(find.byKey(BBTabBar.capsuleKey));
+      expect(tabBar.bottom, 844 - 34 - BBTabBar.gap, reason: 'the capsule floats above the home indicator');
+      expect(tabBar.left, BBTabBar.sideInset);
+      expect(tabBar.right, 390 - BBTabBar.sideInset);
       expect(_rect(tester, BBSheet.cardKey).bottom, closeTo(tabBar.top - BBSpace.s, 1),
-          reason: 'the bar rests just above the tab bar');
+          reason: 'the bar rests 8 pt above the capsule');
       await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -800));
       await tester.pumpAndSettle();
       final card = _rect(tester, BBSheet.cardKey);
       expect(card.bottom, closeTo(tabBar.top - BBSpace.s, 1));
       expect(card.top, greaterThanOrEqualTo(47), reason: 'full height stays under the status bar');
+    });
+
+    testWidgets('the map runs under the capsule, and its credit sits above it', (tester) async {
+      tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
+      addTearDown(tester.view.resetPadding);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, tab: HomeTab.map, overrides: _overrides);
+      final capsule = tester.getRect(find.byKey(BBTabBar.capsuleKey));
+      expect(tester.getRect(find.byKey(const ValueKey('stub-map'))).bottom, 844, reason: 'to the bottom edge');
+      expect(tester.getRect(find.text('© OpenStreetMap · OpenFreeMap')).bottom, lessThanOrEqualTo(capsule.top));
+      // The map still takes a touch beside the capsule.
+      expect(find.byKey(const ValueKey('stub-map')).hitTestable(at: const Alignment(-0.97, 0.99)), findsOneWidget);
     });
 
     testWidgets('a pan tucks a card down to its peek, still above the tab bar', (tester) async {

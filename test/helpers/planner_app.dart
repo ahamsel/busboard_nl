@@ -105,8 +105,12 @@ class StubMap {
   void longPress(double lat, double lon) => config!.onLongPress!(LatLng(lat, lon));
 }
 
-/// The height the map's pull-up sheet moves in: the map tab's (the screen above the tab bar) less the sheet's gaps.
-double homeSheetArea(WidgetTester tester) => tester.getSize(find.byType(HomeScreen)).height - 2 * BBSpace.s;
+/// The height the map's pull-up sheet moves in: the map tab's (the whole screen, under the floating tab bar) less its
+/// top and bottom padding (the bottom one is the tab bar's top edge) and the sheet's gaps.
+double homeSheetArea(WidgetTester tester) {
+  final padding = MediaQuery.paddingOf(tester.element(find.byType(HomeScreen)));
+  return tester.getSize(find.byType(HomeScreen)).height - padding.vertical - 2 * BBSpace.s;
+}
 
 /// An element under the router and the providers, for `GoRouter.of` and `ProviderScope.containerOf`.
 Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigator).first);

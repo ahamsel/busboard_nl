@@ -174,17 +174,20 @@ void main() {
   });
 
   group('the two tabs on a tablet (spec 2026-10-15 §3)', () {
-    testWidgets('the Map keeps its side panel, which ends above the tab bar', (tester) async {
+    testWidgets('the Map keeps its side panel, which ends above the floating tab bar', (tester) async {
       tester.view.physicalSize = const Size(1024, 768);
       tester.view.devicePixelRatio = 1;
       tester.view.padding = const FakeViewPadding(bottom: 20);
       addTearDown(tester.view.reset);
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
       final panel = tester.getRect(find.byKey(const ValueKey('home-side-panel')));
-      final tabBar = tester.getRect(find.byType(BBTabBar));
-      expect(tabBar.width, 1024, reason: 'the tab bar spans the screen');
-      expect(tabBar.bottom, 768);
-      expect(panel.bottom, closeTo(tabBar.top - BBSpace.s, 1), reason: 'the panel sits on the tab bar');
+      final capsule = tester.getRect(find.byKey(BBTabBar.capsuleKey));
+      expect(capsule.width, BBTabBar.maxWidth, reason: 'the capsule keeps to 360 pt');
+      expect(capsule.center.dx, 512, reason: 'centred');
+      expect(capsule.bottom, 768 - 20 - BBTabBar.gap, reason: 'floating above the safe area');
+      expect(panel.right, greaterThan(capsule.left), reason: 'the capsule is under the panel\'s column');
+      expect(panel.bottom, closeTo(capsule.top - BBSpace.s, 1), reason: 'the panel ends 8 pt above the capsule');
+      expect(tester.getRect(find.byKey(const ValueKey('stub-map'))).bottom, 768, reason: 'the map runs to the edge');
     });
 
     testWidgets('the Board is a centred column at most 640 pt wide, and the tabs are under it', (tester) async {

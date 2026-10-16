@@ -16,6 +16,7 @@ import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/board/board_tab.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_shell.dart';
+import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:flutter/widgets.dart';
@@ -319,6 +320,29 @@ void main() {
       expect(toast.bottom, lessThanOrEqualTo(bar.top), reason: 'not over the tab labels');
       expect(find.byKey(HomeShell.mapTabKey).hitTestable(), findsOneWidget, reason: 'the Map tab takes the tap');
       await tester.pumpAndSettle(const Duration(seconds: 4));
+    });
+  }
+
+  for (final textScale in [1.0, 2.0]) {
+    testWidgets('the Board runs behind the floating tab bar, and its end scrolls out above it (${textScale}x text)',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(tester,
+          net: TestNetwork(), now: _now, tab: HomeTab.board, overrides: _longBoard, textScale: textScale);
+      final capsule = tester.getRect(find.byKey(BBTabBar.capsuleKey));
+      expect(capsule.bottom, 844 - 34 - BBTabBar.gap);
+      final list = find.descendant(of: find.byType(BoardTab), matching: find.byType(CustomScrollView));
+      expect(tester.getRect(list).bottom, 844, reason: 'the list runs behind the capsule');
+      await tester.fling(list, const Offset(0, -6000), 6000);
+      await tester.pumpAndSettle();
+      final last = tester.getRect(find.byType(ArrivalRowTile).last);
+      final plan = tester.getRect(find.byKey(StopSheetContent.planFromKey));
+      expect(last.bottom, lessThanOrEqualTo(capsule.top), reason: 'the last departure is clear of the capsule');
+      expect(plan.bottom, lessThanOrEqualTo(capsule.top - BBSpace.s), reason: 'Plan a trip from here is clear of it');
+      expect(find.byKey(StopSheetContent.planFromKey).hitTestable(), findsOneWidget);
     });
   }
 

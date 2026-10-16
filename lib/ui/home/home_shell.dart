@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/semantics.dart' show SemanticsService;
 import 'package:flutter/widgets.dart';
@@ -13,8 +14,9 @@ import 'home_screen.dart';
 /// The home (spec 2026-10-15 §2): two tabs, Board and Map, over a bottom tab bar. Both stay mounted, so a switch
 /// keeps the map, its camera and follow, and the Board's scroll, as they were; the tab not showing is offstage, its
 /// tickers off. The Board cross-fades in over the map, or out to show it, over [BBMotion.standard] (at once under
-/// Reduce Motion); the map itself never fades, as a platform view under an opacity layer can flicker. Each tab sits
-/// above the tab bar: the bar takes the bottom safe area, so the map's sheet measures its stops from the bar's top.
+/// Reduce Motion); the map itself never fades, as a platform view under an opacity layer can flicker. Both tabs run to
+/// the bottom edge, under the floating tab bar, and see its top edge as their bottom padding: the map's sheet measures
+/// its stops from there, and the Board's list leaves room to scroll its end out from behind it.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -102,25 +104,28 @@ class _HomeShellState extends ConsumerState<HomeShell> with SingleTickerProvider
     // panel clears a notch); the Board brings its own.
     return ColoredBox(
       color: bb.colors.bg,
-      child: LayoutBuilder(
-        builder: (context, shell) => Column(
-          children: [
-            Expanded(
-              child: LayoutBuilder(
-                // A toast shown from either tab clears the tab bar (its height, safe area included, grows with the
-                // text), so it never covers the tabs or takes their taps (final review M2).
-                builder: (context, tabs) => BBToastInset(
-                  bottom: shell.maxHeight - tabs.maxHeight,
-                  child: MediaQuery.removePadding(context: context, removeBottom: true, child: layers),
-                ),
+      child: BBTabBarLayout(
+        // Both tabs run to the bottom edge, behind the floating tab bar, and take its space (its top edge, safe area
+        // included, which grows with the text) as their bottom padding: the map's sheet and controls sit above it, the
+        // Board's list scrolls out from behind it. A toast shown from either tab clears it too, so it never covers the
+        // tabs or takes their taps (final review M2).
+        body: (context, inset) {
+          final media = MediaQuery.of(context);
+          return BBToastInset(
+            bottom: inset,
+            child: MediaQuery(
+              data: media.copyWith(
+                padding: media.padding.copyWith(bottom: inset),
+                viewPadding: media.viewPadding.copyWith(bottom: math.max(media.viewPadding.bottom, inset)),
               ),
+              child: layers,
             ),
-            BBTabBar(
-              tabs: HomeShell._tabs,
-              index: tab.index,
-              onSelect: (i) => ref.read(homeTabProvider.notifier).select(HomeTab.values[i]),
-            ),
-          ],
+          );
+        },
+        bar: BBTabBar(
+          tabs: HomeShell._tabs,
+          index: tab.index,
+          onSelect: (i) => ref.read(homeTabProvider.notifier).select(HomeTab.values[i]),
         ),
       ),
     );

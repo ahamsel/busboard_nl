@@ -140,7 +140,8 @@ class _BoardTabState extends ConsumerState<BoardTab> {
                       ),
                     ),
                   ],
-                  const SliverToBoxAdapter(child: SizedBox(height: BBSpace.xxl)),
+                  // Room to scroll the end out from behind the floating tab bar (the bottom padding is its top edge).
+                  SliverToBoxAdapter(child: SizedBox(height: BBSpace.xxl + MediaQuery.paddingOf(context).bottom)),
                 ],
               ),
             ),
