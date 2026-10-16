@@ -70,14 +70,9 @@ class HomeSheetNotifier extends Notifier<HomeSheet> {
     return const HomeSheetHome();
   }
 
-  /// Opens [sheet] over the stack. The card already on top, opened again (a second notification tap), stays as it
-  /// is in the stack, and [homeSheetReopenedProvider] tells the home screen to bring it back to half.
   void open(HomeSheet sheet) {
     if (sheet is HomeSheetHome) return home();
-    if (_stack.last == sheet) {
-      ref.read(homeSheetReopenedProvider.notifier)._bump();
-      return;
-    }
+    if (_stack.last == sheet) return;
     final top = _stack.last;
     switch (sheet) {
       case StopSheet() || BusSheet() when top is StopSheet || top is BusSheet:
@@ -111,13 +106,3 @@ class HomeSheetNotifier extends Notifier<HomeSheet> {
 }
 
 final homeSheetProvider = NotifierProvider<HomeSheetNotifier, HomeSheet>(HomeSheetNotifier.new);
-
-/// Counts the times the card on top was opened again; the home screen brings that card back to half on each.
-final homeSheetReopenedProvider = NotifierProvider<HomeSheetReopenedNotifier, int>(HomeSheetReopenedNotifier.new);
-
-class HomeSheetReopenedNotifier extends Notifier<int> {
-  @override
-  int build() => 0;
-
-  void _bump() => state++;
-}

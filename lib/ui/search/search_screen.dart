@@ -114,8 +114,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final query = ref.read(planQueryProvider.notifier);
     final recent = ref.read(recentPlacesProvider.notifier);
     final sheet = ref.read(homeSheetProvider.notifier);
-    // A fresh trip has no start; a changed destination keeps the trip's start (fillStart keeps one chosen meanwhile).
-    final needsStart = !widget.keepStart || ref.read(planQueryProvider).from == null;
     _busy = true;
     try {
       if (widget.save) return await _saveFlow(place);
@@ -156,7 +154,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       } else {
         query.startFresh(place);
       }
-      if (needsStart) {
+      if (ref.read(planQueryProvider).from == null) {
         final here = await _locate();
         if (here != null) query.fillStart(here);
       }
