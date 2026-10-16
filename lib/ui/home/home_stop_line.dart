@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../../data/realtime/service_alert_models.dart';
 import '../../domain/arrival/arrival_models.dart';
@@ -56,15 +57,18 @@ class StopLineInfo {
     this.minutes,
     this.live = false,
     this.firstBus,
+    this.firstBusDay,
     this.updatedAt,
     this.alertEffect,
   });
 
-  /// [arrivals] is the stop's departures as loaded; [firstBus] is asked only when none are due.
+  /// [arrivals] is the stop's departures as loaded; [firstBus] is asked only when none are due. [now] dates the first
+  /// bus: one two or more days away (over a weekend or a holiday) names its weekday.
   factory StopLineInfo.resolve({
     required String stopName,
     required AsyncValue<List<ArrivalRow>> arrivals,
     required DateTime? Function() firstBus,
+    DateTime? now,
     DateTime? updatedAt,
     String? alertEffect,
   }) {
@@ -75,6 +79,7 @@ class StopLineInfo {
       minutes: next?.minutesAway,
       live: next?.isLive ?? false,
       firstBus: first,
+      firstBusDay: first == null || now == null ? null : firstBusDayLabel(first, now),
       updatedAt: updatedAt,
       alertEffect: alertEffect,
     );
@@ -93,6 +98,17 @@ class StopLineInfo {
   final bool live;
   final DateTime? firstBus;
 
+  /// The first bus's weekday ("Mon") when it is two or more days away; null later today or tomorrow.
+  final String? firstBusDay;
+
+  /// [first]'s weekday ("Mon") when it is two or more calendar days after [now], else null: later today needs no
+  /// day, and tomorrow's first bus is the next morning's (the line has no "tomorrow" form).
+  static String? firstBusDayLabel(DateTime first, DateTime now) {
+    final days =
+        DateTime.utc(first.year, first.month, first.day).difference(DateTime.utc(now.year, now.month, now.day)).inDays;
+    return days >= 2 ? DateFormat('EEE').format(first) : null;
+  }
+
   /// When the departures last loaded, for the offline note.
   final DateTime? updatedAt;
 
@@ -105,7 +121,8 @@ class StopLineInfo {
   /// "Offline · updated 9:42 AM". Null for [StopLineKind.next] and [StopLineKind.loading].
   String? note({required bool use24h}) => switch (kind) {
     StopLineKind.none => 'No buses for a while',
-    StopLineKind.firstBus => 'First bus ${BBTime.of(firstBus!, use24h: use24h)}',
+    StopLineKind.firstBus =>
+      'First bus ${firstBusDay == null ? '' : '$firstBusDay '}${BBTime.of(firstBus!, use24h: use24h)}',
     StopLineKind.offline =>
       updatedAt == null ? 'Offline' : 'Offline · updated ${BBTime.of(updatedAt!, use24h: use24h)}',
     StopLineKind.next || StopLineKind.loading => null,
@@ -192,12 +209,14 @@ class HomeStopLine extends ConsumerWidget {
     final alert = updates == null
         ? null
         : stopLineAlert(updates.activeAlertsAt(DateTime.now()), routes: routes, stopId: stop.stopId);
+    final now = ref.read(plannerClockProvider)();
     final info = StopLineInfo.resolve(
       stopName: stop.stopName,
       arrivals: arrivals,
       updatedAt: updatedAt,
       alertEffect: alert?.effect.label,
-      firstBus: () => repo == null ? null : firstBusAfter(repo, stop.stopId, ref.read(plannerClockProvider)()),
+      firstBus: () => repo == null ? null : firstBusAfter(repo, stop.stopId, now),
+      now: now,
     );
 
     final muted = bb.text.body.copyWith(color: bb.colors.muted);

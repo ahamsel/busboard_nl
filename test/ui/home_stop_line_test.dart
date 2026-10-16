@@ -96,6 +96,26 @@ void main() {
       expect(offline.note(use24h: false), 'Offline · updated 9:42 AM');
     });
 
+    test('a first bus two or more days away names its weekday, on screen and to a screen reader', () {
+      StopLineInfo resolveAt(DateTime now, DateTime first) => StopLineInfo.resolve(
+            stopName: 'MUN Centre',
+            arrivals: const AsyncData([]),
+            firstBus: () => first,
+            now: now,
+          );
+      final friday = DateTime(2026, 10, 9, 22, 0);
+      final monday = resolveAt(friday, DateTime(2026, 10, 12, 6, 28));
+      expect(monday.note(use24h: false), 'First bus Mon 6:28 AM');
+      expect(monday.semantics(use24h: false), 'Your stop, MUN Centre. First bus Mon 6:28 AM. Open board');
+      expect(monday.note(use24h: true), 'First bus Mon 06:28');
+      // Later today and tomorrow need no day: tomorrow's is the next morning, and the line has no "tomorrow" form.
+      final tomorrow = resolveAt(friday, DateTime(2026, 10, 10, 6, 28));
+      expect(tomorrow.note(use24h: false), 'First bus 6:28 AM');
+      expect(tomorrow.semantics(use24h: false), 'Your stop, MUN Centre. First bus 6:28 AM. Open board');
+      final today = resolveAt(DateTime(2026, 10, 9, 4, 0), DateTime(2026, 10, 9, 6, 28));
+      expect(today.note(use24h: false), 'First bus 6:28 AM');
+    });
+
     test('an alert on the stop is said right after its name', () {
       expect(next(4, alert: 'Detour').semantics(use24h: false),
           'Your stop, MUN Centre. Detour affects this stop. Route 10 in 4 minutes, live. Open board');
@@ -148,6 +168,27 @@ void main() {
     await _pump(tester, now: _at(22, 0));
     expect(_inLine(find.text(' · First bus 8:05 AM')), findsOneWidget);
     expect(find.bySemanticsLabel('Your stop, Stop C. First bus 8:05 AM. Open board'), findsOneWidget);
+  });
+
+  testWidgets("on a Friday night with no weekend service: Monday's first bus, with its day", (tester) async {
+    final net = TestNetwork();
+    final every = net.repo.calendarsById[TestNetwork.serviceId]!;
+    net.repo.calendarsById[TestNetwork.serviceId] = ServiceCalendar(
+      serviceId: every.serviceId,
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: every.startDate,
+      endDate: every.endDate,
+    );
+    // testDay is a Wednesday: two days on is Friday.
+    await _pump(tester, net: net, now: DateTime(testDay.year, testDay.month, testDay.day + 2, 22, 0));
+    expect(_inLine(find.text(' · First bus Mon 8:05 AM')), findsOneWidget);
+    expect(find.bySemanticsLabel('Your stop, Stop C. First bus Mon 8:05 AM. Open board'), findsOneWidget);
   });
 
   testWidgets('loading: the name and a shimmer where the time goes', (tester) async {
