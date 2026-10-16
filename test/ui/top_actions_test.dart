@@ -136,7 +136,13 @@ void main() {
       expect(p.didExceedMaxLines, isFalse, reason: text);
     }
 
-    for (final (size, scale, stacked) in [(const Size(390, 844), 1.0, false), (const Size(320, 568), 2.0, true)]) {
+    // 360 dp (the commonest Android width) and 375 pt (iPhone SE, 12 and 13 mini) keep one row at 1x, as 390 does.
+    for (final (size, scale, stacked) in [
+      (const Size(390, 844), 1.0, false),
+      (const Size(375, 667), 1.0, false),
+      (const Size(360, 780), 1.0, false),
+      (const Size(320, 568), 2.0, true),
+    ]) {
       final at = '${size.width.toInt()} pt, ${scale}x text';
       testWidgets('the stop picker at $at', (tester) async {
         tester.view.physicalSize = size;
@@ -154,12 +160,13 @@ void main() {
         tester.view.physicalSize = size;
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.reset);
-        await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/A', textScale: scale);
+        // A four-digit stop number, as Metrobus's are: the widest pill the header has to fit.
+        await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/1150', textScale: scale);
         final buttons = tester.getRect(find.byKey(TopActions.settingsKey));
         final change = tester.getRect(find.text('Change'));
         expect(buttons.bottom <= change.top, stacked, reason: stacked ? 'above Change' : 'beside Change');
         readsInFull(tester, 'Change');
-        readsInFull(tester, 'STOP A');
+        readsInFull(tester, 'STOP 1150');
         expect(tester.takeException(), isNull);
         await _unmount(tester);
       });

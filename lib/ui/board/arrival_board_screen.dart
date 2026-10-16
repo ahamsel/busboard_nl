@@ -244,9 +244,9 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
             child: LayoutBuilder(builder: (context, box) {
               final pill = BBPill(label: 'STOP ${widget.stopId}', background: bb.colors.ink, foreground: bb.colors.bg);
               final change = BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop());
-              // Pill and Change share the width the three 44 pt buttons (Plan, Alerts, Settings) leave, as they did
-              // beside the gear. When either would be cut (large text on a small phone), the buttons take a row of
-              // their own above them instead.
+              // The pill, then Change at its own width, beside the three 44 pt buttons (Plan, Alerts, Settings). Only
+              // when the two together don't fit the room the buttons leave (large text on a small phone) do the
+              // buttons take a row of their own above them.
               final room = box.maxWidth - TopActions.headerWidth;
               final pillWidth =
                   TopActions.textWidth(context, pill.label, bb.text.caption.copyWith(fontWeight: FontWeight.w700)) +
@@ -254,10 +254,10 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
               final changeWidth = TopActions.textWidth(
                       context, change.label, bb.text.label.copyWith(fontSize: 15, fontWeight: FontWeight.w800)) +
                   36;
-              if (pillWidth <= room * 3 / 5 && changeWidth <= room * 2 / 5) {
+              if (pillWidth + changeWidth <= room) {
                 return Row(children: [
-                  Expanded(flex: 3, child: Align(alignment: Alignment.centerLeft, child: pill)),
-                  Flexible(flex: 2, child: change),
+                  Expanded(child: Align(alignment: Alignment.centerLeft, child: pill)),
+                  change,
                   const TopActions(),
                 ]);
               }
