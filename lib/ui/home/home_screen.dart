@@ -87,7 +87,7 @@ class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key, this.active = true});
 
   /// The Map tab is the one showing (spec 2026-10-15 §2). The home shell keeps this screen mounted behind the Board,
-  /// where it plays no one-time hint. Always true where the screen stands alone.
+  /// where it plays no one-time hint and leaves system back alone. Always true where the screen stands alone.
   final bool active;
 
   @override
@@ -861,10 +861,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The sheet is re-keyed by what it shows: opens the new card at half once built. Until a sheet is built (the
   /// schedule still loading) it stays due, and the next build tries again. The side panel has no detents.
-  void _toHalfAfterBuild() => _toDetentAfterBuild(BBSheetDetent.half);
-
-  void _toDetentAfterBuild(BBSheetDetent detent) {
-    _detentPending = detent;
+  void _toHalfAfterBuild() {
+    _detentPending = BBSheetDetent.half;
     _scheduleDetent();
   }
 
@@ -873,13 +871,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final detent = _detentPending;
       if (!mounted || detent == null) return;
       if (_wide) {
-        // The panel has no detents; its full height is the departures, scrolled to once the header is measured (a
-        // new selection's is not yet: the measure's rebuild tries again).
-        if (detent != BBSheetDetent.full || _showMore(wide: true)) {
-          _detentPending = null;
-        } else {
-          _scheduleHeaderMeasure();
-        }
+        // The panel has no detents: nothing to open at half.
+        _detentPending = null;
         return;
       }
       if (!_sheet.isAttached) return;
@@ -1192,8 +1185,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // On a tablet the sheet is a fixed panel at the left and everything else is laid out to its right.
       final wide = constraints.maxWidth >= homeSidePanelBreakpoint;
       _wide = wide;
-      // The panel has no detents: nothing to open at half (full is its departures).
-      if (wide && _detentPending != BBSheetDetent.full) _detentPending = null;
+      // The panel has no detents: nothing to open at half.
+      if (wide) _detentPending = null;
       // The panel stands clear of a notch on its side, and everything else of the panel.
       final panelLeft = media.padding.left + BBSpace.s;
       final panelInset = wide ? panelLeft + homeSidePanelWidth : 0.0;
@@ -1266,7 +1259,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       );
 
       return PopScope(
-        canPop: _backLeavesApp(sheet, pick),
+        // Behind the Board, back is the Board's: at its top level the app leaves, and back never switches tabs
+        // (spec 2026-10-15 §2.4).
+        canPop: !widget.active || _backLeavesApp(sheet, pick),
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop) _onBack();
         },
