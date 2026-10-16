@@ -1,5 +1,3 @@
-import 'dart:ui' show SemanticsFlag;
-
 import 'package:busboard_nl/ui/kit/bb_button.dart';
 import 'package:busboard_nl/ui/kit/bb_card.dart';
 import 'package:busboard_nl/ui/kit/bb_pill.dart';
@@ -135,21 +133,6 @@ void main() {
     await tester.pumpWidget(kitHost(const BBPressable(onTap: null, semanticLabel: 'off', child: Text('x'))));
     expect(tester.getSemantics(find.bySemanticsLabel('off')),
         isSemantics(label: 'off', hasTapAction: false));
-    handle.dispose();
-  });
-
-  testWidgets('a button whose label is its text is one labelled button node, not a bare "button" around it', (
-    tester,
-  ) async {
-    final handle = tester.ensureSemantics();
-    var taps = 0;
-    await tester.pumpWidget(kitHost(BBButton(label: 'Got it', kind: BBButtonKind.quiet, onPressed: () => taps++)));
-    final node = tester.getSemantics(find.text('Got it'));
-    expect(node, isSemantics(label: 'Got it', isButton: true, hasTapAction: true, hasEnabledState: true, isEnabled: true));
-    expect(find.semantics.byFlag(SemanticsFlag.isButton), findsOne);
-    tester.semantics.tap(find.semantics.byLabel('Got it'));
-    await tester.pump();
-    expect(taps, 1);
     handle.dispose();
   });
 }

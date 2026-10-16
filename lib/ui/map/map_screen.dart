@@ -3,53 +3,41 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/semantics.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
 import '../../data/gtfs/gtfs_models.dart';
 import '../../data/gtfs/gtfs_repository.dart';
 import '../../domain/arrival/arrival_models.dart';
-import '../../domain/location/locate_me.dart';
 import '../../domain/map/bus_tracking_state.dart';
 import '../../domain/map/delayed_track_renderer.dart';
 import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
-import '../../state/arrival_alert_providers.dart';
-import '../../state/board_open_store.dart';
 import '../../state/follow_providers.dart';
-import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
-import '../../state/map_pick_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../copy/legal_copy.dart';
 import '../kit/kit.dart';
-import '../map/follow_camera.dart';
-import '../map/follow_card.dart';
-import '../map/journey_lines.dart';
-import '../map/map_hit_test.dart';
-import '../map/map_layers.dart';
-import '../map/map_style.dart';
-import '../map/map_surface.dart';
-import '../map/map_view.dart';
-import '../map/route_filter_card.dart';
 import '../trip_planner/map_plan_sheet.dart';
-import 'map_buttons.dart';
-import 'options_sheet.dart';
-import 'sheet_content.dart';
-
-/// From this width the home's sheet is a fixed panel at the left instead of a pull-up sheet (spec §3, tablets).
-const homeSidePanelBreakpoint = 700.0;
-
-/// The side panel's width; the map's controls and camera framing shift right by this plus the edge gap.
-const homeSidePanelWidth = 400.0;
+import 'bus_card.dart';
+import 'follow_camera.dart';
+import 'follow_card.dart';
+import 'journey_lines.dart';
+import 'map_hit_test.dart';
+import 'map_layers.dart';
+import 'map_style.dart';
+import 'map_surface.dart';
+import 'map_view.dart';
+import 'my_stop_card.dart';
+import 'route_filter_card.dart';
+import 'stop_card.dart';
 
 /// What the screen holds while a bus is being followed (spec §3.5): the
 /// tracker and camera, whether a gesture has paused the camera, the card's
@@ -81,17 +69,22 @@ class _Follow {
   ({List<List<double>> driven, List<List<double>> ahead, Color color})? route;
 }
 
-/// The app's home (spec 2026-10-12 §3): the map, the floating controls and one sheet whose content
-/// follows the selection. A long-press plans from or to that point; while [mapPickProvider] is set the next
-/// tap chooses that end of the trip; a journey from the trip options is drawn on top.
-class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+/// The Map tab (spec §3.3): full-screen Harbour map with your-stop and route
+/// chips, a my-location control and one floating sheet whose card follows the
+/// selection (your stop / a stop / a bus). A long-press plans from or to that
+/// point; [pick] ('from' or 'to', from `/map?pick=`) makes the next tap choose
+/// that end of the trip; a journey shown from the planner is drawn on top.
+class MapScreen extends ConsumerStatefulWidget {
+  const MapScreen({super.key, this.pick});
+
+  /// 'from' or 'to' while the planner waits for a point on the map; anything else is ignored.
+  final String? pick;
 
   @override
-  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<MapScreen> createState() => _MapScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
+class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserver {
   static const _defaultTarget = LatLng(47.5615, -52.7126);
   static const _defaultZoom = 13.0;
   static const _frameInterval = Duration(milliseconds: 120);
@@ -107,15 +100,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// detent. Only the follow card's actions may stretch it, up to
   /// [_maxActionsPeek], lifting the half detent above it.
   static const double _maxPeek = 0.45;
-
-  /// The home sheet's own, taller cap.
-  static const double _maxHomePeek = 0.55;
-
-  /// The home sheet's half: well above its tall peek.
-  static const double _homeHalf = 0.75;
-
-  /// A card's half (a stop, a bus, the options, the follow card): above a card's peek, capped at [_maxPeek].
-  static const double _cardHalf = 0.5;
   static const double _maxActionsPeek = 0.8;
   static const _panPauseDistance = 18.0;
   static const _routeInterval = Duration(seconds: 1);
@@ -134,9 +118,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   // follow is not judged until a poll newer than this snapshot arrives.
   bool _awaitingFreshFeed = false;
   Map<String, BusTrackingState>? _feedAtResume;
-  // The top row of chips (and the map-pick banner above it): the part of the controls the camera and the
-  // credit link keep clear of. The Alerts/Settings/my-location column below it sits at the edge and is cleared
-  // sideways by the fit padding's margin.
   final _controlsKey = GlobalKey();
   // The sheet header's own key and height: one per sheet (a re-keyed sheet's
   // outgoing header is still mounted while the incoming one is built).
@@ -147,10 +128,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   var _actionsKey = GlobalKey();
   double? _actionsBottom;
   bool _headerMeasureScheduled = false;
-  double _controlsHeight = 44;
-  // The "Hide trip" chip, one row under the chips while a journey is drawn: the fit keeps clear of it too.
-  final _hideTripKey = GlobalKey();
-  double _hideTripHeight = 44;
+  double _controlsHeight = 44 + BBSpace.m + 44;
   bool _measureScheduled = false;
   bool _frameInFlight = false;
   bool _myLocationEnabled = false;
@@ -166,24 +144,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   bool _journeyFitPending = false;
   // Where the follow camera must keep the bus and your stop clear of the chips
   // and the peeking sheet; refreshed by every layout.
-  EdgeInsets _fitBase = const EdgeInsets.fromLTRB(48, 96, 48, 220);
-
-  /// What the "Hide trip" chip adds under the chips, once a journey is drawn.
-  double get _hideTripExtra => BBSpace.m + _hideTripHeight;
-
-  /// [_fitBase] with room for the Hide-trip chip when a journey is drawn. Read when the camera moves, so a journey
-  /// that has just been shown (the chip not built yet) already counts.
-  EdgeInsets get _fitPadding => ref.read(journeyOnMapProvider) == null
-      ? _fitBase
-      : _fitBase.copyWith(top: _fitBase.top + _hideTripExtra);
+  EdgeInsets _fitPadding = const EdgeInsets.fromLTRB(48, 96, 48, 220);
 
   /// The map's size, for the follow camera's fit.
   Size _mapSize = const Size(390, 844);
-
-  /// The part of the map a stop is centred in, refreshed by every layout: below the chips and right of the side
-  /// panel, above the home sheet's peek ([_peekWindow]) or a card at half ([_cardWindow]).
-  EdgeInsets _peekWindow = EdgeInsets.zero;
-  EdgeInsets _cardWindow = EdgeInsets.zero;
 
   // One controller per selection: BBSheet is re-keyed on every selection, and a
   // DraggableScrollableController can be attached to a single sheet at a time.
@@ -192,21 +156,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   var _sheet = BBSheetController();
   Object? _sheetKey;
   final _retiredSheets = <BBSheetController>[];
-
-  // A newly opened card goes to half once its sheet is built (it may not be yet: a link opened before the schedule
-  // loaded), and a stop's card brings the camera to its stop once there is a camera. "Open board" asks for full.
-  BBSheetDetent? _detentPending;
-
-  /// The last layout's: the side panel (a tablet) rather than the pull-up sheet.
-  bool _wide = false;
-  String? _centrePending;
-
-  // An armed arrival alert's stop, polled while the alert is armed so the alert keeps being re-timed with the stop's
-  // sheet closed (F4).
-  ProviderSubscription<AsyncValue<List<ArrivalRow>>>? _alertRowsSub;
-
-  /// The card [_onSheetOpened] last handled: the first build's check and the listener may both see one card open.
-  HomeSheet _opened = const HomeSheetHome();
 
   void _log(String msg) {
     if (kDebugMode) debugPrint('[Map] $msg');
@@ -217,47 +166,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_enableMyLocation(request: false));
-    unawaited(_restoreBoard());
     _journeyFitPending = ref.read(journeyOnMapProvider) != null;
     // A follow set before the map existed (the Board's live row): its card
     // replaces any selection.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (ref.read(followProvider) != null) {
-        ref.read(homeSheetProvider.notifier).home();
+      if (mounted && ref.read(followProvider) != null) {
+        ref.read(mapSelectionProvider.notifier).clear();
       }
-      // A card opened before this screen was built (a link's redirect): the listener in build never saw it open.
-      final sheet = ref.read(homeSheetProvider);
-      if (sheet is! HomeSheetHome) _onSheetOpened(sheet);
-      // Outside the build, so the first answer may re-time the alert at once. Only an alert that still waits to
-      // fire is re-timed, and only where the runner does not watch the live feed itself (on iPhone).
-      final watchesLive = ref.read(alertRunnerProvider).watchesLive;
-      ref.listenManual<String?>(
-        arrivalAlertProvider.select((a) {
-          final alert = a.value;
-          return watchesLive || alert == null || alert.firedAt != null ? null : alert.stopId;
-        }),
-        (_, stopId) => _feedAlertFrom(stopId),
-        fireImmediately: true,
-      );
     });
-  }
-
-  /// Polls [stopId]'s departures while an arrival alert is armed for it and has not fired, and hands every new list
-  /// to the alert (on iPhone a newer prediction re-times it; Android's watcher polls by itself). The stop's own sheet does the same when it is open: the second
-  /// hand-over of the same list changes nothing, as the alert is already at that time.
-  void _feedAlertFrom(String? stopId) {
-    _alertRowsSub?.close();
-    _alertRowsSub = null;
-    if (stopId == null) return;
-    _alertRowsSub = ref.listenManual<AsyncValue<List<ArrivalRow>>>(
-      stopArrivalsProvider(stopId),
-      (_, next) {
-        final rows = next.value;
-        if (rows != null) ref.read(arrivalAlertProvider.notifier).onBoardArrivals(stopId, rows);
-      },
-      fireImmediately: true,
-    );
   }
 
   @override
@@ -304,7 +220,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _appResumed = true;
       _resumeTicker();
     }
-    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) _rememberBoard();
     if (state == AppLifecycleState.paused) {
       _appResumed = false;
       _ticker?.stop();
@@ -317,9 +232,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _surface = surface;
     _camera = camera;
     _fitJourneyIfDue();
-    final centre = _centrePending;
-    _centrePending = null;
-    if (centre != null && ref.read(homeSheetProvider) == StopSheet(centre)) _centreOnStop(centre);
   }
 
   Future<void> _onStyleLoaded() async {
@@ -383,17 +295,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _ticker!.start();
   }
 
-  /// A newly chosen stop, or a stop's card, brings the map to it: in the middle of the map the sheet leaves (a stop's
-  /// card at half, else the peek), at zoom 15 or closer if the map already is.
+  /// A newly chosen stop brings the map to it.
   Future<void> _recentreOn(String stopId) async {
     final camera = _camera;
     final stop = ref.read(stopInfoProvider(stopId));
     if (camera == null || stop == null || !mounted) return;
-    final zoom = math.max(camera.zoom, 15.0);
-    final window = ref.read(homeSheetProvider) is StopSheet ? _cardWindow : _peekWindow;
-    final target = FollowCamera.inWindow(LatLng(stop.stopLat, stop.stopLon), zoom, window);
     try {
-      await camera.moveTo(target, zoom, animate: !MediaQuery.disableAnimationsOf(context));
+      await camera.moveTo(LatLng(stop.stopLat, stop.stopLon), 15, animate: !MediaQuery.disableAnimationsOf(context));
     } catch (e) {
       _log('Could not recentre on the new stop: $e');
     }
@@ -487,7 +395,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (layers != null && !sameBus) {
       unawaited(layers.clearRoute().catchError((Object e) => _log('Could not clear the route line: $e')));
     }
-    if (next != null) ref.read(homeSheetProvider.notifier).home();
+    if (next != null) ref.read(mapSelectionProvider.notifier).clear();
   }
 
   void _followFrame(
@@ -657,41 +565,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   // ─── Interaction ──────────────────────────────────────────
 
-  /// The tap sets the end being picked. A start keeps the sheet as it is; a destination opens its options: a fresh
-  /// trip from the phone's position when the pick came from Where to?, the same trip's new destination when it came
-  /// from the options (Ruling 14). Everything is taken from [ref] before the fix is awaited.
+  /// True while the next tap chooses the trip's start, false for its destination, null when not picking.
+  bool? get _pickFrom => switch (widget.pick) {
+        'from' => true,
+        'to' => false,
+        _ => null,
+      };
+
   void _finishPick(bool forFrom, LatLng tap) {
     final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, tap);
     final q = ref.read(planQueryProvider.notifier);
-    final pick = ref.read(mapPickProvider.notifier);
-    final keepStart = pick.keepStart;
-    pick.clear();
-    if (forFrom) {
-      q.setFrom(place);
-      return;
-    }
-    if (keepStart) {
-      q.setDestination(place);
-    } else {
-      q.startFresh(place);
-    }
-    ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
-    if (ref.read(planQueryProvider).from == null) {
-      // A start the rider chose while the fix was awaited wins.
-      unawaited(locateMe().then((p) {
-        if (p != null) q.fillStart(p);
-      }));
-    }
+    forFrom ? q.setFrom(place) : q.setTo(place);
+    context.go('/plan');
   }
 
   void _onTap(LatLng tap) {
-    final pick = ref.read(mapPickProvider);
-    if (pick != null) return _finishPick(pick == MapPick.from, tap);
+    final pickFrom = _pickFrom;
+    if (pickFrom != null) return _finishPick(pickFrom, tap);
     final radius = tapRadiusMeters(_camera?.zoom ?? _defaultZoom);
-    final sheetStack = ref.read(homeSheetProvider.notifier);
+    final selection = ref.read(mapSelectionProvider.notifier);
     final markers = _lastMarkers.isNotEmpty ? _lastMarkers : _markersFromTracking();
-    if (_follow != null && ref.read(homeSheetProvider) is HomeSheetHome) {
-      // The follow card is in the sheet: a tap on a bus or a stop does nothing;
+    if (_follow != null) {
+      // The follow card owns the sheet: a tap on a bus or a stop does nothing;
       // a tap on empty map brings the sheet back to peek.
       final repo = ref.read(gtfsRepositoryProvider).value;
       final hit = nearestBus(tap, radius, markers) != null ||
@@ -700,17 +595,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       return;
     }
     final bus = nearestBus(tap, radius, markers);
-    if (bus != null) return _open(BusSheet(bus));
+    if (bus != null) return _select(BusSelection(bus));
     final repo = ref.read(gtfsRepositoryProvider).value;
     final stop = repo == null ? null : nearestStop(tap, radius, repo.stopsById.values);
-    if (stop != null) return _open(StopSheet(stop.stopId));
-    switch (ref.read(homeSheetProvider)) {
-      // A stop's or a bus's card goes: going back re-keys the sheet, which starts back at peek.
-      case StopSheet() || BusSheet():
-        sheetStack.back();
-      // The trip stays drawn while the rider looks at the map (Ruling 13).
-      case HomeSheetHome() || OptionsSheet() || JourneySheet():
-        unawaited(_sheet.collapse());
+    if (stop != null) return _select(StopSelection(stop.stopId));
+    if (ref.read(mapSelectionProvider) == null) {
+      unawaited(_sheet.collapse());
+    } else {
+      // Clearing re-keys the sheet, which starts back at peek.
+      selection.clear();
     }
   }
 
@@ -723,190 +616,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
         now: DateTime.now(),
       );
 
-  /// The listener in build opens the card at half and, for a stop, brings the map to it.
-  void _open(HomeSheet sheet) => ref.read(homeSheetProvider.notifier).open(sheet);
-
-  /// Every card opens at half however it was reached (spec §3.2, §3.4): a map tap, a link or notification, a nearby
-  /// stop, the search, your stop. A stop's card also brings the map to the stop.
-  /// [again]: the card on top was opened again (a second notification tap), so it comes back to half even though
-  /// it was already open.
-  void _onSheetOpened(HomeSheet sheet, {bool again = false}) {
-    if (sheet == _opened && !again) return;
-    _opened = sheet;
-    switch (sheet) {
-      case HomeSheetHome():
-        _detentPending = null;
-        _centrePending = null;
-      case StopSheet(:final stopId):
-        _toHalfAfterBuild();
-        _centreOnStop(stopId);
-      case BusSheet() || OptionsSheet() || JourneySheet():
-        _centrePending = null;
-        _toHalfAfterBuild();
-    }
-  }
-
-  /// The camera to [stopId] (zoom 15; a jump with reduce motion), unless the follow camera is driving it: that
-  /// one keeps the bus and your stop in view itself. Before the map is ready, once it is.
-  void _centreOnStop(String stopId) {
-    final f = _follow;
-    if (f != null && !f.paused) return;
-    if (_camera == null) {
-      _centrePending = stopId;
-      return;
-    }
-    _centrePending = null;
-    unawaited(_recentreOn(stopId));
-  }
-
-  /// The sheet is re-keyed by what it shows: opens the new card at half once built. Until a sheet is built (the
-  /// schedule still loading) it stays due, and the next build tries again. The side panel has no detents.
-  void _toHalfAfterBuild() => _toDetentAfterBuild(BBSheetDetent.half);
-
-  void _toDetentAfterBuild(BBSheetDetent detent) {
-    _detentPending = detent;
-    _scheduleDetent();
-  }
-
-  void _scheduleDetent() {
+  void _select(MapSelection selection) {
+    ref.read(mapSelectionProvider.notifier).select(selection);
+    // The sheet is re-keyed by selection; open the new card at half once built.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final detent = _detentPending;
-      if (!mounted || detent == null) return;
-      if (_wide) {
-        // The panel has no detents; its full height is the departures, scrolled to once the header is measured (a
-        // new selection's is not yet: the measure's rebuild tries again).
-        if (detent != BBSheetDetent.full || _showMore(wide: true)) {
-          _detentPending = null;
-        } else {
-          _scheduleHeaderMeasure();
-        }
-        return;
-      }
-      if (!_sheet.isAttached) return;
-      _detentPending = null;
-      if (detent == BBSheetDetent.full && _sheetAtFull) {
-        // Already the Board: back up to the next buses, just under the pinned header; already there, say so.
-        if (!_scrollSheetToTop()) _sayBoardOpen();
-      } else {
-        unawaited(_sheet.animateToDetent(detent));
-      }
+      if (mounted) unawaited(_sheet.animateToDetent(BBSheetDetent.half));
     });
-  }
-
-  /// "Open board" (a stop's sheet just opened, or already showing): full height, or the panel's departures.
-  void _onBoardRequest(BoardRequest? request) {
-    if (request == null || ref.read(homeSheetProvider) != StopSheet(request.stopId)) return;
-    _toDetentAfterBuild(BBSheetDetent.full);
-  }
-
-  /// The pull-up sheet's list back to its top. False when it is there already.
-  bool _scrollSheetToTop() {
-    final header = _headerKey.currentContext;
-    final scrollable = header == null ? null : Scrollable.maybeOf(header);
-    if (scrollable == null || !scrollable.position.hasPixels || scrollable.position.pixels <= 0) return false;
-    unawaited(scrollable.position.animateTo(0, duration: BBMotion.of(context, BBMotion.sheet), curve: BBMotion.curve));
-    return true;
-  }
-
-  /// "Open board" on the Board itself, with nothing to move: a tick, and a word for screen readers.
-  void _sayBoardOpen() {
-    unawaited(HapticFeedback.selectionClick());
-    unawaited(SemanticsService.sendAnnouncement(View.of(context), 'Board open', Directionality.of(context)));
-  }
-
-  /// The pull-up sheet is at its full height.
-  bool _sheetAtFull = false;
-
-  bool _onSheetExtent(DraggableScrollableNotification n) {
-    final wasAtFull = _sheetAtFull;
-    _sheetAtFull = n.extent >= n.maxExtent - 0.004;
-    // Collapsed below full: the Board is no longer open.
-    if (wasAtFull && !_sheetAtFull) _forgetBoard();
-    return false;
-  }
-
-  // ─── Reopen the way the rider left it ─────────────────────
-
-  /// The stop id saved as the open Board ([BoardOpenStore]), as far as this screen knows.
-  String? _savedBoard;
-
-  /// The stop whose Board is showing: its sheet at full height, or in the side panel (which has no detents).
-  String? get _boardShowing {
-    final sheet = ref.read(homeSheetProvider);
-    return sheet is StopSheet && (_wide || _sheetAtFull) ? sheet.stopId : null;
-  }
-
-  /// The app is going to the background: remember the Board if one is open, else forget any. With none open the
-  /// store is cleared whatever this screen thinks it holds: a restore that failed may have left an id there.
-  void _rememberBoard() {
-    final id = _boardShowing;
-    if (id == null) {
-      _savedBoard = null;
-      unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
-      return;
-    }
-    if (id == _savedBoard) return;
-    _savedBoard = id;
-    unawaited(ref.read(boardOpenStoreProvider).save(id).catchError((Object e) => _log('Board not saved: $e')));
-  }
-
-  /// The rider collapsed, closed or left the Board.
-  void _forgetBoard() {
-    if (_savedBoard == null) return;
-    _savedBoard = null;
-    unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
-  }
-
-  /// A cold start: the Board left open is opened again, at full height, once the app has checked for a notification
-  /// that launched it and the schedule says the stop still exists. A link or a notification opened at launch wins,
-  /// and the Board is forgotten.
-  Future<void> _restoreBoard() async {
-    final store = ref.read(boardOpenStoreProvider);
-    final launchChecked = ref.read(launchLinkCheckedProvider).future;
-    String? id;
-    try {
-      id = await store.read();
-      if (id == null || !mounted) return;
-      // A notification plugin that never answers must not hold the Board back: after 3 s, no launch link.
-      final launchLink = await launchChecked.timeout(const Duration(seconds: 3), onTimeout: () => false);
-      final repo = await ref.read(gtfsRepositoryProvider.future);
-      if (!mounted) return;
-      final stillThere = repo.stopsById[id] != null;
-      if (launchLink ||
-          !stillThere ||
-          ref.read(homeSheetProvider) is! HomeSheetHome ||
-          ref.read(followProvider) != null) {
-        await store.clear();
-        return;
-      }
-      ref.read(homeSheetProvider.notifier).openBoard(id);
-      // Written back: a background while this waited (no Board showing then) cleared the store.
-      _savedBoard = id;
-      await store.save(id);
-    } catch (e) {
-      // The id is still stored: the next background, or a collapse, must clear it.
-      if (mounted) _savedBoard ??= id;
-      _log('Board not restored: $e');
-    }
-  }
-
-  /// System back: ends a map pick first, then walks the sheet back.
-  void _onBack() {
-    if (ref.read(mapPickProvider) != null) {
-      ref.read(mapPickProvider.notifier).clear();
-    } else {
-      _sheetBack();
-    }
-  }
-
-  /// Back one card (leaving the options takes their drawn trip): system back, a card swiped down past its peek.
-  /// A swipe never ends a map pick instead: the swiped card must go, or it would stay mounted at nothing.
-  void _sheetBack() {
-    if (ref.read(homeSheetProvider) is OptionsSheet) {
-      leaveOptions(ref);
-    } else {
-      ref.read(homeSheetProvider.notifier).back();
-    }
   }
 
   Future<void> _enableMyLocation({required bool request}) async {
@@ -966,7 +681,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   BBSheetController _sheetFor(Object? key) {
     if (key != _sheetKey) {
       _sheetKey = key;
-      _sheetAtFull = false;
       _headerKey = GlobalKey();
       _headerHeight = null;
       _actionsKey = GlobalKey();
@@ -981,26 +695,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       });
     }
     return _sheet;
-  }
-
-  /// "Choose your stop", "See all stops", "Open board": the sheet is pulled up to the rest of its content; the side
-  /// panel is scrolled down past its header to it. False when the panel's header is not laid out and measured yet.
-  bool _showMore({required bool wide}) {
-    if (!wide) {
-      unawaited(_sheet.animateToDetent(BBSheetDetent.full));
-      return true;
-    }
-    final header = _headerKey.currentContext;
-    final scrollable = header == null ? null : Scrollable.maybeOf(header);
-    final headerHeight = _headerHeight;
-    if (scrollable == null || headerHeight == null || !scrollable.position.hasContentDimensions) return false;
-    final position = scrollable.position;
-    unawaited(position.animateTo(
-      math.min(headerHeight, position.maxScrollExtent),
-      duration: BBMotion.of(context, BBMotion.sheet),
-      curve: BBMotion.curve,
-    ));
-    return true;
   }
 
   void _openRouteFilter() {
@@ -1039,17 +733,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     ref.listen<Journey?>(journeyOnMapProvider, (prev, next) {
       if (!identical(prev, next)) _onJourneyChanged(next);
     });
-    // Every card opens at half, however it was reached; a stop's brings the map to it (spec §3.2, §3.4).
-    ref.listen<HomeSheet>(homeSheetProvider, (prev, next) {
-      if (prev == next) return;
-      // Closed, back, or another card: the Board left open is no longer the one showing.
-      _forgetBoard();
-      _onSheetOpened(next);
-    });
-    ref.listen<int>(homeSheetReopenedProvider, (_, _) => _onSheetOpened(ref.read(homeSheetProvider), again: true));
-    ref.listen<BoardRequest?>(boardRequestProvider, (_, next) => _onBoardRequest(next));
     final journey = ref.watch(journeyOnMapProvider);
-    final pick = ref.watch(mapPickProvider);
+    final pickFrom = _pickFrom;
     _syncFollow(ref.watch(followProvider));
     final follow = _follow;
     final bb = context.bb;
@@ -1070,30 +755,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       );
     }
 
-    // A card opened while the schedule loaded has a sheet now.
-    if (_detentPending != null) _scheduleDetent();
     final settings = ref.watch(settingsProvider);
     final myStop = settings.selectedStopId == null ? null : ref.watch(stopInfoProvider(settings.selectedStopId!));
     final filter = ref.watch(mapRouteFilterProvider);
-    final sheet = ref.watch(homeSheetProvider);
+    final selection = ref.watch(mapSelectionProvider);
+    final selectedStop = selection is StopSelection ? ref.watch(stopInfoProvider(selection.stopId)) : null;
     final repo = gtfs.value!;
     // The follow's own stop when it was started for one (a planned trip's boarding stop), else the saved stop.
     final followStopId = ref.watch(followProvider)?.stopId ?? settings.selectedStopId;
     final followStop = followStopId == null ? null : ref.watch(stopInfoProvider(followStopId));
     // Minutes to your stop from the live predictions, for the followed bus.
-    final followShowing = follow != null && sheet is HomeSheetHome;
-    // The home sheet itself (or the follow card in its place) rather than a card over it.
-    final homeShowing = sheet is HomeSheetHome;
-    final yourStopArrivals = !followShowing || followStopId == null
+    final yourStopArrivals = follow == null || followStopId == null
         ? const <ArrivalRow>[]
         : ref.watch(stopArrivalsProvider(followStopId)).value ?? const <ArrivalRow>[];
     final buildMap = ref.watch(mapViewBuilderProvider);
     final media = MediaQuery.of(context);
-    final navInset = media.padding.bottom;
-    final Object sheetKey = followShowing ? 'follow:${follow.vehicleId}' : sheet;
+    final navInset = BBNavBar.reservedHeight(context);
+    final Object? sheetKey = follow == null ? selection : 'follow:${follow.vehicleId}';
     _scheduleControlsMeasure();
     // While following, the actions move without the header changing size.
-    if (_headerHeight == null || followShowing) _scheduleHeaderMeasure();
+    if (_headerHeight == null || follow != null) _scheduleHeaderMeasure();
 
     // The credit link: one line, text size capped, measured so MapLibre's own
     // attribution button can sit right after it.
@@ -1109,15 +790,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     creditPainter.dispose();
 
     return LayoutBuilder(builder: (context, constraints) {
-      // On a tablet the sheet is a fixed panel at the left and everything else is laid out to its right.
-      final wide = constraints.maxWidth >= homeSidePanelBreakpoint;
-      _wide = wide;
-      // The panel has no detents: nothing to open at half (full is its departures).
-      if (wide && _detentPending != BBSheetDetent.full) _detentPending = null;
-      // The panel stands clear of a notch on its side, and everything else of the panel.
-      final panelLeft = media.padding.left + BBSpace.s;
-      final panelInset = wide ? panelLeft + homeSidePanelWidth : 0.0;
-      final hideTripExtra = journey == null ? 0.0 : _hideTripExtra;
       // BBSheet pads top + s above and bottomInset + s below, and its fractions
       // apply to what is left: this is where the peeking card's top really is.
       final sheetArea = math.max(1.0, constraints.maxHeight - (media.padding.top + BBSpace.s) - (navInset + BBSpace.s));
@@ -1127,67 +799,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final peekPx = measured == null ? (168 * media.textScaler.scale(1)).clamp(140.0, 320.0) : measured + 20 + BBSpace.s;
       // Too tall to peek in full: the follow card moves its actions up, and the
       // peek grows (if it must) to keep them in it.
-      // The home sheet peeks taller (Where to?, places, alerts and your stop): spec §3.1.
-      final maxPeek = sheet is HomeSheetHome && !followShowing ? _maxHomePeek : _maxPeek;
-      final headerOverflows = peekPx > maxPeek * sheetArea;
-      final actionsPx = !followShowing || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
-      final peek = math.max((peekPx / sheetArea).clamp(0.12, maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
+      final headerOverflows = peekPx > _maxPeek * sheetArea;
+      final actionsPx = follow == null || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
+      final peek = math.max((peekPx / sheetArea).clamp(0.12, _maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
       // Just above the card, but below the chips and the my-location pill. With
       // no room, stay on screen and overlap the card's top edge instead.
       final belowControls =
-          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + hideTripExtra + BBSpace.s) - creditTextHeight;
-      // The panel has no peek: the credit sits in the bottom corner of the map beside it.
-      final creditBottom = wide
-          ? navInset + BBSpace.s
-          : math.min(
-              math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
-              constraints.maxHeight - creditTextHeight,
-            );
+          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + BBSpace.s) - creditTextHeight;
+      final creditBottom = math.min(
+        math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
+        constraints.maxHeight - creditTextHeight,
+      );
       _mapSize = constraints.biggest;
-      final belowChips = media.padding.top + BBSpace.s + _controlsHeight + hideTripExtra;
-      _peekWindow = EdgeInsets.fromLTRB(panelInset, belowChips, 0, wide ? 0 : peekTop);
-      _cardWindow = _peekWindow.copyWith(bottom: wide ? 0 : navInset + BBSpace.s + _cardHalf * sheetArea);
       // The follow camera keeps the bus and your stop clear of the chips, the
       // credit and the card, with room for half a followed marker on each side.
-      _fitBase = EdgeInsets.fromLTRB(
-        _fitMargin + panelInset,
+      _fitPadding = EdgeInsets.fromLTRB(
+        _fitMargin,
         media.padding.top + BBSpace.s + _controlsHeight + _fitMargin / 2,
         _fitMargin,
-        wide ? _fitMargin : math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
+        math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
       );
-      final creditLeft = _creditLeft + panelInset;
-      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - creditLeft - BBSpace.s));
-      final creditEnd = creditLeft + creditWidth + BBSpace.s;
+      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - BBSpace.s));
+      final creditEnd = _creditLeft + creditWidth + BBSpace.s;
       // iOS (MLNMapView) measures the attribution margin from the safe area, so
       // the bottom inset is already in it; Android measures from the view edge.
       final attributionBottom = defaultTargetPlatform == TargetPlatform.iOS
           ? math.max(0.0, creditBottom - media.padding.bottom)
           : creditBottom;
 
-      // The same header and body for the pull-up sheet and the side panel. (_sheetFor first: a new selection
-      // gets its own header key and sheet controller.)
-      final sheetController = _sheetFor(sheetKey);
-      final panelHeader = _measuredHeader(followShowing
-          ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows, wide: wide)
-          : selectionHeader(sheet, onChooseStop: () => _showMore(wide: wide)));
-      final panelSlivers = followShowing
-          ? [SliverToBoxAdapter(child: FollowCardBody(snapshot: follow.snapshot))]
-          : selectionSlivers(sheet);
-      final routeChip = BBChip(
-        label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
-        icon: BBIcons.filter,
-        chevron: true,
-        selected: filter.isNotEmpty,
-        onTap: _openRouteFilter,
-      );
-
-      return PopScope(
-        canPop: sheet is HomeSheetHome && pick == null,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) _onBack();
-        },
-        child: ColoredBox(
+      return ColoredBox(
         color: bb.colors.bg,
         child: Stack(
           children: [
@@ -1216,29 +857,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             ),
             Positioned(
               top: media.padding.top + BBSpace.s,
-              left: BBSpace.s + panelInset,
+              left: BBSpace.s,
               right: BBSpace.s,
               child: Column(
+                key: _controlsKey,
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Column(
-                    key: _controlsKey,
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  if (pickFrom != null) ...[_pickBanner(pickFrom), const SizedBox(height: BBSpace.s)],
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (pick != null) ...[_pickBanner(pick == MapPick.from), const SizedBox(height: BBSpace.s)],
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // With no follow chip beside it, the route chip may take the row (large text reads in full).
-                          if (follow != null) ...[
-                            Flexible(flex: 3, child: _followChip(follow)),
-                            const SizedBox(width: BBSpace.s),
-                            Flexible(flex: 2, child: routeChip),
-                          ] else
-                            Expanded(child: Align(alignment: Alignment.centerRight, child: routeChip)),
-                        ],
+                      Flexible(
+                        flex: 3,
+                        child: follow != null
+                            ? _followChip(follow)
+                            : BBChip(
+                                label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
+                                icon: myStop == null ? BBIcons.search : BBIcons.star,
+                                chevron: true,
+                                semanticLabel:
+                                    myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
+                                onTap: () => context.go('/'),
+                              ),
+                      ),
+                      const SizedBox(width: BBSpace.s),
+                      Flexible(
+                        flex: 2,
+                        child: BBChip(
+                          label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
+                          icon: BBIcons.filter,
+                          chevron: true,
+                          selected: filter.isNotEmpty,
+                          onTap: _openRouteFilter,
+                        ),
                       ),
                     ],
                   ),
@@ -1252,7 +904,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                           child: journey == null
                               ? const SizedBox.shrink()
                               : BBChip(
-                                  key: _hideTripKey,
                                   label: 'Hide trip',
                                   icon: BBIcons.close,
                                   semanticLabel: 'Hide the trip from the map',
@@ -1261,23 +912,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                         ),
                       ),
                       const SizedBox(width: BBSpace.s),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const MapButtons(),
-                          const SizedBox(height: BBSpace.s),
-                          BBControlPill(items: [
-                            BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
-                          ]),
-                        ],
-                      ),
+                      BBControlPill(items: [
+                        BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
+                      ]),
                     ],
                   ),
                 ],
               ),
             ),
             Positioned(
-              left: creditLeft,
+              left: _creditLeft,
               right: BBSpace.s,
               bottom: creditBottom,
               // The Align keeps the opaque tap target as wide as the text only: the
@@ -1308,56 +952,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 ),
               ),
             ),
-            if (wide)
-              Positioned(
-                key: const ValueKey('home-side-panel'),
-                left: panelLeft,
-                top: media.padding.top + BBSpace.s,
-                bottom: media.padding.bottom + BBSpace.s,
-                width: homeSidePanelWidth,
-                child: Semantics(
-                  container: true,
-                  label: 'Map sheet',
-                  child: DecoratedBox(
-                    decoration: bb.floating(radius: BBRadius.sheet),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(BBRadius.sheet),
-                      // A new selection starts at the top of a fresh list.
-                      child: CustomScrollView(
-                        key: ValueKey(sheetKey),
-                        slivers: [SliverToBoxAdapter(child: panelHeader), ...panelSlivers],
-                      ),
-                    ),
+            Positioned.fill(
+              child: BBSheet(
+                key: ValueKey(sheetKey),
+                controller: _sheetFor(sheetKey),
+                peekFraction: peek,
+                halfFraction: math.max(0.5, peek + 0.05),
+                bottomInset: navInset,
+                semanticLabel: 'Map sheet',
+                header: _measuredHeader(follow != null
+                    ? _followHeader(follow, repo, followStop, yourStopArrivals, actionsFirst: headerOverflows)
+                    : switch (selection) {
+                        null => MyStopCard.header(),
+                        StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardHeader(stop: selectedStop),
+                        BusSelection(:final vehicleId) => BusCardHeader(vehicleId: vehicleId),
+                      }),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: follow != null
+                        ? FollowCardBody(snapshot: follow.snapshot)
+                        : switch (selection) {
+                            null => MyStopCard.body(),
+                            StopSelection() => selectedStop == null ? const SizedBox.shrink() : StopCardBody(stop: selectedStop),
+                            BusSelection(:final vehicleId) => BusCardBody(vehicleId: vehicleId),
+                          },
                   ),
-                ),
-              )
-            else
-              Positioned.fill(
-                child: NotificationListener<DraggableScrollableNotification>(
-                  onNotification: _onSheetExtent,
-                  child: BBSheet(
-                  key: ValueKey(sheetKey),
-                  controller: sheetController,
-                  peekFraction: peek,
-                  // The home sheet's half shows most of it (saved trips, nearby stops); a card's half its content.
-                  // The follow card's is a card's: it is there to watch the bus, which a tall half would cover.
-                  halfFraction: homeShowing && !followShowing
-                      ? math.max(_homeHalf, peek + 0.05)
-                      : math.max(_cardHalf, peek + 0.05),
-                  bottomInset: navInset,
-                  semanticLabel: 'Map sheet',
-                  // A card swipes down past its peek back to what was under it (spec §3.2); the home sheet, and the
-                  // follow card over it, stay.
-                  dismissible: !homeShowing,
-                  onDismiss: homeShowing ? null : _sheetBack,
-                  header: panelHeader,
-                  slivers: panelSlivers,
-                  ),
-                ),
+                ],
               ),
+            ),
             if (follow != null && follow.paused)
               Positioned(
-                left: panelInset,
+                left: 0,
                 right: 0,
                 // Last in the stack, so it comes and goes without disturbing the sheet.
                 // Above the credit link, which sits just over the peeking card.
@@ -1366,7 +991,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
               ),
           ],
         ),
-        ),
       );
     });
   }
@@ -1374,7 +998,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// What the next tap chooses, and a way out without choosing.
   Widget _pickBanner(bool forFrom) {
     final bb = context.bb;
-    void cancel() => ref.read(mapPickProvider.notifier).clear();
+    void cancel() => context.go('/plan');
     return DecoratedBox(
       decoration: bb.floating(radius: BBRadius.sheet),
       child: Padding(
@@ -1424,7 +1048,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// The follow card at peek. Its destination, route and delay come from the
   /// followed trip: after an arrival the bus may already be on its next one.
   Widget _followHeader(_Follow f, GtfsRepository repo, StopInfo? myStop, List<ArrivalRow> yourStopArrivals,
-      {required bool actionsFirst, required bool wide}) {
+      {required bool actionsFirst}) {
     final snap = f.snapshot;
     final bus = snap.bus;
     final busOnTrip = bus != null && (bus.currentTripId == null || bus.currentTripId == snap.tripId);
@@ -1439,7 +1063,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       tripHeadsign: tripHeadsign,
       routeLabel: _routeLabel(repo, snap),
       onStop: () => ref.read(followProvider.notifier).stop(),
-      onSeeAll: () => _showMore(wide: wide),
+      onSeeAll: () => unawaited(_sheet.animateToDetent(BBSheetDetent.full)),
       actionsFirst: actionsFirst,
       actionsKey: _actionsKey,
       alertAction: live.isEmpty || myStop == null
@@ -1492,15 +1116,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _measureScheduled = false;
       if (!mounted) return;
       final height = _controlsKey.currentContext?.size?.height;
-      final hideHeight = _hideTripKey.currentContext?.size?.height;
-      final controlsChanged = height != null && (height - _controlsHeight).abs() > 0.5;
-      final hideChanged = hideHeight != null && (hideHeight - _hideTripHeight).abs() > 0.5;
-      if (controlsChanged || hideChanged) {
-        setState(() {
-          if (controlsChanged) _controlsHeight = height;
-          if (hideChanged) _hideTripHeight = hideHeight;
-        });
-      }
+      if (height != null && (height - _controlsHeight).abs() > 0.5) setState(() => _controlsHeight = height);
     });
   }
 }

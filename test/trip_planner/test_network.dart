@@ -1,7 +1,7 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 
-/// A tiny Metrobus-like network, built straight into a repository (as test/ui/stop_sheet_test.dart does).
+/// A tiny Metrobus-like network, built straight into a repository (as test/ui/arrival_board_screen_test.dart does).
 ///
 ///   Route 1:  A — B — C        trips leave A every 10 min from 08:00 (6 trips), 5 min between stops
 ///   Route 2:        C — D — E  trips leave C every 15 min from 08:05 (4 trips), 4 min between stops

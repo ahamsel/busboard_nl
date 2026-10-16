@@ -117,6 +117,16 @@ class _Gallery extends StatelessWidget {
                 ]),
               ],
             ),
+            const SizedBox(height: BBSpace.m),
+            BBNavBar(
+              items: const [
+                BBNavItem(label: 'Board', icon: BBIcons.board),
+                BBNavItem(label: 'Map', icon: BBIcons.map),
+                BBNavItem(label: 'Alerts', icon: BBIcons.alerts, badgeCount: 2),
+              ],
+              currentIndex: 0,
+              onSelect: (_) {},
+            ),
           ],
         ),
       ),
