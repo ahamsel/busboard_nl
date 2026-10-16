@@ -13,6 +13,7 @@ import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/map/follow_tracker.dart';
 import 'package:busboard_nl/domain/map/route_geometry.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
+import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
@@ -23,6 +24,7 @@ import 'package:busboard_nl/state/saved_place_providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
+import 'package:busboard_nl/ui/board/board_tab.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/home/home_stop_line.dart';
@@ -233,6 +235,11 @@ class _Trips extends SavedTripsNotifier {
 class _UpdatedAt extends StopArrivalsUpdatedAtNotifier {
   @override
   Map<String, DateTime> build() => {'1150': DateTime(2026, 10, 12, 21, 52, 4)};
+}
+
+class _Stop1150Settings extends SettingsNotifier {
+  @override
+  AppSettings build() => const AppSettings(selectedStopId: '1150');
 }
 
 class _StopCSettings extends SettingsNotifier {
@@ -668,4 +675,75 @@ void main() {
       expect(tester.takeException(), isNull, reason: 'scrolled to the button');
     });
   }
+
+  // The Board tab at 2x text (spec 2026-10-15 §6): the long stop name, its chip and a long saved place's, an alert,
+  // live rows with Follow and bells, and the tab bar, scrolled to the end; then its Choose your stop.
+  for (final size in _sizes) {
+    for (final dark in [false, true]) {
+      final theme = dark ? 'dark' : 'light';
+      testWidgets('the Board tab at ${size.width.toInt()}x${size.height.toInt()}, 2.0x text, $theme', (tester) async {
+        tester.view.physicalSize = size * 3;
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.reset);
+        await pumpPlannerApp(
+          tester,
+          net: TestNetwork(),
+          now: DateTime(2026, 10, 12, 13, 0),
+          tab: HomeTab.board,
+          textScale: 2.0,
+          use24h: false,
+          theme: dark ? BBTheme.dark() : BBTheme.light(),
+          repoFuture: Future.value(_repo()),
+          alerts: [_alert('Water Street detour', description: 'Routes 10 and 10A use Harbour Drive.')],
+          overrides: [
+            settingsProvider.overrideWith(_Stop1150Settings.new),
+            savedPlacesProvider.overrideWith(_Places.new),
+            stopArrivalsProvider.overrideWith((ref, id) async => _arrivals),
+            stopArrivalsUpdatedAtProvider.overrideWith(_UpdatedAt.new),
+            metrobusMobileApiProvider.overrideWithValue(MetrobusMobileApi(client: _emptyKiosk)),
+          ],
+        );
+        expect(tester.takeException(), isNull, reason: 'the Board at rest');
+        for (final label in ['Board', 'Map']) {
+          final p = tester.renderObject<RenderParagraph>(
+              find.descendant(of: find.byType(BBTabBar), matching: find.text(label)));
+          expect(p.didExceedMaxLines, isFalse, reason: 'the $label tab reads in full');
+        }
+        final chips = find.byKey(BoardTab.chipsKey);
+        await tester.drag(chips, const Offset(-600, 0));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: 'the chips scrolled to their end');
+        expect(find.byKey(BoardTab.findStopKey).hitTestable(), findsOneWidget, reason: '＋ is reachable');
+        final board = find.descendant(of: find.byType(BoardTab), matching: find.byType(CustomScrollView));
+        for (var i = 0; i < 12; i++) {
+          await tester.drag(board, const Offset(0, -400));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: 'scrolling the Board');
+        }
+        expect(find.text('Plan a trip from here').hitTestable(), findsOneWidget, reason: 'the end is reachable');
+      });
+    }
+  }
+
+  testWidgets("the Board's Choose your stop at 320x568, 2.0x text", (tester) async {
+    tester.view.physicalSize = const Size(320, 568) * 3;
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: DateTime(2026, 10, 12, 13, 0),
+      tab: HomeTab.board,
+      textScale: 2.0,
+      repoFuture: Future.value(_repo()),
+      nearby: const [NearbyStop(stop: _stop, distanceMeters: 80), NearbyStop(stop: _stop2, distanceMeters: 640)],
+    );
+    expect(find.text('Choose your stop'), findsOneWidget);
+    final board = find.descendant(of: find.byType(BoardTab), matching: find.byType(CustomScrollView));
+    for (var i = 0; i < 8; i++) {
+      await tester.drag(board, const Offset(0, -400));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'scrolling Choose your stop');
+    }
+  });
 }

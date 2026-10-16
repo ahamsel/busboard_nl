@@ -9,6 +9,7 @@ import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart' show PlanMode;
 import 'package:busboard_nl/state/home_sheet_provider.dart';
+import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/saved_place_providers.dart';
@@ -99,9 +100,9 @@ Color _land(Brightness b) {
   return Color(int.parse('FF${hex.substring(1)}', radix: 16));
 }
 
-/// The real app at [initial] on a 390x844 phone at 3x: stop 1150 is the rider's stop, one saved place, one alert
-/// that applies to routes 29 and 23 and to the stop, and four fixed departures (so the picture does not move).
-Future<void> _pumpApp(WidgetTester tester, Brightness b, {String initial = '/'}) async {
+/// The real app at [initial] on a 390x844 phone at 3x, on [tab]: stop 1150 is the rider's stop, one saved place, one
+/// alert that applies to routes 29 and 23 and to the stop, and four fixed departures (so the picture does not move).
+Future<void> _pumpApp(WidgetTester tester, Brightness b, {String initial = '/', HomeTab tab = HomeTab.map}) async {
   tester.view.physicalSize = const Size(390 * 3, 844 * 3);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -110,6 +111,7 @@ Future<void> _pumpApp(WidgetTester tester, Brightness b, {String initial = '/'})
     net: _munToAvalon(),
     now: DateTime(testDay.year, testDay.month, testDay.day, 8, 1),
     initial: initial,
+    tab: tab,
     mapView: StubMap(color: _land(b)).build,
     theme: b == Brightness.dark ? BBTheme.dark() : BBTheme.light(),
     alerts: [
@@ -145,6 +147,14 @@ void main() {
       await _pumpApp(tester, b);
       expect(tester.takeException(), isNull);
       await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/home_bar_${b.name}.png'));
+    });
+
+    // The Board tab (spec 2026-10-15 §3): your stop's chip selected, the saved place's chip, Near me and ＋; the
+    // stop's alert first, then its departures.
+    testWidgets('board tab ${b.name}', (tester) async {
+      await _pumpApp(tester, b, tab: HomeTab.board);
+      expect(tester.takeException(), isNull);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/board_tab_${b.name}.png'));
     });
 
     testWidgets('stop sheet at full ${b.name}', (tester) async {

@@ -17,7 +17,7 @@ final class HomeSheetHome extends HomeSheet {
   int get hashCode => (HomeSheetHome).hashCode;
 }
 
-/// A stop's sheet: its Board.
+/// A stop's card on the map: its departures, with Open board for the Board tab.
 final class StopSheet extends HomeSheet {
   const StopSheet(this.stopId);
   final String stopId;

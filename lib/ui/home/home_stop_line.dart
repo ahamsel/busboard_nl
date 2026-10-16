@@ -147,7 +147,7 @@ class StopLineInfo {
   }
 }
 
-/// The bar's second row (spec 2026-10-14 §3.1, §3.2): your stop and its next bus, one tap from its Board. With no
+/// The bar's second row (spec 2026-10-14 §3.1, §3.2): your stop and its next bus, one tap from the Board tab. With no
 /// stop chosen it is "Choose your stop", which pulls the sheet up to the nearby stops ([onChooseStop]) or, with none
 /// to show, opens a stop search.
 class HomeStopLine extends ConsumerWidget {

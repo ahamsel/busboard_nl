@@ -1054,7 +1054,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return _sheet;
   }
 
-  /// "Choose your stop", "See all stops", "Open board": the sheet is pulled up to the rest of its content; the side
+  /// "Choose your stop" and "See all stops": the sheet is pulled up to the rest of its content; the side
   /// panel is scrolled down past its header to it. False when the panel's header is not laid out and measured yet.
   bool _showMore({required bool wide}) {
     if (!wide) {

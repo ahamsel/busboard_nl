@@ -7,7 +7,8 @@ import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/home/home_shell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/planner_app.dart';
 import '../trip_planner/test_network.dart';
