@@ -253,8 +253,17 @@ void main() {
         width: 320,
       ));
       expect(tester.takeException(), isNull);
-      final pill = tester.renderObject<RenderParagraph>(find.textContaining('Follow 2134'));
-      expect(pill.didExceedMaxLines, isFalse);
+      // The pill's text has no line limit (it wraps), so `didExceedMaxLines` is always false: check where it sits.
+      final pill = tester.getRect(find.byKey(ArrivalRowTile.followKey));
+      final text = tester.getRect(find.textContaining('Follow 2134'));
+      final row = tester.getRect(find.byType(ArrivalRowTile));
+      expect(row.width, 320);
+      expect(pill.left, greaterThanOrEqualTo(row.left));
+      expect(pill.right, lessThanOrEqualTo(row.right), reason: 'the pill stays inside the 320 pt row');
+      expect(text.left, greaterThanOrEqualTo(pill.left));
+      expect(text.right, lessThanOrEqualTo(pill.right), reason: 'all the words are inside the pill');
+      expect(text.top, greaterThanOrEqualTo(pill.top));
+      expect(text.bottom, lessThanOrEqualTo(pill.bottom), reason: 'a wrapped second line grows the pill');
     });
   });
 
