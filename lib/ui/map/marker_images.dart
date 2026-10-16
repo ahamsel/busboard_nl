@@ -26,9 +26,10 @@ abstract final class MarkerImages {
   static const double myStopSize = 26;
   static const String myStopId = 'bb-my-stop';
 
-  static const Color staleFill = Color(0xFFC4CBD2);
-  static const Color staleInk = Color(0xFF5A6674);
-  static const Color staleNotch = Color(0xFF9AA4AE);
+  /// A bus not heard from lately: plain greys, as the neutral tokens are (no blue tint), its number 4.7:1 on the fill.
+  static const Color staleFill = Color(0xFFC8CACD);
+  static const Color staleInk = Color(0xFF4F5359);
+  static const Color staleNotch = Color(0xFF979BA2);
   static const Color _white = Color(0xFFFFFFFF);
 
   static String badgeId(String label, {required bool stale, required Brightness brightness}) =>

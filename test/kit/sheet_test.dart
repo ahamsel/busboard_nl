@@ -170,6 +170,17 @@ void main() {
     handle.dispose();
   });
 
+  // The handle is a control (adjustable): its bar needs 3:1 against the sheet (WCAG 1.4.11).
+  for (final (brightness, grey) in [(Brightness.light, const Color(0xFF8E939B)), (Brightness.dark, const Color(0xFF6E727B))]) {
+    testWidgets('the handle bar is the 3:1 handle grey (${brightness.name})', (tester) async {
+      await tester.pumpWidget(_host(BBSheetController(), brightness: brightness));
+      final bar = tester.widget<Container>(
+        find.descendant(of: find.byKey(BBSheet.handleKey), matching: find.byType(Container)),
+      );
+      expect((bar.decoration! as BoxDecoration).color, grey);
+    });
+  }
+
   testWidgets('non-dismissible sheet stays at peek when swiped down', (tester) async {
     final controller = BBSheetController();
     await tester.pumpWidget(_host(controller));

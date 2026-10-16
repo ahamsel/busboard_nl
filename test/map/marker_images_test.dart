@@ -6,6 +6,7 @@ import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../kit/contrast_test.dart' show chroma, contrast;
 import '../kit/kit_test_helpers.dart';
 
 Future<ui.Image> _decode(Uint8List png) async {
@@ -106,6 +107,18 @@ void main() {
       addTearDown(dark.dispose);
       _near(await _pixel(dark, (MarkerImages.outline + 2).round(), dark.height ~/ 2), RouteHue.green.fillDark);
     });
+  });
+
+  // The stale greys were the last tinted greys in lib (blue-grey): plain greys now, as the tokens are.
+  test('a stale marker is drawn in plain greys, its number still readable on its fill', () {
+    for (final (name, grey) in [
+      ('staleFill', MarkerImages.staleFill),
+      ('staleInk', MarkerImages.staleInk),
+      ('staleNotch', MarkerImages.staleNotch),
+    ]) {
+      expect(chroma(grey), lessThanOrEqualTo(0.015), reason: '$name is tinted (${chroma(grey)})');
+    }
+    expect(contrast(MarkerImages.staleInk, MarkerImages.staleFill), greaterThanOrEqualTo(4.5));
   });
 
   test('longer labels make wider badges', () {
