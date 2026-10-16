@@ -1009,12 +1009,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
   }
 
-  /// System back: ends a map pick first, then walks the sheet back.
+  /// Whether system back may leave the app: only from the resting home, at the bar with nothing followed, no card
+  /// open and no map pick under way (Android back, Google Maps style). On the tablet panel the sheet has no bar.
+  bool _backLeavesApp(HomeSheet sheet, MapPick? pick) =>
+      sheet is HomeSheetHome && pick == null && _follow == null && (_wide || !_sheetAbovePeek);
+
+  /// System back steps down one level at a time: it ends a map pick, closes the card on top, stops a follow with no
+  /// card over it (home, at the bar), and lowers a home sheet pulled up above its bar. From the bar the app leaves.
   void _onBack() {
     if (ref.read(mapPickProvider) != null) {
       ref.read(mapPickProvider.notifier).clear();
-    } else {
+    } else if (ref.read(homeSheetProvider) is! HomeSheetHome) {
       _sheetBack();
+    } else if (_follow != null) {
+      ref.read(followProvider.notifier).stop();
+    } else if (!_wide && _sheet.isAttached) {
+      unawaited(_sheet.collapse());
     }
   }
 
@@ -1328,7 +1338,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       );
 
       return PopScope(
-        canPop: sheet is HomeSheetHome && pick == null,
+        canPop: _backLeavesApp(sheet, pick),
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop) _onBack();
         },

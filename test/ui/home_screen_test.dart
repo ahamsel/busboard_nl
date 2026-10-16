@@ -1464,6 +1464,71 @@ void main() {
       expect(find.text('Following bus 2573'), findsNothing);
     });
 
+    group('Android back steps down one level at a time, and leaves only from the bar (A1)', () {
+      /// System back, as the phone sends it. True when the app handled it, false when the system may leave the app.
+      Future<bool> back(WidgetTester tester) async {
+        final handled = await tester.binding.handlePopRoute();
+        await _frames(tester, 6);
+        return handled;
+      }
+
+      double cardHeight(WidgetTester tester) => tester.getRect(find.byKey(BBSheet.cardKey)).height;
+
+      testWidgets('following, back stops following and returns home to the bar; the next back leaves', (tester) async {
+        await pumpFollow(tester);
+        final bar = cardHeight(tester);
+        await startFollowing(tester);
+        expect(find.byType(FollowCardHeader), findsOneWidget);
+        expect(await back(tester), isTrue, reason: 'back is handled: the app stays open');
+        expect(containerOf(tester).read(followProvider), isNull);
+        expect(containerOf(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+        expect(find.byType(FollowCardHeader), findsNothing);
+        expect(find.text('Following bus 2573'), findsNothing);
+        expect(cardHeight(tester), closeTo(bar, 1), reason: 'home, at its bar');
+        expect(await back(tester), isFalse, reason: 'at the bar with nothing followed, back leaves the app');
+      });
+
+      testWidgets('following with the follow card pulled up, back still stops following', (tester) async {
+        await pumpFollow(tester);
+        await startFollowing(tester);
+        final peek = cardHeight(tester);
+        await tester.tap(find.text('See all stops'));
+        await _frames(tester, 10);
+        expect(cardHeight(tester), greaterThan(peek + 100), reason: 'the follow card is pulled up');
+        expect(await back(tester), isTrue);
+        expect(containerOf(tester).read(followProvider), isNull);
+      });
+
+      testWidgets('a card over the follow: back closes the card, then stops following, then leaves', (tester) async {
+        await pumpFollow(tester);
+        await startFollowing(tester);
+        containerOf(tester).read(homeSheetProvider.notifier).open(const StopSheet('s3'));
+        await _frames(tester, 6);
+        expect(await back(tester), isTrue);
+        expect(containerOf(tester).read(homeSheetProvider), isA<HomeSheetHome>(), reason: 'the card closed');
+        expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the follow is still under it');
+        expect(find.byType(FollowCardHeader), findsOneWidget);
+        expect(await back(tester), isTrue);
+        expect(containerOf(tester).read(followProvider), isNull);
+        expect(await back(tester), isFalse);
+      });
+
+      for (final (name, pull) in [('half', -300.0), ('full', -700.0)]) {
+        testWidgets('the home sheet pulled up to $name: back lowers it to the bar, and the next back leaves',
+            (tester) async {
+          await pumpFollow(tester);
+          final bar = cardHeight(tester);
+          await tester.drag(find.byKey(HomeSheetContent.whereToKey), Offset(0, pull));
+          await _frames(tester, 10);
+          expect(cardHeight(tester), greaterThan(bar + 200), reason: 'pulled up to $name');
+          expect(await back(tester), isTrue, reason: 'back is handled: the app stays open');
+          expect(cardHeight(tester), closeTo(bar, 1), reason: 'down at the bar');
+          expect(containerOf(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+          expect(await back(tester), isFalse, reason: 'at the bar, back leaves the app');
+        });
+      }
+    });
+
     testWidgets('See all stops opens the sheet to its full height', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
