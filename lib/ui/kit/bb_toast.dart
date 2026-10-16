@@ -35,6 +35,7 @@ abstract final class BBToast {
         message: message,
         duration: duration,
         reserveNavBar: reserveNavBar,
+        announce: announce,
         onDone: () {
           if (identical(_current, entry)) _current = null;
           if (entry.mounted) entry.remove();
@@ -57,12 +58,16 @@ class _ToastView extends StatefulWidget {
     required this.message,
     required this.duration,
     required this.reserveNavBar,
+    required this.announce,
     required this.onDone,
   });
 
   final String message;
   final Duration duration;
   final bool reserveNavBar;
+
+  /// Already announced by [BBToast.show]: not a live region too, or TalkBack reads it twice.
+  final bool announce;
   final VoidCallback onDone;
 
   @override
@@ -126,7 +131,7 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
         child: SlideTransition(
           position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(curved),
           child: Semantics(
-            liveRegion: true,
+            liveRegion: !widget.announce,
             child: Container(
               key: BBToast.cardKey,
               padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.m),
