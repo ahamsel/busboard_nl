@@ -80,6 +80,23 @@ void main() {
     expect(container.read(busTrackStoreProvider)!.tracks.keys, ['2573']);
   });
 
+  test("each poll leaves its result for the iPhone alert re-timer, which then needn't fetch it again", () async {
+    final api = _FakeApi([
+      [fix(meters: 100, seconds: feedSeconds())],
+    ]);
+    final container = ProviderContainer(overrides: [
+      gtfsRepositoryProvider.overrideWith((ref) async => outAndBackRepo()),
+      timetrackApiProvider.overrideWithValue(api),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(gtfsRepositoryProvider.future);
+    final before = DateTime.now();
+    await firstSnapshot(container);
+    final recent = container.read(recentLiveFeedProvider)!;
+    expect(recent.result.vehicles.single.vehicle, '2573');
+    expect(recent.at.isBefore(before), isFalse);
+  });
+
   test('with an empty schedule the stream is empty', () async {
     final container = ProviderContainer(overrides: [
       gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),

@@ -10,6 +10,7 @@ import 'package:busboard_nl/domain/arrival_alerts/alert_copy.dart';
 import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
 import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/state/arrival_alert_providers.dart';
+import 'package:busboard_nl/state/providers.dart' show recentLiveFeedProvider;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -540,6 +541,31 @@ void main() {
       clock = DateTime(2026, 10, 6, 8, 2);
       await ticks();
       expect(feed.calls, 0);
+    });
+
+    test("the map's own poll of the feed, a moment ago, re-times it without a second fetch", () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await c.read(arrivalAlertProvider.notifier).set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      // The map polls more often than the re-timer would (5 s against 30 s; here 5 ms against 20 ms).
+      final mapPolls = Timer.periodic(const Duration(milliseconds: 5),
+          (_) => c.read(recentLiveFeedProvider.notifier).record(DateTime.now(), sixBehind()));
+      addTearDown(mapPolls.cancel);
+      c.read(recentLiveFeedProvider.notifier).record(DateTime.now(), sixBehind());
+      await ticks();
+      expect(feed.calls, 0, reason: 'the Map tab polled the feed already');
+      expect(runner.updated.single.expectedAt, DateTime(2026, 10, 6, 8, 18));
+    });
+
+    test("a poll older than the re-time interval doesn't count: the re-timer fetches", () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await c.read(arrivalAlertProvider.notifier).set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      c.read(recentLiveFeedProvider.notifier).record(DateTime.now().subtract(const Duration(minutes: 1)), sixBehind());
+      await ticks();
+      expect(feed.calls, greaterThanOrEqualTo(1));
     });
 
     test('Android: the watcher re-times it, so the app fetches nothing', () async {
