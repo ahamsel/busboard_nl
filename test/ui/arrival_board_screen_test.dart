@@ -307,15 +307,27 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('a scheduled-only row is not tappable', (tester) async {
+  testWidgets('the Follow pill does what tapping the row does: follows that bus and opens the map', (tester) async {
+    await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
+    expect(find.textContaining('Follow 2573'), findsOneWidget);
+    await tester.tap(find.byKey(ArrivalRowTile.followKey));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(tester.element(find.text('MAP')));
+    expect(container.read(followProvider), const FollowTarget('2573'));
+    expect(find.text('MAP'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('a scheduled-only row follows nothing and says when it can be followed', (tester) async {
     await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
     expect(find.text('Schedule Terminal'), findsOneWidget);
     await tester.tap(find.text('Schedule Terminal'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text(ArrivalRowTile.notLiveYet), findsOneWidget);
     expect(find.text('MAP'), findsNothing);
-    expect(find.text('Schedule Terminal'), findsOneWidget);
     final container = ProviderScope.containerOf(tester.element(find.text('Schedule Terminal')));
     expect(container.read(followProvider), isNull);
+    await tester.pump(const Duration(seconds: 4));
     await _unmount(tester);
   });
 

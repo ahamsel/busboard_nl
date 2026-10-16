@@ -25,6 +25,29 @@ void main() {
     expect(find.text('Bus 2134 is no longer reporting'), findsNothing);
   });
 
+  testWidgets('a toast with announce tells screen readers at once; a plain one leaves it to its live region',
+      (tester) async {
+    final said = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, (m) async {
+      final event = m as Map<Object?, Object?>;
+      if (event['type'] == 'announce') said.add((event['data']! as Map<Object?, Object?>)['message']! as String);
+      return null;
+    });
+    addTearDown(() =>
+        tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null));
+    await tester.pumpWidget(_launcher((c) => BBToast.show(c, 'plain')));
+    await tester.tap(find.text('go'));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(said, isEmpty);
+    await tester.pumpWidget(_launcher((c) => BBToast.show(c, 'No bus on this trip yet.', announce: true)));
+    await tester.tap(find.text('go'));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(said, ['No bus on this trip yet.']);
+    expect(find.text('No bus on this trip yet.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('toast stays above the on-screen keyboard', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;

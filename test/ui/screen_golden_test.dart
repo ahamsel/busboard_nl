@@ -2,6 +2,7 @@ import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
+import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
@@ -63,7 +64,7 @@ void main() {
       await tester.pumpWidget(kitHost(
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(children: [for (final r in _rows) Padding(padding: const EdgeInsets.only(bottom: 8), child: ArrivalRowTile(arrival: r))]),
+          child: Column(children: [for (final r in _rows) Padding(padding: const EdgeInsets.only(bottom: 8), child: ArrivalRowTile(arrival: r, onTap: r.followableVehicle == null ? null : () {}))]),
         ),
         brightness: b,
       ));
