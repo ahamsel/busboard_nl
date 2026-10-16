@@ -1,6 +1,7 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
@@ -57,6 +58,7 @@ Future<void> _host(
   List<ArrivalRow> arrivals = const [],
   Map<String, Object> prefs = const {},
   Map<String, BusTrackingState> buses = const {},
+  List<ServiceAlert> alerts = const [],
   double textScale = 1,
   double width = 390,
   GtfsRepository? repo,
@@ -83,6 +85,8 @@ Future<void> _host(
       if (now != null) plannerClockProvider.overrideWithValue(() => now),
       stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
       busTrackingStreamProvider.overrideWith((ref) => Stream.value(buses)),
+      serviceUpdatesProvider.overrideWith((ref) => Stream.value(
+          ServiceUpdates(alerts: alerts, serviceStatus: null, fetchedAt: DateTime(2026, 10, 4), feedTimestamp: null))),
     ],
     child: MaterialApp.router(
       theme: BBTheme.light(),
@@ -398,5 +402,49 @@ void main() {
   testWidgets('your-stop card names your stop', (tester) async {
     await _host(tester, header: MyStopCard.header(), body: MyStopCard.body(), prefs: {'selectedStopId': '1150'});
     expect(find.text('MUN Centre'), findsOneWidget);
+  });
+
+  group('a quick double tap opens one page', () {
+    const detour = ServiceAlert(
+      sourceIds: {'a'},
+      header: 'Water Street Detour',
+      description: '',
+      cause: ServiceAlertCause.construction,
+      effect: ServiceAlertEffect.detour,
+      severity: ServiceAlertSeverity.warning,
+      activePeriods: [],
+      targets: [],
+    );
+
+    Future<void> doubleTap(WidgetTester tester, Finder target) async {
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      await tester.tap(target);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('stop card: Plan a trip from here', (tester) async {
+      await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
+      await doubleTap(tester, find.text('Plan a trip from here'));
+      expect(find.text('PLAN', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets("stop card: the stop's alert", (tester) async {
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun), alerts: const [detour]);
+      await doubleTap(tester, find.text('Water Street Detour'));
+      expect(find.text('ALERTS', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets("bus card: the route's alert", (tester) async {
+      await _host(tester,
+          header: const BusCardHeader(vehicleId: '2573'),
+          body: const BusCardBody(vehicleId: '2573'),
+          buses: {'2573': _bus()},
+          alerts: const [detour]);
+      await doubleTap(tester, find.text('Water Street Detour'));
+      expect(find.text('ALERTS', skipOffstage: false), findsOneWidget);
+    });
   });
 }

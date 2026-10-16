@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../routing/push_once.dart';
 import '../../state/arrival_alert_providers.dart';
 import '../../state/follow_providers.dart';
 import '../../state/providers.dart';
@@ -209,21 +210,24 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         ? null
         : Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.xs),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ServiceAlertCard(
-                alert: relevantAlerts.first,
-                stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
-                compact: true,
-                onTap: () => context.push('/alerts'),
-              ),
-              if (relevantAlerts.length > 1)
-                BBButton(
-                  label:
-                      '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
-                  kind: BBButtonKind.quiet,
-                  onPressed: () => context.push('/alerts'),
+            // Both open the Alerts page, once for a quick double tap.
+            child: PushOnce(
+              builder: (context, push) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ServiceAlertCard(
+                  alert: relevantAlerts.first,
+                  stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
+                  compact: true,
+                  onTap: () => push('/alerts'),
                 ),
-            ]),
+                if (relevantAlerts.length > 1)
+                  BBButton(
+                    label:
+                        '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
+                    kind: BBButtonKind.quiet,
+                    onPressed: () => push('/alerts'),
+                  ),
+              ]),
+            ),
           );
 
     // The "Alert set" strip leads the list while an arrival alert exists, and

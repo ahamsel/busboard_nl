@@ -388,6 +388,17 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('a quick double tap on the alert card, or on "more", opens one Alerts page', (tester) async {
+    for (final link in ['Water Street Detour', '1 more relevant alert']) {
+      await _pump(tester, repo: _repo(), alerts: [_alert('Water Street Detour'), _alert('Second')]);
+      await tester.tap(find.text(link));
+      await tester.tap(find.text(link));
+      await tester.pumpAndSettle();
+      expect(find.text('ALERTS', skipOffstage: false), findsOneWidget, reason: link);
+      await _unmount(tester);
+    }
+  });
+
   testWidgets('relevant alerts: compact card + "more" link go to Alerts', (tester) async {
     await _pump(tester, repo: _repo(), alerts: [_alert('Water Street Detour'), _alert('Second')]);
     expect(find.text('Water Street Detour'), findsOneWidget);
