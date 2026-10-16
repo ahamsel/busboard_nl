@@ -271,6 +271,29 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets("the handle's target is 44 pt and overlaps the bar's top, yet Where to? keeps its taps (M9)",
+      (tester) async {
+    await _pumpHome(tester, arrivals: [_arrival(4)]);
+    final card = tester.getRect(find.byKey(BBSheet.cardKey));
+    final bar = card.height;
+    final hit = tester.getRect(find.byKey(BBSheet.handleKey));
+    final whereTo = tester.getRect(find.byKey(HomeSheetContent.whereToKey));
+    expect(hit.height, greaterThanOrEqualTo(44));
+    expect(hit.bottom, greaterThan(whereTo.top), reason: 'it reaches over the top of the bar');
+    expect(whereTo.top - card.top, BBSheet.handleButtonExtent, reason: 'the drawn handle keeps its 24 pt');
+    // Where to? keeps the taps on it.
+    await tester.tapAt(Offset(whereTo.center.dx, whereTo.top + 6));
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen), findsOneWidget);
+    GoRouter.of(tester.element(find.byType(SearchScreen))).pop();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(bar, 1));
+    // Beside it, in the bar's margin, the same band moves the sheet.
+    await tester.tapAt(Offset(card.left + 6, whereTo.top + 6));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, greaterThan(bar + 100), reason: 'up to half');
+  });
+
   testWidgets('an alert that is not on your stop or its routes stays out of the header', (tester) async {
     final elsewhere = ServiceAlert(
       sourceIds: const {'b'},

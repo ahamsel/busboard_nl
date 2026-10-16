@@ -122,7 +122,9 @@ class BBSheet extends StatefulWidget {
   final bool fadeUnderHeader;
 
   /// Home (spec 2026-10-14 §3.6): the grab handle is a button, "Show more" at peek and "Show less" above it, and a
-  /// tap moves one stop: peek to half, half to peek, full to half. It is [handleButtonExtent] tall, a 24 pt target.
+  /// tap moves one stop: peek to half, half to peek, full to half. It takes [handleButtonExtent] above the header, but
+  /// its target is [handleButtonTarget] tall: it reaches down over the header's top, where the header's own controls
+  /// keep their taps (final review M9).
   final bool handleButton;
 
   static const double sideMargin = 8;
@@ -130,6 +132,7 @@ class BBSheet extends StatefulWidget {
   /// The grab handle's height above the header: 8 + 4 + 8, or [handleButtonExtent] when it is a button.
   static const double handleExtent = 20;
   static const double handleButtonExtent = 24;
+  static const double handleButtonTarget = 44;
   static const cardKey = ValueKey('bb-sheet-card');
   static const handleKey = ValueKey('bb-sheet-handle');
   static const headerKey = ValueKey('bb-sheet-header');
@@ -379,7 +382,11 @@ class _BBSheetState extends State<BBSheet> {
         behavior: HitTestBehavior.opaque,
         excludeFromSemantics: true,
         onTap: go,
-        child: SizedBox(height: BBSheet.handleButtonExtent, child: Center(child: bar)),
+        // The bar sits where it always has, centred in the strip above the header.
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(padding: const EdgeInsets.only(top: (BBSheet.handleButtonExtent - 4) / 2), child: bar),
+        ),
       ),
     );
   }
@@ -436,11 +443,30 @@ class _BBSheetState extends State<BBSheet> {
               ]
             : null,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [_handle(context), ?widget.header],
-      ),
+      child: widget.handleButton
+          // The handle button lies behind the header and reaches 44 pt down over its top: a tap there that no control
+          // of the header takes moves the sheet. The strip above the header stays 24 pt, so the bar is no taller.
+          ? Stack(
+              children: [
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: BBSheet.handleButtonTarget,
+                  child: _handle(context),
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [const SizedBox(height: BBSheet.handleButtonExtent), ?widget.header],
+                ),
+              ],
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [_handle(context), ?widget.header],
+            ),
     );
     if (!widget.fadeUnderHeader) return header;
     // A strip under the header, surface to clear: the list's top fades under it. The pinned header

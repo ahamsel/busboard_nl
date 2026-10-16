@@ -183,7 +183,7 @@ void main() {
       tester.getSemantics(find.byKey(BBSheet.handleKey)),
       isSemantics(label: 'Show more', isButton: true, hasTapAction: true),
     );
-    expect(tester.getSize(find.byKey(BBSheet.handleKey)).height, BBSheet.handleButtonExtent);
+    expect(tester.getSize(find.byKey(BBSheet.handleKey)).height, greaterThanOrEqualTo(BBSheet.handleButtonExtent));
     await tester.tap(find.byKey(BBSheet.handleKey));
     await tester.pumpAndSettle();
     expect(controller.size, closeTo(0.5, 0.01), reason: 'peek to half');
@@ -197,6 +197,53 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.size, closeTo(0.5, 0.01), reason: 'full to half');
     handle.dispose();
+  });
+
+  group('the handle button reaches 44 pt into the header, which keeps its height (final review M9)', () {
+    var taps = 0;
+    Widget header() => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              const Expanded(child: SizedBox(height: 48)),
+              GestureDetector(
+                key: const ValueKey('header-control'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () => taps++,
+                child: const SizedBox(width: 60, height: 48),
+              ),
+            ]),
+            const SizedBox(height: 40),
+          ],
+        );
+
+    testWidgets('a tap in the band under the drawn handle moves the sheet; the bar stays 24 pt', (tester) async {
+      final controller = BBSheetController();
+      await tester.pumpWidget(_host(controller, handleButton: true, header: header()));
+      final card = tester.getRect(find.byKey(BBSheet.cardKey));
+      final hit = tester.getRect(find.byKey(BBSheet.handleKey));
+      expect(hit.height, greaterThanOrEqualTo(44), reason: 'a 44 pt target');
+      expect(hit.top, card.top);
+      expect(hit.width, card.width);
+      // The drawn handle still takes 24 pt: the header starts where it did.
+      final control = tester.getRect(find.byKey(const ValueKey('header-control')));
+      expect(control.top - card.top, BBSheet.handleButtonExtent, reason: 'the bar is no taller');
+      // 36 pt down: past the drawn handle, over the header's empty top.
+      await tester.tapAt(Offset(card.left + 40, card.top + 36));
+      await tester.pumpAndSettle();
+      expect(controller.size, closeTo(0.5, 0.01), reason: 'peek to half');
+    });
+
+    testWidgets("a control at the header's top keeps its own taps", (tester) async {
+      taps = 0;
+      final controller = BBSheetController();
+      await tester.pumpWidget(_host(controller, handleButton: true, header: header()));
+      final control = tester.getRect(find.byKey(const ValueKey('header-control')));
+      await tester.tapAt(Offset(control.center.dx, control.top + 8));
+      await tester.pumpAndSettle();
+      expect(taps, 1);
+      expect(controller.size, closeTo(0.15, 0.01), reason: 'the sheet stays at its peek');
+    });
   });
 
   // The handle is a control (a button on home, adjustable on cards): its bar needs 3:1 against the sheet (WCAG 1.4.11).
