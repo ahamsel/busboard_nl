@@ -212,6 +212,20 @@ Future<void> _pullUp(WidgetTester tester) async {
 ProviderContainer _c(WidgetTester t) => ProviderScope.containerOf(t.element(find.byType(HomeScreen)));
 
 /// Records what the app announces to screen readers.
+/// The follow tip's flag, unseen, whose save fails (a full disk).
+class _UnsavableTipFlag extends SeenFlagNotifier {
+  _UnsavableTipFlag() : super(followTipSeenKey);
+
+  @override
+  Future<bool> build() async => false;
+
+  @override
+  Future<void> markSeen() async {
+    state = const AsyncData(true);
+    throw StateError('disk full');
+  }
+}
+
 List<String> _announcements(WidgetTester tester) {
   final said = <String>[];
   tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, (m) async {
@@ -397,6 +411,20 @@ void main() {
       expect(find.text(FollowTip.text), findsNothing);
       expect(await SharedPreferencesAsync().getBool(followTipSeenKey), isTrue);
       await _unmount(tester);
+    });
+
+    testWidgets('closing it when the flag cannot be saved still hides it, and the error is caught (M10)',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [followTipSeenProvider.overrideWith(_UnsavableTipFlag.new)],
+        child: kitHost(const FollowTip()),
+      ));
+      await tester.pump();
+      expect(find.text(FollowTip.text), findsOneWidget);
+      await tester.tap(find.byKey(FollowTip.closeKey));
+      await tester.pump();
+      expect(find.text(FollowTip.text), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('a followed bus puts it away for good', (tester) async {

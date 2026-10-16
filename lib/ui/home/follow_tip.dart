@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,7 +30,10 @@ class FollowTip extends ConsumerWidget {
           size: 18,
           color: bb.colors.muted,
           semanticLabel: 'Hide this tip',
-          onPressed: () => ref.read(followTipSeenProvider.notifier).markSeen(),
+          // The tip goes at once; a flag that could not be saved is logged, as the home screen's are.
+          onPressed: () => unawaited(ref.read(followTipSeenProvider.notifier).markSeen().catchError((Object e) {
+            if (kDebugMode) debugPrint('[Tip] Follow tip not saved: $e');
+          })),
         ),
       ],
     );
