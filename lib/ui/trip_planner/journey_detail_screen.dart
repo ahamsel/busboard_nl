@@ -86,14 +86,32 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
   /// An add is in flight: a second tap must not fire another.
   bool _saving = false;
 
+  /// The live feed, for re-timing the alert. Paused while the Plan tab is hidden: unlike a watch, a manual listen is
+  /// not paused with the tickers, and it would keep the feed refreshing every 30 s behind the other tabs.
+  late final ProviderSubscription<TimeTrackFetchResult?> _feedSub;
+  bool _feedPaused = false;
+
   @override
   void initState() {
     super.initState();
     // As the Board does on each refresh: a newer live time for the first ride re-times its alert (iPhone).
-    ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
+    _feedSub = ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _retimeAlert(ref.read(plannerLiveFeedProvider).value);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final paused = !TickerMode.valuesOf(context).enabled;
+    if (paused == _feedPaused) return;
+    _feedPaused = paused;
+    if (paused) {
+      _feedSub.pause();
+    } else {
+      _feedSub.resume();
+    }
   }
 
   void _retimeAlert(TimeTrackFetchResult? feed) {
