@@ -77,6 +77,28 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('the toast is the inverse card in both modes, with no top-edge highlight (it would vanish on ink)',
+      (tester) async {
+    for (final b in Brightness.values) {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(kitHost(
+        Builder(builder: (context) => BBButton(label: 'go', onPressed: () => BBToast.show(context, 'Saved'))),
+        brightness: b,
+      ));
+      await tester.tap(find.text('go'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final tokens = b == Brightness.dark ? BBTokens.dark : BBTokens.light;
+      final card = tester.widget<Container>(find.byKey(BBToast.cardKey)).decoration! as BoxDecoration;
+      expect(card.color, tokens.colors.ink, reason: b.name);
+      // The dark highlight is white at 8%: over the near-white ink it cannot be seen, so the toast has none.
+      expect(card.border, isNull, reason: '${b.name}: no dead highlight');
+      expect(card.boxShadow, isNotEmpty, reason: '${b.name}: it still floats');
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+  });
+
   testWidgets('the toast sits just above the bottom safe area', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;

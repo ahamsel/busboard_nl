@@ -109,6 +109,13 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
     super.dispose();
   }
 
+  /// The inverse card: `ink` with the float shadow. Not the dark top-edge highlight, which is white at 8% and so
+  /// cannot be seen on the near-white `ink`.
+  BoxDecoration _card(BBTokens bb) {
+    final floating = bb.floating(radius: BBRadius.card, color: bb.colors.ink);
+    return BoxDecoration(color: floating.color, borderRadius: floating.borderRadius, boxShadow: floating.boxShadow);
+  }
+
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
@@ -130,7 +137,7 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
             child: Container(
               key: BBToast.cardKey,
               padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.m),
-              decoration: bb.floating(radius: BBRadius.card).copyWith(color: bb.colors.ink),
+              decoration: _card(bb),
               child: Text(widget.message, style: bb.text.label.copyWith(color: bb.colors.bg)),
             ),
           ),
