@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
+import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
@@ -62,6 +63,27 @@ class _ReadyMap {
   Widget build(MapViewConfig c) {
     unawaited(ready.then((_) => c.onReady(surface, surface)));
     return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF0F2));
+  }
+}
+
+/// A stand-in for the live vehicle feed that counts who listens, and whether its listener is paused.
+class _CountingFeed {
+  var listens = 0;
+  var running = false;
+
+  Stream<Map<String, BusTrackingState>> build(Ref ref) {
+    final c = StreamController<Map<String, BusTrackingState>>(
+      onListen: () {
+        listens++;
+        running = true;
+      },
+      onPause: () => running = false,
+      onResume: () => running = true,
+      onCancel: () => running = false,
+    );
+    c.add(const {});
+    ref.onDispose(c.close);
+    return c.stream;
   }
 }
 
@@ -180,5 +202,72 @@ void main() {
     await tester.tap(find.byKey(HomeShell.mapTabKey));
     await tester.pumpAndSettle();
     expect(await tester.runAsync(() => SharedPreferencesAsync().getBool(barHintSeenKey)), isTrue);
+  });
+
+  testWidgets('the map is not built behind the Board, however the Map tab rebuilds, until it is first shown',
+      (tester) async {
+    final map = _ReadyMap();
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, tab: HomeTab.board, mapView: map.build);
+    const mapKey = ValueKey('stub-map');
+    expect(find.byKey(mapKey, skipOffstage: false), findsNothing);
+    // A keyboard coming up and going changes the MediaQuery the Map tab's build depends on.
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(find.byKey(mapKey, skipOffstage: false), findsNothing,
+        reason: 'no tiles, data or memory for a rider who only uses the Board');
+    await tester.tap(find.byKey(HomeShell.mapTabKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(mapKey), findsOneWidget);
+    await tester.tap(find.byKey(HomeShell.boardTabKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(mapKey, skipOffstage: false), findsOneWidget, reason: 'then kept');
+  });
+
+  testWidgets('the live vehicle feed is not followed behind the Board, and resumes with the Map', (tester) async {
+    final feed = _CountingFeed();
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, tab: HomeTab.board, busFeed: feed.build);
+    expect(feed.listens, 0, reason: 'the Board alone does not fetch the citywide feed');
+    await tester.tap(find.byKey(HomeShell.mapTabKey));
+    await tester.pumpAndSettle();
+    expect(feed.listens, 1);
+    expect(feed.running, isTrue);
+    await tester.tap(find.byKey(HomeShell.boardTabKey));
+    await tester.pumpAndSettle();
+    expect(feed.running, isFalse, reason: 'paused again while the Board shows');
+    await tester.tap(find.byKey(HomeShell.mapTabKey));
+    await tester.pumpAndSettle();
+    expect(feed.running, isTrue);
+  });
+
+  testWidgets('the tab not showing is out of reach of a keyboard or switch access', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, tab: HomeTab.board);
+    bool excluded(Key layer) => tester
+        .widget<ExcludeFocus>(find
+            .descendant(
+              of: find.byKey(layer, skipOffstage: false),
+              matching: find.byType(ExcludeFocus, skipOffstage: false),
+              skipOffstage: false,
+            )
+            .first)
+        .excluding;
+    expect(excluded(HomeShell.boardLayerKey), isFalse);
+    expect(excluded(HomeShell.mapLayerKey), isTrue);
+    await tester.tap(find.byKey(HomeShell.mapTabKey));
+    await tester.pumpAndSettle();
+    expect(excluded(HomeShell.boardLayerKey), isTrue);
+    expect(excluded(HomeShell.mapLayerKey), isFalse);
+  });
+
+  testWidgets('a Board remembered from 1.4 on a stop the schedule no longer has opens a plain Board',
+      (tester) async {
+    await pumpPlannerApp(tester,
+        net: TestNetwork(), now: _now, tab: null, asyncPrefs: {HomeTabStore.legacyBoardOpenKey: 'REMOVED'});
+    expect(_showing(BoardTab), isTrue);
+    expect(find.text('Choose your stop'), findsWidgets);
+    expect(find.text('STOP REMOVED'), findsNothing);
+    expect(_c(tester).read(boardStopProvider), isNull);
   });
 }

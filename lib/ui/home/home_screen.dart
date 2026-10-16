@@ -238,10 +238,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (kDebugMode) debugPrint('[Map] $msg');
   }
 
+  /// The Map tab has been shown at least once. Until then this screen (kept mounted behind the Board) builds no map
+  /// view and follows no live feed: a rider who only uses the Board pays for neither tiles nor the citywide vehicles.
+  /// This is an explicit gate: a rebuild for any reason (the keyboard, the text size) must not build the map early.
+  late bool _mapEverShown = widget.active;
+
+  /// The subscription that keeps the live vehicle feed polling, held only while the Map tab is the one showing.
+  /// (Riverpod pauses a provider with no active listener, but a `ref.listen` is never paused with the widget, so this
+  /// is closed and reopened by hand.) Arrival alerts and the Board do not use this feed.
+  ProviderSubscription<AsyncValue<Map<String, BusTrackingState>>>? _feedSub;
+
+  bool _feedOpenedBefore = false;
+
+  void _syncFeed() {
+    if (widget.active && _feedSub == null) {
+      _feedSub = ref.listenManual(busTrackingStreamProvider, (_, _) {});
+      final resumed = _feedOpenedBefore;
+      _feedOpenedBefore = true;
+      // Back from the Board: the buses are as old as the time away, so poll at once, not after the refresh interval.
+      if (resumed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _feedSub != null) ref.invalidate(busTrackingStreamProvider);
+        });
+      }
+    } else if (!widget.active && _feedSub != null) {
+      _feedSub!.close();
+      _feedSub = null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _syncFeed();
     unawaited(_enableMyLocation(request: false));
     _journeyFitPending = ref.read(journeyOnMapProvider) != null;
     // A follow set before the map existed (the Board's live row): its card
@@ -288,6 +318,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.active) _mapEverShown = true;
+    _syncFeed();
     // The Map tab has just come into view: the bar's one-time lift, if it has not played yet.
     if (widget.active && !oldWidget.active) {
       WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_hintBar()));
@@ -333,7 +365,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (state == AppLifecycleState.resumed) {
       if (!_appResumed) {
         _awaitingFreshFeed = true;
-        _feedAtResume = ref.read(busTrackingStreamProvider).value;
+        _feedAtResume = _mapEverShown ? ref.read(busTrackingStreamProvider).value : null;
       }
       _appResumed = true;
       _resumeTicker();
@@ -1108,9 +1140,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // While following, the follow camera frames the new stop itself.
       if (next != null && _follow == null) unawaited(_recentreOn(next));
     });
-    // Keep the live feed subscribed (it drives the track store and the taps)
-    // without rebuilding the screen on every poll.
-    ref.listen(busTrackingStreamProvider, (_, _) {});
+    // The live feed is kept subscribed (it drives the track store and the taps) without rebuilding the screen on every
+    // poll: see [_syncFeed].
     ref.listen<FollowTarget?>(followProvider, (prev, next) {
       if (prev != next) _onFollowChanged(next);
       // A bus followed, from anywhere: the stop sheet's "tap to follow" tip has done its job (spec 2026-10-14 §4.3).
@@ -1288,7 +1319,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                 onPointerMove: _onPointerMove,
                 onPointerUp: _onPointerEnd,
                 onPointerCancel: _onPointerEnd,
-                child: buildMap(MapViewConfig(
+                child: !_mapEverShown
+                    ? ColoredBox(color: bb.colors.bg)
+                    : buildMap(MapViewConfig(
                 styleString: MapStyle.assetFor(bb.brightness, settings.mapThemeMode),
                 initialTarget: myStop == null ? _defaultTarget : LatLng(myStop.stopLat, myStop.stopLon),
                 initialZoom: _defaultZoom,

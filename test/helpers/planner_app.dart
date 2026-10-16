@@ -119,6 +119,7 @@ Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigat
 /// [followTipSeen] is false.
 /// The home opens on [tab] (the Map, where most of these tests live); null reads the tab used last from the phone, as
 /// a real launch does (the Board on a first launch).
+/// [busFeed], when given, stands in for the live vehicle feed (a quiet one otherwise).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -144,6 +145,7 @@ Future<void> pumpPlannerApp(
   Map<String, Object> asyncPrefs = const {},
   bool reduceMotion = false,
   HomeTab? tab = HomeTab.map,
+  Stream<Map<String, BusTrackingState>> Function(Ref ref)? busFeed,
 }) async {
   // flutter_test's own 800x600 is a tablet to the home screen (its side panel starts at 700): a test that has not
   // picked a size gets a phone, so the sheet is a pull-up sheet. A test that sets its own size keeps it.
@@ -181,7 +183,7 @@ Future<void> pumpPlannerApp(
         ),
         mapViewBuilderProvider.overrideWithValue(mapView ?? StubMap().build),
         // No live buses unless a test overrides this: the real poll's timer would outlive the test.
-        busTrackingStreamProvider.overrideWith((ref) => Stream.value(const <String, BusTrackingState>{})),
+        busTrackingStreamProvider.overrideWith(busFeed ?? (ref) => Stream.value(const <String, BusTrackingState>{})),
         if (tab != null) homeTabProvider.overrideWith(() => HomeTabNotifier.fixed(tab)),
         if (homeTipSeen) homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
         if (barHintSeen) barHintSeenProvider.overrideWith(() => SeenFlagNotifier.seen(barHintSeenKey)),

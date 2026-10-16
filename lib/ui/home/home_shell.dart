@@ -106,7 +106,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with SingleTickerProvider
 }
 
 /// One tab's layer. Offstage once fully hidden (not painted, not hit, not read, and skipped by finders); while it
-/// is not the active tab it takes no touches, says nothing to screen readers and runs no tickers. The Board's layer
+/// is not the active tab it takes no touches or focus, says nothing to screen readers and runs no tickers. The Board's layer
 /// fades with [board]; the map's stays opaque under it.
 class _TabLayer extends AnimatedWidget {
   const _TabLayer({
@@ -133,7 +133,11 @@ class _TabLayer extends AnimatedWidget {
           ignoring: !active,
           child: ExcludeSemantics(
             excluding: !active,
-            child: Opacity(opacity: isBoard ? board : 1, child: child),
+            // Nor a keyboard's or a switch's focus: Tab never walks into the tab behind.
+            child: ExcludeFocus(
+              excluding: !active,
+              child: Opacity(opacity: isBoard ? board : 1, child: child),
+            ),
           ),
         ),
       ),

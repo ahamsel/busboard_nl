@@ -212,6 +212,19 @@ void main() {
       expect(c.read(boardShownStopProvider), const BoardStop('D'), reason: 'and is skipped once the schedule says no');
     });
 
+    test('a schedule that fails to load says nothing against your stop: the Board shows it, with its error state',
+        () async {
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => throw StateError('no schedule')),
+        settingsProvider.overrideWith(() => _Mine('B')),
+        savedPlacesProvider.overrideWith(() => _Saved([homeD])),
+      ]);
+      addTearDown(c.dispose);
+      await expectLater(c.read(gtfsRepositoryProvider.future), throwsStateError);
+      await c.read(savedPlacesProvider.future);
+      expect(c.read(boardShownStopProvider), const BoardStop('B'), reason: 'not "Choose your stop"');
+    });
+
     test('none at all: null, and the Board asks you to choose', () async {
       final c = container(saved: [_pin]);
       await loaded(c);

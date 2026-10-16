@@ -1,23 +1,39 @@
+import 'dart:async';
+
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/home_tab_provider.dart';
+import 'package:busboard_nl/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:shared_preferences_platform_interface/types.dart';
 
+import '../trip_planner/test_network.dart';
+
+/// The schedule these tests run on: stops A..H, X, Y, Z.
+final _net = TestNetwork();
+
+List<Override> _schedule([Future<void>? gate]) => [
+      gtfsRepositoryProvider.overrideWith((ref) async {
+        if (gate != null) await gate;
+        return _net.repo;
+      }),
+    ];
+
 /// A fresh app start over what the phone holds ([prefs]).
-ProviderContainer _start([Map<String, Object> prefs = const {}]) {
+ProviderContainer _start([Map<String, Object> prefs = const {}, List<Override>? schedule]) {
   SharedPreferencesAsyncPlatform.instance = InMemorySharedPreferencesAsync.withData(prefs);
-  final c = ProviderContainer();
+  final c = ProviderContainer(overrides: schedule ?? _schedule());
   addTearDown(c.dispose);
   return c;
 }
 
 /// The same phone, started again.
 ProviderContainer _restart() {
-  final c = ProviderContainer();
+  final c = ProviderContainer(overrides: _schedule());
   addTearDown(c.dispose);
   return c;
 }
@@ -54,6 +70,41 @@ void main() {
     final next = _restart();
     expect(await _tabOnceRead(next), HomeTab.board);
     expect(next.read(boardStopProvider), isNull, reason: 'the migration runs once');
+  });
+
+  test('a Board left open in 1.4 on a stop the schedule no longer has is not restored', () async {
+    final c = _start({HomeTabStore.legacyBoardOpenKey: 'GONE'});
+    expect(await _tabOnceRead(c), HomeTab.board, reason: 'the Board still opens, on your stop or Choose your stop');
+    await pumpEventQueue();
+    expect(c.read(boardStopProvider), isNull);
+    expect(await SharedPreferencesAsync().getString(HomeTabStore.legacyBoardOpenKey), isNull);
+  });
+
+  test('the tab shows at once while the schedule loads, and the 1.4 stop is checked when it has', () async {
+    final gate = Completer<void>();
+    final c = _start({HomeTabStore.legacyBoardOpenKey: 'GONE'}, _schedule(gate.future));
+    expect(await _tabOnceRead(c), HomeTab.board, reason: 'not held back by the schedule');
+    expect(c.read(boardStopProvider), isNull);
+    gate.complete();
+    await pumpEventQueue();
+    expect(c.read(boardStopProvider), isNull, reason: 'GONE is not in it');
+
+    final gate2 = Completer<void>();
+    final c2 = _start({HomeTabStore.legacyBoardOpenKey: 'C'}, _schedule(gate2.future));
+    expect(await _tabOnceRead(c2), HomeTab.board);
+    expect(c2.read(boardStopProvider), isNull, reason: 'not before there is a schedule to check it against');
+    gate2.complete();
+    await pumpEventQueue();
+    expect(c2.read(boardStopProvider), const BoardStop('C'));
+  });
+
+  test('a schedule that fails to load says nothing against the 1.4 stop', () async {
+    final c = _start({HomeTabStore.legacyBoardOpenKey: 'C'}, [
+      gtfsRepositoryProvider.overrideWith((ref) async => throw StateError('no schedule')),
+    ]);
+    await _tabOnceRead(c);
+    await pumpEventQueue();
+    expect(c.read(boardStopProvider), const BoardStop('C'));
   });
 
   test('the migration stores the Board before it clears the 1.4 key, so a failed write keeps the stop', () async {
@@ -114,10 +165,11 @@ void main() {
     expect(c.read(homeTabProvider), HomeTab.map);
   });
 
-  test("restore never replaces a stop the rider picked", () {
+  test("restore never replaces a stop the rider picked", () async {
     final c = _start();
     c.read(boardStopProvider.notifier).select('A', nearMe: true);
     c.read(boardStopProvider.notifier).restore('C');
+    await pumpEventQueue();
     expect(c.read(boardStopProvider), const BoardStop('A', nearMe: true));
   });
 }

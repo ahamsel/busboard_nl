@@ -283,8 +283,9 @@ final busTrackRendererProvider = Provider<DelayedTrackRenderer?>((ref) {
 });
 
 /// Polls the live feed into [busTrackStoreProvider] and publishes one
-/// [BusTrackingState] per bus after every poll. Only the map listens, and
-/// Riverpod pauses it while the map tab is offstage.
+/// [BusTrackingState] per bus after every poll. Only the home's map tab listens: not before the Map tab is first
+/// shown (a Board-only rider never fetches it), and Riverpod pauses it while that tab is offstage again. Arrival
+/// alerts and the Board read stop arrivals, not this feed.
 final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>((ref) async* {
   final store = ref.watch(busTrackStoreProvider);
   if (store == null) {

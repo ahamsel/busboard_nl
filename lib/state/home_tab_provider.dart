@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'home_sheet_provider.dart';
+import 'providers.dart';
 import 'recent_stops_provider.dart';
 
 /// The home's two tabs (spec 2026-10-15 §2).
@@ -143,8 +144,20 @@ class BoardStopNotifier extends Notifier<BoardStop?> {
     unawaited(ref.read(recentStopsProvider.notifier).push(stopId));
   }
 
-  /// A Board left open in 1.4, unless something was picked first (a launch link wins).
-  void restore(String stopId) => state ??= BoardStop(stopId);
+  /// A Board left open in 1.4, unless something was picked first (a launch link wins) or the loaded schedule no longer
+  /// has the stop (it would show as "Stop 1234" and an empty board). The schedule is waited for; one that fails to load
+  /// says nothing against the stop.
+  void restore(String stopId) => unawaited(_restore(stopId));
+
+  Future<void> _restore(String stopId) async {
+    var exists = true;
+    try {
+      exists = (await ref.read(gtfsRepositoryProvider.future)).stopsById.containsKey(stopId);
+    } catch (_) {
+      // No schedule to check against.
+    }
+    if (exists && ref.mounted) state ??= BoardStop(stopId);
+  }
 }
 
 final boardStopProvider = NotifierProvider<BoardStopNotifier, BoardStop?>(BoardStopNotifier.new);
