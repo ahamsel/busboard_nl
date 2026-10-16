@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'gtfs_models.dart';
 import 'gtfs_parser.dart';
+import 'gtfs_time.dart';
 import 'gtfs_downloader.dart';
 import 'headsign.dart';
 
@@ -34,6 +35,33 @@ class GtfsRepository {
   }
 
   final Map<String, List<RouteDirections>> _directionsForStopCache = {};
+  final Map<(String, int), List<int>> _departuresCache = {};
+
+  /// The seconds after [day]'s midnight at which a bus on a service running that day leaves [stopId], sorted (past
+  /// 86400 for a trip that runs on after midnight). Empty when no service runs that day. Memoised per stop and
+  /// date, so a screen that asks on every rebuild scans the stop's times once; cleared whenever data is (re)loaded.
+  List<int> departureSecondsOn(String stopId, DateTime day) {
+    final key = (stopId, day.year * 10000 + day.month * 100 + day.day);
+    final cached = _departuresCache[key];
+    if (cached != null) return cached;
+    // A week of stops and days is a few hundred entries; a long-running app that crosses many days starts over.
+    if (_departuresCache.length > 2000) _departuresCache.clear();
+    final services = activeServiceIds(day);
+    final seconds = <int>[];
+    if (services.isNotEmpty) {
+      for (final st in stopTimesByStopId[stopId] ?? const <StopTimeRow>[]) {
+        final trip = tripsById[st.tripId];
+        if (trip == null || !services.contains(trip.serviceId)) continue;
+        try {
+          seconds.add(GtfsTime.parse(st.departureTime).totalSeconds);
+        } on FormatException {
+          continue;
+        }
+      }
+      seconds.sort();
+    }
+    return _departuresCache[key] = List.unmodifiable(seconds);
+  }
   Map<String, int>? _lastSequenceByTrip;
 
   /// Each route serving [stopId] (in [routeShortNamesForStop] order) with
@@ -125,14 +153,21 @@ class GtfsRepository {
     await loadFromDirectory(dirPath);
   }
 
+  /// Forgets everything worked out from the data (route names and directions per stop, departures per service day):
+  /// it is called when the data is loaded again.
+  void clearDerivedCaches() {
+    _routesForStopCache.clear();
+    _directionsForStopCache.clear();
+    _departuresCache.clear();
+    _lastSequenceByTrip = null;
+  }
+
   /// Load already-extracted GTFS files from [dirPath].
   ///
   /// This keeps production loading and diagnostic replay on the same parser
   /// and indexes without forcing a network download or platform cache lookup.
   Future<void> loadFromDirectory(String dirPath) async {
-    _routesForStopCache.clear();
-    _directionsForStopCache.clear();
-    _lastSequenceByTrip = null;
+    clearDerivedCaches();
     final parser = GtfsParser(dirPath);
 
     // Parse all files

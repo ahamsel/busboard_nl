@@ -18,6 +18,7 @@ import 'package:go_router/go_router.dart';
 import 'package:gtfs_realtime_bindings/gtfs_realtime_bindings.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../kit/kit_test_helpers.dart';
@@ -132,6 +133,37 @@ ServiceAlert _alert(String header) => ServiceAlert(
       targets: const [ServiceAlertTarget(stopId: '1150')],
     );
 
+/// MUN Centre whose service starts [daysAhead] days from today, so nothing is due today: its first bus leaves at 06:30
+/// that day, and a later one at 17:00.
+GtfsRepository _repoStartingIn(int daysAhead) {
+  final today = DateTime.now();
+  final start = DateTime(today.year, today.month, today.day + daysAhead);
+  final repo = _LoadedRepository()
+    ..stopsById['1150'] = const StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 0, stopLon: 0)
+    ..routesById['20'] = const RouteInfo(routeId: '20', routeShortName: '20', routeLongName: '20')
+    ..calendarsById['later'] = ServiceCalendar(
+      serviceId: 'later',
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: true,
+      sunday: true,
+      startDate: start,
+      endDate: DateTime(2100),
+    );
+  for (final (trip, time) in [('am', '06:30:00'), ('pm', '17:00:00')]) {
+    repo.tripsById[trip] =
+        TripInfo(tripId: trip, routeId: '20', serviceId: 'later', tripHeadsign: 'Downtown', directionId: 0);
+    repo.stopTimesByStopId['1150'] = [
+      ...?repo.stopTimesByStopId['1150'],
+      StopTimeRow(tripId: trip, arrivalTime: time, departureTime: time, stopId: '1150', stopSequence: 1),
+    ];
+  }
+  return repo;
+}
+
 GtfsRepository _repo() =>
     GtfsRepository()..stopsById['1150'] = const StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 0, stopLon: 0);
 
@@ -243,6 +275,39 @@ void main() {
     expect(find.byType(BBRefresh), findsOneWidget);
     // Pull-to-refresh must not depend on the host's scroll behaviour.
     expect(tester.widget<ListView>(find.byType(ListView)).physics, isA<AlwaysScrollableScrollPhysics>());
+    await _unmount(tester);
+  });
+
+  testWidgets('with service over, the empty board names the first bus', (tester) async {
+    await _pump(tester, repo: _repoStartingIn(1));
+    expect(find.text('No upcoming departures'), findsOneWidget);
+    expect(find.text('First bus 06:30'), findsOneWidget);
+    expect(find.textContaining('no scheduled departures'), findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets("the first bus follows the device's 12-hour setting", (tester) async {
+    await _pump(tester, repo: _repoStartingIn(1), use24h: false);
+    expect(find.text('First bus 6:30 AM'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('a first bus days away names its weekday, spoken in full', (tester) async {
+    final handle = tester.ensureSemantics();
+    final day = DateTime.now().add(const Duration(days: 3));
+    final short = DateFormat('EEE').format(day), full = DateFormat('EEEE').format(day);
+    await _pump(tester, repo: _repoStartingIn(3));
+    expect(find.text('First bus $short 06:30'), findsOneWidget);
+    expect(find.bySemanticsLabel('No upcoming departures. First bus $full 06:30'), findsOneWidget);
+    handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets('with no service in the next 7 days, the empty board keeps its own words', (tester) async {
+    await _pump(tester, repo: _repoStartingIn(9));
+    expect(find.text('No upcoming departures'), findsOneWidget);
+    expect(find.text('There are no scheduled departures\nfrom this stop right now.'), findsOneWidget);
+    expect(find.textContaining('First bus'), findsNothing);
     await _unmount(tester);
   });
 
