@@ -94,6 +94,15 @@ void main() {
   // Real glyph widths, so the 2x text checks measure what a phone shows.
   setUpAll(loadAppFonts);
 
+  testWidgets("with the destination set and only the start missing, it asks where you're starting", (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
+    _container(tester).read(planQueryProvider.notifier).setDestination(_c);
+    await _openOptions(tester);
+    expect(_container(tester).read(planQueryProvider).from, isNull);
+    expect(find.text("Choose where you're starting"), findsOneWidget);
+    expect(find.text("Choose where you're going"), findsNothing);
+  });
+
   testWidgets('options for A → C show the 8:10 → 8:20 journey', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
     await _openOptions(tester);

@@ -355,7 +355,7 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
             ),
           ],
           const SizedBox(height: BBSpace.l),
-          ..._results(context, results, now),
+          ..._results(context, results, now, missingTo: to == null),
           if (from != null && to != null) ...[
             const SizedBox(height: BBSpace.l),
             SaveTripButton(from: from, to: to, onSave: _saving ? null : () => _save(from, to)),
@@ -365,7 +365,12 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
     );
   }
 
-  List<Widget> _results(BuildContext context, AsyncValue<PlanOutcome?> results, DateTime now) {
+  List<Widget> _results(
+    BuildContext context,
+    AsyncValue<PlanOutcome?> results,
+    DateTime now, {
+    required bool missingTo,
+  }) {
     final bb = context.bb;
     // A new form loads afresh; a live refresh (or Riverpod's retry after a failure) keeps what is shown.
     final replanning = results.isLoading && _formChanged;
@@ -388,7 +393,8 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
         Padding(
           padding: const EdgeInsets.all(BBSpace.xxl),
           child: Text(
-            "Choose where you're going",
+            // Whichever end is missing: the destination first, else the start.
+            missingTo ? "Choose where you're going" : "Choose where you're starting",
             textAlign: TextAlign.center,
             style: bb.text.body.copyWith(color: bb.colors.muted),
           ),
