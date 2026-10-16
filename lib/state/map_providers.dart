@@ -125,31 +125,39 @@ final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>,
   ref.listen(appForegroundProvider, (_, foreground) {
     if (foreground) refreshWhenWatched();
   });
-  if (ref.read(appForegroundProvider)) {
+
+  // The next poll is armed once this fetch is over: a fetch slower than the interval (the live client waits up
+  // to 10 s a feed) would otherwise be restarted before it could ever finish, and the rider would see no rows.
+  void armPoll() {
+    if (!ref.mounted || !ref.read(appForegroundProvider)) return;
     final timer = Timer(Duration(seconds: seconds), () {
       if (ref.read(appForegroundProvider)) refreshWhenWatched();
     });
     ref.onDispose(timer.cancel);
   }
 
-  final repo = await schedule;
-  List<TimeTrackVehicle>? liveVehicles;
   try {
-    final result = await ref.read(timetrackApiProvider).fetchVehiclesResult();
-    if (result.succeeded) liveVehicles = result.vehicles;
-  } catch (_) {
-    // Schedule only.
+    final repo = await schedule;
+    List<TimeTrackVehicle>? liveVehicles;
+    try {
+      final result = await ref.read(timetrackApiProvider).fetchVehiclesResult();
+      if (result.succeeded) liveVehicles = result.vehicles;
+    } catch (_) {
+      // Schedule only.
+    }
+    List<MetrobusDeparture>? stopPredictions;
+    try {
+      stopPredictions = (await ref.read(metrobusMobileApiProvider).fetchDeparturesResult(stopId)).departures;
+    } catch (_) {
+      // Schedule and live vehicles only.
+    }
+    return ArrivalService(repo).getUpcomingArrivals(
+      stopId: stopId,
+      now: DateTime.now(),
+      liveVehicles: liveVehicles,
+      stopPredictions: stopPredictions,
+    );
+  } finally {
+    armPoll();
   }
-  List<MetrobusDeparture>? stopPredictions;
-  try {
-    stopPredictions = (await ref.read(metrobusMobileApiProvider).fetchDeparturesResult(stopId)).departures;
-  } catch (_) {
-    // Schedule and live vehicles only.
-  }
-  return ArrivalService(repo).getUpcomingArrivals(
-    stopId: stopId,
-    now: DateTime.now(),
-    liveVehicles: liveVehicles,
-    stopPredictions: stopPredictions,
-  );
 });
