@@ -85,7 +85,7 @@ class StubMap {
 
   Widget build(MapViewConfig c) {
     config = c;
-    return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4));
+    return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF0F2));
   }
 
   void tap(double lat, double lon) => config!.onTap(LatLng(lat, lon));

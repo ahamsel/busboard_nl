@@ -78,7 +78,7 @@ Widget _stubMap(MapViewConfig config) {
       _mapTaps++;
       config.onTap(const LatLng(47.0, -52.0));
     },
-    child: const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4)),
+    child: const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF0F2)),
   );
 }
 
