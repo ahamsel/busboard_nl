@@ -173,6 +173,18 @@ void main() {
     }
   });
 
+  testWidgets("in landscape the map's top controls keep clear of the sensor housing (the side safe area)",
+      (tester) async {
+    tester.view.physicalSize = const Size(844, 390);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(left: 47, right: 47, bottom: 21);
+    addTearDown(tester.view.reset);
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/map');
+    expect(tester.getRect(find.byKey(TopActions.settingsKey)).right, lessThanOrEqualTo(844 - 47));
+    expect(tester.getRect(find.byType(BBChip).first).left, greaterThanOrEqualTo(47));
+    await _unmount(tester);
+  });
+
   testWidgets('the Plan and Alerts pages have a back button, no gear, and no room kept for the tab bar',
       (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/');
