@@ -256,7 +256,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       final resumed = _feedOpenedBefore;
       _feedOpenedBefore = true;
       // Back from the Board: the buses are as old as the time away, so poll at once, not after the refresh interval.
+      // Until that poll lands the snapshot is stale, and a follow is not judged on it (it would be lost for contact
+      // after 5 min away): the app-resume gate, [_feedIsFresh], holds the follow's endings and restarts its clocks.
       if (resumed) {
+        _awaitingFreshFeed = true;
+        _feedAtResume = ref.read(busTrackingStreamProvider).value;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _feedSub != null) ref.invalidate(busTrackingStreamProvider);
         });

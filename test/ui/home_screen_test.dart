@@ -77,6 +77,10 @@ var _surface = FakeMapSurface();
 /// Stands in for the map tab going offstage in the shell.
 final _tickerMode = ValueNotifier<bool>(true);
 
+/// The screen's `active` (the Map tab is the one showing), apart from its tickers: a test that hides the Map the way
+/// the home shell does sets both.
+final _homeActive = ValueNotifier<bool>(true);
+
 /// Taps that reached the "map" (a tap on empty map is forwarded to onTap).
 var _mapTaps = 0;
 
@@ -228,7 +232,10 @@ Future<void> _pump(
     GoRoute(path: '/', builder: (_, _) => const Text('PICKER')),
     GoRoute(path: '/map', builder: (_, _) => ValueListenableBuilder<bool>(
         valueListenable: _tickerMode,
-        builder: (_, enabled, _) => TickerMode(enabled: enabled, child: const HomeScreen()),
+        builder: (_, enabled, _) => ValueListenableBuilder<bool>(
+          valueListenable: _homeActive,
+          builder: (_, active, _) => TickerMode(enabled: enabled, child: HomeScreen(active: active)),
+        ),
       ),
     ),
     GoRoute(path: '/board/:id', builder: (_, s) => Text('BOARD ${s.pathParameters['id']}')),
@@ -278,6 +285,7 @@ void main() {
     _config = null;
     _mapTaps = 0;
     _tickerMode.value = true;
+    _homeActive.value = true;
     _surface = FakeMapSurface();
   });
 
@@ -1164,8 +1172,11 @@ void main() {
       double textScale = 1,
       List<ArrivalRow> arrivals = const [],
       Map<String, Object> prefs = const {'selectedStopId': 's2'},
+      bool broadcast = false,
     }) async {
-      feed = StreamController<Map<String, BusTrackingState>>();
+      feed = broadcast
+          ? StreamController<Map<String, BusTrackingState>>.broadcast()
+          : StreamController<Map<String, BusTrackingState>>();
       addTearDown(feed.close);
       surface = surfaceOverride ?? _RecordingSurface();
       _surface = surface;
@@ -1719,6 +1730,39 @@ void main() {
 
         await lockFor(tester, const Duration(minutes: 6), (d) => skew = d);
         expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the pre-lock fix is not judged');
+        expect(find.byKey(BBToast.cardKey), findsNothing);
+        expect(find.text('Following bus 2573'), findsOneWidget);
+
+        feed.add({'2573': followed(gps: now())});
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        feed.add(const {});
+        await _frames(tester, 3);
+        expect(find.text('Lost contact with bus 2573'), findsOneWidget);
+        expect(containerOf(tester).read(followProvider), isNull);
+        await tester.pump(const Duration(seconds: 5));
+      });
+
+      testWidgets('6 min on the Board: the follow waits for a fresh poll on coming back, then endings work again',
+          (tester) async {
+        var skew = Duration.zero;
+        DateTime now() => DateTime.now().add(skew);
+        // A broadcast feed: coming back re-subscribes (the poll is restarted at once), as the real one does.
+        await pumpFollow(tester, broadcast: true, overrides: [mapClockProvider.overrideWithValue(now)]);
+        await startFollowing(tester);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        // The Map goes behind the Board, as the home shell does: its tickers off, its feed closed.
+        _tickerMode.value = false;
+        _homeActive.value = false;
+        await _frames(tester, 3);
+        skew = const Duration(minutes: 6);
+        _tickerMode.value = true;
+        _homeActive.value = true;
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the pre-Board fix is not judged');
         expect(find.byKey(BBToast.cardKey), findsNothing);
         expect(find.text('Following bus 2573'), findsOneWidget);
 
