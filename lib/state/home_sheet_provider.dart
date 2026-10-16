@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/trip_planner/journey.dart';
+import 'map_request_provider.dart';
 
 /// What the home screen's sheet shows (spec 2026-10-12 §3). The follow card is not a state: it shows over
 /// [HomeSheetHome] while a bus is followed.
@@ -74,6 +75,8 @@ class HomeSheetNotifier extends Notifier<HomeSheet> {
   /// is in the stack, and [homeSheetReopenedProvider] tells the home screen to bring it back to half.
   void open(HomeSheet sheet) {
     if (sheet is HomeSheetHome) return home();
+    // A trip's options or steps are only on the map (spec 2026-10-15 §2.3), opened again or not.
+    if (sheet is OptionsSheet || sheet is JourneySheet) ref.read(mapRequestProvider.notifier).request();
     if (_stack.last == sheet) {
       ref.read(homeSheetReopenedProvider.notifier)._bump();
       return;

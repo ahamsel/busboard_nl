@@ -1,10 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../state/follow_providers.dart';
-import '../../state/home_sheet_provider.dart';
 import '../../state/home_tab_provider.dart';
-import '../../state/map_pick_provider.dart';
+import '../../state/map_request_provider.dart';
 import '../board/board_tab.dart';
 import '../kit/kit.dart';
 import 'home_screen.dart';
@@ -53,18 +51,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with SingleTickerProvider
     });
     // What only the map can show switches to it (spec 2026-10-15 §2.3), from the Board or anywhere else: a bus
     // followed, a trip's options or steps (Where to? or Plan a trip from here on the Board), and choosing on the map.
-    ref.listenManual<String?>(followProvider.select((f) => f?.vehicleId), (previous, next) {
-      if (next != null && next != previous) _toMap();
-    });
-    ref.listenManual<HomeSheet>(homeSheetProvider, (_, next) {
-      if (next is OptionsSheet || next is JourneySheet) _toMap();
-    });
-    ref.listenManual<MapPick?>(mapPickProvider, (_, next) {
-      if (next != null) _toMap();
-    });
+    // Each of those asks at the action, so asking again for what is already set still switches.
+    ref.listenManual<int>(mapRequestProvider, (_, _) => ref.read(homeTabProvider.notifier).select(HomeTab.map));
   }
-
-  void _toMap() => ref.read(homeTabProvider.notifier).select(HomeTab.map);
 
   @override
   void dispose() {

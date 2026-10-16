@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/arrival/arrival_models.dart';
+import 'map_request_provider.dart';
 
 /// The bus being followed (spec §3.5): a vehicle ID, never a route or trip.
 class FollowTarget {
@@ -20,8 +21,12 @@ class FollowNotifier extends Notifier<FollowTarget?> {
   @override
   FollowTarget? build() => null;
 
-  /// [stopId] stands in for the saved stop for this follow only (a planned trip's boarding stop).
-  void follow(String vehicleId, {String? stopId}) => state = FollowTarget(vehicleId, stopId: stopId);
+  /// [stopId] stands in for the saved stop for this follow only (a planned trip's boarding stop). The Map tab is asked
+  /// for every time, a bus already followed included.
+  void follow(String vehicleId, {String? stopId}) {
+    state = FollowTarget(vehicleId, stopId: stopId);
+    ref.read(mapRequestProvider.notifier).request();
+  }
   void stop() => state = null;
 }
 

@@ -94,9 +94,10 @@ class HomeTabNotifier extends Notifier<HomeTab?> {
     unawaited(ref.read(homeTabStoreProvider).save(tab).catchError((Object _) {}));
   }
 
-  /// The Board tab, showing [stopId] (the stop line, Open board, a notification, a `/board/` link).
+  /// The Board tab, showing [stopId] (the stop line, Open board, a notification, a `/board/` link). A stop the loaded
+  /// schedule does not know (a stale link or notification) leaves the Board as it was, on its usual default.
   void showBoard(String stopId) {
-    ref.read(boardStopProvider.notifier).select(stopId);
+    ref.read(boardStopProvider.notifier).show(stopId);
     select(HomeTab.board);
   }
 
@@ -142,6 +143,28 @@ class BoardStopNotifier extends Notifier<BoardStop?> {
   void select(String stopId, {bool nearMe = false}) {
     state = BoardStop(stopId, nearMe: nearMe);
     unawaited(ref.read(recentStopsProvider.notifier).push(stopId));
+  }
+
+  /// The Board shows [stopId], if the loaded schedule has it; otherwise it stays as it was (your stop, or the last stop
+  /// picked) rather than showing an empty "Stop 9999". The schedule is waited for when it is not loaded yet (a link at
+  /// a cold start); one that fails to load says nothing against the stop.
+  void show(String stopId) {
+    final stops = ref.read(gtfsRepositoryProvider).value?.stopsById;
+    if (stops != null) {
+      if (stops.containsKey(stopId)) select(stopId);
+      return;
+    }
+    unawaited(_showWhenLoaded(stopId));
+  }
+
+  Future<void> _showWhenLoaded(String stopId) async {
+    var exists = true;
+    try {
+      exists = (await ref.read(gtfsRepositoryProvider.future)).stopsById.containsKey(stopId);
+    } catch (_) {
+      // No schedule to check against.
+    }
+    if (exists && ref.mounted) select(stopId);
   }
 
   /// A Board left open in 1.4, unless something was picked first (a launch link wins) or the loaded schedule no longer

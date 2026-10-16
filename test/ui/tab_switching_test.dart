@@ -198,4 +198,97 @@ void main() {
     _expectMap(tester);
     expect(_c(tester).read(mapPickProvider), MapPick.to);
   });
+
+  group('asking again for what is already set still switches to the Map (fix round 1)', () {
+    testWidgets('Where to? on the Board while trip options are already open on the hidden map', (tester) async {
+      await _pumpOnBoard(tester);
+      final c = _c(tester);
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      c.read(homeTabProvider.notifier).select(HomeTab.board);
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardTab), findsOneWidget, reason: 'back on the Board, the options still open');
+      await tester.tap(find.byKey(BoardTab.whereToKey));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(SearchScreen.fieldKey), '1150');
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('MUN Centre').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Go here'));
+      await tester.pumpAndSettle();
+      _expectMap(tester);
+      expect(c.read(homeSheetProvider), isA<OptionsSheet>());
+    });
+
+    testWidgets('Plan a trip from here on the Board while trip options are already open', (tester) async {
+      await _pumpOnBoard(tester);
+      final c = _c(tester);
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      c.read(homeTabProvider.notifier).select(HomeTab.board);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(StopSheetContent.planFromKey));
+      await tester.tap(find.byKey(StopSheetContent.planFromKey));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(SearchScreen.fieldKey), '1150');
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('MUN Centre').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Go here'));
+      await tester.pumpAndSettle();
+      _expectMap(tester);
+    });
+
+    testWidgets('Follow on the Board for the bus already followed', (tester) async {
+      await _pumpOnBoard(tester);
+      final c = _c(tester);
+      c.read(followProvider.notifier).follow('2573');
+      c.read(homeTabProvider.notifier).select(HomeTab.board);
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardTab), findsOneWidget);
+      await tester.tap(find.byType(ArrivalRowTile).first);
+      await tester.pumpAndSettle();
+      _expectMap(tester);
+      expect(c.read(followProvider)?.vehicleId, '2573');
+    });
+
+    testWidgets('Choose on map from the Board while a pick is already pending', (tester) async {
+      await _pumpOnBoard(tester);
+      final c = _c(tester);
+      c.read(mapPickProvider.notifier).start(MapPick.to);
+      c.read(homeTabProvider.notifier).select(HomeTab.board);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(BoardTab.whereToKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Choose on map'));
+      await tester.pumpAndSettle();
+      _expectMap(tester);
+      expect(c.read(mapPickProvider), MapPick.to);
+    });
+  });
+
+  group('a stop the schedule does not know does not show an empty Board (fix round 1)', () {
+    testWidgets('a /board/ link to it leaves the Board on your stop', (tester) async {
+      await pumpPlannerApp(tester,
+          net: _network(),
+          now: _now,
+          initial: '/board/9999',
+          overrides: [
+            settingsProvider.overrideWith(_StopC.new),
+            stopArrivalsProvider.overrideWith((ref, id) async => [_row(4)]),
+          ]);
+      _expectBoardOn(tester, 'C');
+      expect(find.text('STOP 9999'), findsNothing);
+      expect(_c(tester).read(boardStopProvider), isNull);
+    });
+
+    testWidgets('a notification for it, while the Board shows another stop, leaves that stop', (tester) async {
+      await _pumpOnBoard(tester, tab: HomeTab.map);
+      _c(tester).read(homeTabProvider.notifier).showBoard('B');
+      await tester.pumpAndSettle();
+      _expectBoardOn(tester, 'B');
+      openNotificationRoute('/board/9999', GoRouter.of(routerElement(tester)).go);
+      await tester.pumpAndSettle();
+      _expectBoardOn(tester, 'B');
+      expect(find.text('STOP 9999'), findsNothing);
+    });
+  });
 }

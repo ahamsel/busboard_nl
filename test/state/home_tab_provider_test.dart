@@ -149,6 +149,7 @@ void main() {
   test('openStop shows the stop on the Board when the Board is showing, else opens its card on the map', () async {
     final c = _start({HomeTabStore.key: 'board'});
     await _tabOnceRead(c);
+    await c.read(gtfsRepositoryProvider.future);
     c.read(homeTabProvider.notifier).openStop('B');
     expect(c.read(boardStopProvider), const BoardStop('B'));
     expect(c.read(homeSheetProvider), isA<HomeSheetHome>());
@@ -156,6 +157,32 @@ void main() {
     c.read(homeTabProvider.notifier).openStop('C');
     expect(c.read(homeSheetProvider), const StopSheet('C'));
     expect(c.read(boardStopProvider), const BoardStop('B'), reason: 'the Board keeps its own stop');
+  });
+
+  test('showBoard with a stop the schedule does not know leaves the Board as it was (fix round 1)', () async {
+    final c = _start({HomeTabStore.key: 'map'});
+    await _tabOnceRead(c);
+    await c.read(gtfsRepositoryProvider.future);
+    c.read(homeTabProvider.notifier).showBoard('9999');
+    expect(c.read(homeTabProvider), HomeTab.board, reason: 'the Board still opens');
+    expect(c.read(boardStopProvider), isNull, reason: 'on its default stop, not an empty "Stop 9999"');
+    c.read(homeTabProvider.notifier).showBoard('B');
+    expect(c.read(boardStopProvider), const BoardStop('B'));
+    c.read(homeTabProvider.notifier).showBoard('9999');
+    expect(c.read(boardStopProvider), const BoardStop('B'), reason: 'an unknown stop never replaces a shown one');
+  });
+
+  test('showBoard before the schedule loads waits for it, then ignores an unknown stop', () async {
+    final gate = Completer<void>();
+    final c = _start({HomeTabStore.key: 'map'}, _schedule(gate.future));
+    c.read(homeTabProvider);
+    c.read(homeTabProvider.notifier).showBoard('9999');
+    c.read(homeTabProvider.notifier).showBoard('B');
+    await pumpEventQueue();
+    expect(c.read(boardStopProvider), isNull, reason: 'nothing is decided before the schedule is there');
+    gate.complete();
+    await pumpEventQueue();
+    expect(c.read(boardStopProvider), const BoardStop('B'));
   });
 
   test('a fixed tab (tests) is there at once and reads nothing', () async {

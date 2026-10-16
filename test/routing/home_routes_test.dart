@@ -75,11 +75,11 @@ void main() {
     expect(_c(tester).read(homeTabProvider), HomeTab.map);
   });
 
-  testWidgets('/board/1150 opens home on the Board tab, showing that stop (spec 2026-10-15 §2.3)', (tester) async {
-    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/1150');
+  testWidgets('/board/B opens home on the Board tab, showing that stop (spec 2026-10-15 §2.3)', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/B');
     final c = ProviderScope.containerOf(tester.element(find.byType(HomeShell)));
     expect(c.read(homeTabProvider), HomeTab.board);
-    expect(c.read(boardStopProvider), const BoardStop('1150'));
+    expect(c.read(boardStopProvider), const BoardStop('B'));
     expect(c.read(homeSheetProvider), isA<HomeSheetHome>());
   });
 
