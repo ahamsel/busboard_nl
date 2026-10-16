@@ -3,6 +3,7 @@ import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:busboard_nl/ui/shell/top_actions.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/trip_planner/place_picker_sheet.dart';
 import 'package:busboard_nl/ui/trip_planner/plan_screen.dart';
@@ -46,16 +47,17 @@ void main() {
   // Real glyph widths, so the 2x text checks measure what a phone shows.
   setUpAll(loadAppFonts);
 
-  testWidgets('the nav bar has Board, Map, Alerts and Plan; Plan opens the planner', (tester) async {
+  testWidgets('the planner is a page opened from the Plan button at the top right; back returns to the tab',
+      (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
-    final bar = find.byType(BBNavBar);
-    for (final label in ['Board', 'Map', 'Alerts', 'Plan']) {
-      expect(find.descendant(of: bar, matching: find.text(label)), findsOneWidget);
-    }
-    expect(tester.widget<BBNavBar>(bar).items, hasLength(4));
-    await tester.tap(find.descendant(of: bar, matching: find.text('Plan')));
+    expect(tester.widget<BBNavBar>(find.byType(BBNavBar)).items.map((i) => i.label), ['Board', 'Map']);
+    await tester.tap(find.byKey(TopActions.planKey));
     await tester.pumpAndSettle();
     expect(find.text('Plan a trip'), findsOneWidget);
+    await tester.tap(find.byIcon(BBIcons.back));
+    await tester.pumpAndSettle();
+    expect(find.text('Plan a trip'), findsNothing);
+    expect(find.byType(BBNavBar), findsOneWidget);
   });
 
   testWidgets('choosing A then C shows the 8:10 → 8:20 journey', (tester) async {
@@ -347,7 +349,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Pick on map'));
     await tester.pump();
-    final router = GoRouter.of(tester.element(find.byType(BBNavBar)));
+    await tester.pump();
+    final router = GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false)));
     expect(router.state.uri.toString(), '/map?pick=to');
     // The real map tab started its own refresh timers; let them run out after it goes.
     await tester.pumpWidget(const SizedBox());

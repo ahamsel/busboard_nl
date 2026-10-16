@@ -19,20 +19,15 @@ class AlertsScreen extends ConsumerWidget {
     Widget centered(Widget child) => ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
-              BBSpace.screen, BBSpace.xl, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+              BBSpace.screen, BBSpace.xl, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
           children: [Center(child: child)],
         );
     return BBScaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          BBTopBar(
-            title: 'Service alerts',
-            large: true,
-            actions: [
-              BBIconButton(icon: BBIcons.settings, semanticLabel: 'Settings', onPressed: () => context.push('/settings')),
-            ],
-          ),
+          // A page over the tabs, opened from the bell: back returns to the tab.
+          BBTopBar(title: 'Service alerts', onBack: () => context.pop()),
           Expanded(
             child: BBRefresh(
               semanticLabel: 'Service alerts',
@@ -48,7 +43,7 @@ class AlertsScreen extends ConsumerWidget {
                 loading: () => ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
-                      BBSpace.screen, BBSpace.xl, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+                      BBSpace.screen, BBSpace.xl, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
                   children: const [
                     BBSkeleton(kind: BBSkeletonKind.alertCard, count: 3, label: 'Loading service alerts...'),
                   ],
@@ -105,7 +100,7 @@ class _AlertsContent extends ConsumerWidget {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(
-        BBSpace.screen, BBSpace.s, BBSpace.screen, BBNavBar.reservedHeight(context) + BBSpace.l),
+        BBSpace.screen, BBSpace.s, BBSpace.screen, MediaQuery.paddingOf(context).bottom + BBSpace.l),
       children: [
         _ServiceStatusCard(status: updates.serviceStatus, fetchedAt: updates.feedTimestamp ?? updates.fetchedAt),
         const SizedBox(height: BBSpace.xl),

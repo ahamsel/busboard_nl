@@ -105,17 +105,8 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
-            child: BBTopBar(
-              title: 'Plan a trip',
-              large: true,
-              actions: [
-                BBIconButton(
-                  icon: BBIcons.settings,
-                  semanticLabel: 'Settings',
-                  onPressed: () => context.push('/settings'),
-                ),
-              ],
-            ),
+            // A page over the tabs, opened from the top buttons or a stop: back returns to the tab.
+            child: BBTopBar(title: 'Plan a trip', onBack: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: BBSpace.screen),
@@ -195,7 +186,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
             ),
           ),
           ..._results(context, results, now, missingTo: draft.to == null),
-          SliverToBoxAdapter(child: SizedBox(height: BBNavBar.reservedHeight(context) + BBSpace.l)),
+          SliverToBoxAdapter(child: SizedBox(height: MediaQuery.paddingOf(context).bottom + BBSpace.l)),
         ],
       ),
     );

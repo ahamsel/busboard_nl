@@ -1314,15 +1314,15 @@ void main() {
     setUpAll(loadAppFonts);
     final eight = DateTime(testDay.year, testDay.month, testDay.day, 8, 1);
     ProviderContainer container(WidgetTester tester) =>
-        ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
-    String location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+        ProviderScope.containerOf(tester.element(find.byType(BBNavBar, skipOffstage: false)));
+    String location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).state.uri.toString();
     // The real map tab started its own refresh timers; let them run out after it goes.
     Future<void> unmount(WidgetTester tester) async {
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(minutes: 1));
     }
 
-    testWidgets('the live vehicle feed is not polled behind another tab, and polls at once on coming back',
+    testWidgets('the live vehicle feed is not polled behind the other tab, and polls at once on coming back',
         (tester) async {
       var fetches = 0;
       final live = MockClient((_) async {
@@ -1333,7 +1333,7 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
       expect(fetches, greaterThan(0), reason: 'polled while the Map shows');
       final bar = find.byType(BBNavBar);
-      await tester.tap(find.descendant(of: bar, matching: find.text('Alerts')));
+      await tester.tap(find.descendant(of: bar, matching: find.text('Board')));
       await tester.pumpAndSettle();
       // The feed is paused at its next update: a poll under way as the tab goes may still finish.
       await tester.pump(const Duration(seconds: 6));
@@ -1360,7 +1360,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(container(tester).read(planQueryProvider).to, StopPlace(stopId: 'C', name: 'Stop C'));
       expect(find.text('Plan a trip'), findsOneWidget);
-      expect(location(tester), '/plan');
+      // The planner opens over the map, and back returns to it.
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byType(MapScreen), findsOneWidget);
+      expect(location(tester), '/map');
       await unmount(tester);
     });
 
@@ -1395,10 +1399,11 @@ void main() {
       map.tap(47.5600, -52.7500);
       await tester.pumpAndSettle();
       expect(container(tester).read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
-      expect(location(tester), '/plan');
-      // Back on the map later, the pick is over.
-      await tester.tap(find.descendant(of: find.byType(BBNavBar), matching: find.text('Map')));
+      expect(find.text('Plan a trip'), findsOneWidget);
+      // Back on the map, the pick is over.
+      expect(await tester.binding.handlePopRoute(), isTrue);
       await tester.pumpAndSettle();
+      expect(find.byType(MapScreen), findsOneWidget);
       expect(find.text('Tap the map to choose your starting point'), findsNothing);
       await unmount(tester);
     });
@@ -1409,7 +1414,7 @@ void main() {
       expect(find.text('Tap the map to choose your destination'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(location(tester), '/plan');
+      expect(find.text('Plan a trip'), findsOneWidget);
       expect(container(tester).read(planQueryProvider).to, isNull);
       await unmount(tester);
     });
@@ -1457,7 +1462,7 @@ void main() {
       });
     }
 
-    testWidgets('a new destination picked on the map never shows the old results on the Plan tab', (tester) async {
+    testWidgets('a new destination picked on the map never shows the old results on the plan', (tester) async {
       final map = StubMap();
       await pumpPlannerApp(tester, net: TestNetwork(), now: eight, mapView: map.build);
       container(tester).read(planQueryProvider.notifier)
@@ -1483,7 +1488,7 @@ void main() {
       await tester.pump();
       onlyNewResults();
       await tester.pumpAndSettle();
-      expect(location(tester), '/plan');
+      expect(find.text('Plan a trip'), findsOneWidget);
       expect(find.byType(JourneyCard), findsWidgets);
       onlyNewResults();
       await unmount(tester);

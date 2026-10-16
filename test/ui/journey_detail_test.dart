@@ -12,6 +12,7 @@ import 'package:busboard_nl/state/arrival_alert_providers.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/journey_on_map_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
@@ -33,9 +34,9 @@ import '../trip_planner/test_network.dart';
 
 DateTime _at(int h, int m) => DateTime(testDay.year, testDay.month, testDay.day, h, m);
 
-ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
+ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(BBNavBar, skipOffstage: false)));
 
-String _location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+String _location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).state.uri.toString();
 
 Finder _badge(String route) => find.byWidgetPredicate((w) => w is RouteBadge && w.label == route);
 
@@ -303,7 +304,7 @@ void main() {
       await pumpPlannerApp(tester, net: TestNetwork(), now: now, overrides: [live.override]);
       final j = planned();
       expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), ['1-0', '2-1']);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyDetailScreen), findsOneWidget);
     }
@@ -352,7 +353,7 @@ void main() {
       final j = planned();
       expect((j.legs.first as WalkLeg).seconds, 60);
       expect(j.departs, 8 * 3600 + 19 * 60);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyDetailScreen), findsOneWidget);
     }
@@ -404,7 +405,7 @@ void main() {
         PlanQuery(from: y, to: z, mode: PlanMode.leaveBy, time: DateTime(testDay.year, testDay.month, testDay.day, 23, 55)),
       ) as PlanFound).journeys.first;
       expect((j.serviceDate, j.legs.whereType<RideLeg>().single.tripId), (testDay, '9-1'));
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expectLiveFollowAndBell();
     });
@@ -463,10 +464,11 @@ void main() {
     });
   }
 
-  // The plan's live times refresh every 30 s (the planner's live feed). Behind another tab that stops, and it comes
-  // back with the Plan tab: the steps' manual listen is paused with the tickers, as the screens' watches are.
+  // The plan's live times refresh every 30 s (the planner's live feed). Behind another page (the service alerts, opened
+  // over it) that stops, and it comes back with the plan: the steps' manual listen is paused with the tickers, as the
+  // screens' watches are.
   for (final steps in [false, true]) {
-    testWidgets("the trip's ${steps ? 'steps' : 'options'} stop refreshing their live times behind another tab, and "
+    testWidgets("the trip's ${steps ? 'steps' : 'options'} stop refreshing their live times behind another page, and "
         'refresh on return', (tester) async {
       var fetches = 0;
       final live = MockClient((_) async {
@@ -485,19 +487,22 @@ void main() {
       }
       final first = fetches;
       await tester.pump(const Duration(seconds: 31));
-      expect(fetches, greaterThan(first), reason: 'refreshed every 30 s on the Plan tab');
-      final bar = find.byType(BBNavBar);
-      await tester.tap(find.descendant(of: bar, matching: find.text('Alerts')));
+      expect(fetches, greaterThan(first), reason: 'refreshed every 30 s on the plan');
+      final router = GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false)));
+      unawaited(router.push('/alerts'));
+      await tester.pump();
       await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(AlertsScreen), findsOneWidget);
       final hidden = fetches;
       for (var i = 0; i < 3; i++) {
         await tester.pump(const Duration(seconds: 31));
       }
-      expect(fetches, hidden, reason: 'no refresh behind another tab');
-      await tester.tap(find.descendant(of: bar, matching: find.text('Plan')));
+      expect(fetches, hidden, reason: 'no refresh behind another page');
+      router.pop();
+      await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       await tester.pump(const Duration(milliseconds: 100));
-      expect(fetches, greaterThan(hidden), reason: 'refreshed on coming back to the Plan tab');
+      expect(fetches, greaterThan(hidden), reason: 'refreshed on coming back to the plan');
       expect(find.byType(JourneyDetailScreen), steps ? findsOneWidget : findsNothing);
       await tester.pumpAndSettle();
     });

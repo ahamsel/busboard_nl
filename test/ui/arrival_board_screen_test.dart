@@ -7,9 +7,11 @@ import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:busboard_nl/ui/shell/top_actions.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -496,7 +498,7 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('the Board stops polling behind another tab, and refreshes once on coming back', (tester) async {
+  testWidgets('the Board stops polling behind the other tab, and refreshes once on coming back', (tester) async {
     final mobile = _CountingMobile();
     await pumpPlannerApp(
       tester,
@@ -509,7 +511,7 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
     expect(mobile.asked.length, greaterThan(1), reason: 'polls every 5 s while shown');
     final bar = find.byType(BBNavBar);
-    await tester.tap(find.descendant(of: bar, matching: find.text('Alerts')));
+    await tester.tap(find.descendant(of: bar, matching: find.text('Map')));
     await tester.pumpAndSettle();
     final hidden = mobile.asked.length;
     for (var i = 0; i < 6; i++) {
@@ -535,6 +537,31 @@ void main() {
     expect(mobile.asked.length, hidden + 1, reason: 'one refresh on coming back');
     await tester.pump(const Duration(seconds: 6));
     expect(mobile.asked.length, greaterThan(hidden + 1), reason: 'and polling again');
+    await _unmount(tester);
+  });
+
+  testWidgets('the Board stops polling behind a page opened over it (the service alerts), and refreshes on return',
+      (tester) async {
+    final mobile = _CountingMobile();
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: DateTime(testDay.year, testDay.month, testDay.day, 7, 50),
+      initial: '/board/A',
+      overrides: [metrobusMobileApiProvider.overrideWithValue(mobile)],
+    );
+    await tester.pump(const Duration(seconds: 6));
+    await tester.tap(find.byKey(TopActions.alertsKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertsScreen), findsOneWidget);
+    final hidden = mobile.asked.length;
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 5));
+    }
+    expect(mobile.asked.length, hidden, reason: 'no polling behind the page');
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pumpAndSettle();
+    expect(mobile.asked.length, greaterThan(hidden), reason: 'a refresh on coming back');
     await _unmount(tester);
   });
 }

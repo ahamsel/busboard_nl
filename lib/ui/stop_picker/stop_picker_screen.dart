@@ -1,10 +1,10 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../routing/push_once.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
+import '../shell/top_actions.dart';
 import 'near_me_list.dart';
 import 'stop_id_entry.dart';
 
@@ -24,14 +24,26 @@ class StopPickerScreen extends ConsumerWidget {
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(
-              child: BBTopBar(
-                title: 'Choose a stop',
-                subtitle: "Metrobus · St. John's",
-                large: true,
-                actions: [
-                  BBIconButton(icon: BBIcons.settings, semanticLabel: 'Settings', onPressed: () => context.push('/settings')),
-                ],
-              ),
+              child: LayoutBuilder(builder: (context, box) {
+                const title = 'Choose a stop';
+                const subtitle = "Metrobus · St. John's";
+                // The title beside Plan, Alerts and Settings (BBTopBar's xs padding and m gap), unless large text on
+                // a small phone would break its words: then the buttons take a row of their own above it.
+                final room = box.maxWidth - 2 * BBSpace.xs - BBSpace.m - TopActions.headerWidth;
+                if (TopActions.fits(context, title, bb.text.display, room, maxLines: 2)) {
+                  return const BBTopBar(title: title, subtitle: subtitle, large: true, actions: [TopActions()]);
+                }
+                return const Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(BBSpace.xs, BBSpace.s, BBSpace.xs, 0),
+                      child: Align(alignment: Alignment.centerRight, child: TopActions()),
+                    ),
+                    BBTopBar(title: title, subtitle: subtitle, large: true),
+                  ],
+                );
+              }),
             ),
             // A reload that fails (Refresh schedule, offline) keeps the schedule loaded once: Settings says so.
             ...gtfsAsync.when(

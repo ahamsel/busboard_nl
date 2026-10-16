@@ -72,7 +72,7 @@ class StopCardBody extends ConsumerWidget {
               alert: alerts.first,
               stopNames: {stop.stopId: stop.stopName},
               compact: true,
-              onTap: () => context.go('/alerts'),
+              onTap: () => context.push('/alerts'),
             ),
           ],
           const SizedBox(height: BBSpace.l),
@@ -91,7 +91,7 @@ class StopCardBody extends ConsumerWidget {
             wrap: true,
             onPressed: () {
               ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stop.stopId, name: stop.stopName));
-              context.go('/plan');
+              context.push('/plan');
             },
           ),
           const SizedBox(height: BBSpace.s),

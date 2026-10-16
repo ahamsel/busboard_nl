@@ -10,7 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../helpers/planner_app.dart';
 import '../trip_planner/test_network.dart';
 
-GoRouter _router(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar)));
+GoRouter _router(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false)));
 
 /// On iPhone, a page pushed over the tabs closes with a drag from the left edge, as in any iOS app: go_router 18 no
 /// longer recognises Flutter's MaterialApp, so without a page builder of our own every route lost the theme's page
