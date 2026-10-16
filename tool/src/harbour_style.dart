@@ -26,26 +26,29 @@ class HarbourPalette {
   final String label;
   final String building;
 
+  /// Neutral greys (spec 2026-10-14 §2.4): water stays blue-grey and parks a muted green, the only coloured land.
   static const light = HarbourPalette(
     name: 'Harbour light',
-    land: '#EEF1F4',
-    water: '#BFD6EA',
-    park: '#DCE8DC',
+    land: '#EEF0F2',
+    water: '#C9D9E4',
+    park: '#DCE8DD',
     road: '#FFFFFF',
-    roadCasing: '#D5DCE3',
-    label: '#7A8794',
-    building: '#E4E8EC',
+    roadCasing: '#D9DCE0',
+    label: '#737880',
+    building: '#E4E6E9',
   );
 
+  /// A neutral dark grey a step below the app's dark `surface` (#1F2024), so sheets, cards and map buttons stand
+  /// clear of the map; their shadow and top highlight do the rest.
   static const dark = HarbourPalette(
     name: 'Harbour dark',
-    land: '#141C25',
-    water: '#0E2A40',
-    park: '#16261F',
-    road: '#24303C',
-    roadCasing: '#2E3B48',
-    label: '#7D8B99',
-    building: '#19222D',
+    land: '#17181B',
+    water: '#0F1820',
+    park: '#172019',
+    road: '#26282C',
+    roadCasing: '#2F3237',
+    label: '#80848C',
+    building: '#1E1F23',
   );
 }
 
@@ -127,3 +130,6 @@ Map<String, dynamic> buildHarbourStyle(Map<String, dynamic> upstream, HarbourPal
   style['layers'] = out;
   return style;
 }
+
+/// The committed file format: two-space JSON with a trailing newline.
+String encodeHarbourStyle(Map<String, dynamic> style) => '${const JsonEncoder.withIndent('  ').convert(style)}\n';
