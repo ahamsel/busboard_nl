@@ -9,7 +9,13 @@ raw captures in `store/app-store/screenshots/` and `store/google-play/media/en-U
 
 `shot.html` is the screenshot template, `render.py` holds the slide order and copy.
 
-The Android sets render from `clean/`: the raw Play captures with the status-bar clock and
-icons removed (ffmpeg `delogo`, plus a feathered blur band on the map shots), so nothing
-sits under the rounded corners of the frame. The iPhone and iPad status bars clear their
-corners and stay as captured.
+The Android sets render from `clean/`: Play-sized captures with nothing under the rounded
+corners or the punch-hole camera of the frame. From 1.5.0 they come from the iPhone 6.9" simulator
+run (no Android device needed): scaled to 1344 wide, the iOS status bar cropped off, and a blurred
+66 px band added on top where Android's status bar sits. The 7" and 10" tablet captures are the
+iPad 13" captures cropped to 10:16 (the Board's centred column, or the Map's side panel and map)
+and scaled. Until 1.4.1 they were emulator captures with the status bar removed by ffmpeg `delogo`.
+The iPhone and iPad status bars clear their corners and stay as captured.
+
+Colours follow the 1.5 brand: blue `#1272C9`, ink `#16181C` frames, and the night background
+`#121316` for the dark-mode slide (`bg` = `night` in `render.py`).

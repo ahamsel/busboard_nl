@@ -10,16 +10,24 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STORE = os.path.dirname(HERE)
 CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-# Order: the strongest feature first. Eight slides, Google Play's limit for phone screenshots.
+# Order: the 1.5 story first (Board, then Map), then the features riders use most. Eight slides,
+# Google Play's limit for phone screenshots. Every set uses the same file names in its source dir.
 SLIDES = [
-    ('01-plan', '07-plan-a-trip', 'blue', 'Plan a trip,<br>any minute', 'Leave now, leave by or arrive by,<br>with live bus times'),
-    ('02-follow', '03-follow-a-bus', 'blue', 'Follow your bus<br>to your stop', 'See the stops left, the minutes away,<br>and when it arrives'),
-    ('03-arrival-alert', '09-arrival-alert', 'blue', 'Know when<br>to head out', 'Get a heads-up when your bus is<br>3, 5 or 10 minutes away'),
-    ('04-arrivals', '01-mun-centre-1150', 'blue', 'Live arrivals<br>at your stop', 'Metrobus predictions next to the schedule,<br>early or late at a glance'),
-    ('05-trip-detail', '08-trip-detail', 'blue', 'Save the trips<br>you take often', 'Your next buses, one tap away,<br>worked out on your phone'),
-    ('06-map', '02-live-map', 'blue', 'Every bus,<br>live on the map', 'Route colours and smooth movement<br>between position updates'),
-    ('07-nearby', '05-nearby-stops', 'blue', 'Stops near you,<br>in a tap', 'See where each route goes,<br>or enter any stop number'),
-    ('08-service-alerts', '04-service-alerts', 'blue', 'Detours and alerts<br>for your routes', 'Official Metrobus service alerts,<br>matched to your stop'),
+    ('01-board', '01-board', 'blue', 'Your stop\'s buses,<br>no map needed', 'The Board tab: live times for your stops,<br>with Follow on every live bus'),
+    ('02-map', '02-map', 'blue', 'Every bus,<br>live on the map', 'Where to? and your next bus sit in<br>a slim bar that tucks away as you pan'),
+    ('03-stop', '03-stop', 'blue', 'Tap any stop<br>for its next buses', 'Live times and detours for that stop,<br>right on the map'),
+    ('04-plan', '04-plan', 'blue', 'Plan a trip,<br>any minute', 'Leave now, leave by or arrive by,<br>with live bus times'),
+    ('05-follow', '05-follow', 'blue', 'Follow your bus<br>to your stop', 'See the stops left, the minutes away,<br>and when it arrives'),
+    ('06-picker', '06-picker', 'blue', 'Plan for later<br>in a few taps', 'Pick the day and time, or tap<br>In 15 min, In 1 hr and more'),
+    ('07-alert', '07-alert', 'blue', 'Know when<br>to head out', 'Get a heads-up when your bus is<br>3, 5 or 10 minutes away'),
+    ('08-dark', '08-dark', 'night', 'Easy on the eyes<br>after dark', 'A dark mode for early mornings<br>and late buses'),
+]
+
+# Tablets have no slim bar: the map's panel sits beside the map instead.
+TABLET_SLIDES = [
+    (slug, shot, bg, title, 'Where to? and your stop\'s next buses<br>sit in a panel beside the map') if slug == '02-map'
+    else (slug, shot, bg, title, sub)
+    for slug, shot, bg, title, sub in SLIDES
 ]
 
 SETS = {
@@ -27,10 +35,10 @@ SETS = {
     'iphone': ('iphone', 1320, 2868, 'app-store/screenshots/APP_IPHONE_69', SLIDES),
     # 6.5" renders from the 6.9" captures at the 6.5" size.
     'iphone65': ('iphone', 1284, 2778, 'app-store/screenshots/APP_IPHONE_69', SLIDES),
-    'ipad': ('ipad', 2064, 2752, 'app-store/screenshots/APP_IPAD_PRO_3GEN_129', SLIDES),
+    'ipad': ('ipad', 2064, 2752, 'app-store/screenshots/APP_IPAD_PRO_3GEN_129', TABLET_SLIDES),
     'android': ('android', 1080, 2160, 'marketing/clean/phoneScreenshots', SLIDES),
-    'tab7': ('tablet', 1200, 1920, 'marketing/clean/sevenInchScreenshots', SLIDES),
-    'tab10': ('tablet', 1600, 2560, 'marketing/clean/tenInchScreenshots', SLIDES),
+    'tab7': ('tablet', 1200, 1920, 'marketing/clean/sevenInchScreenshots', TABLET_SLIDES),
+    'tab10': ('tablet', 1600, 2560, 'marketing/clean/tenInchScreenshots', TABLET_SLIDES),
 }
 
 def render(name):

@@ -2,20 +2,22 @@
 @font-face{font-family:Figtree;font-weight:800;src:url(../../assets/fonts/Figtree-ExtraBold.ttf)}
 @font-face{font-family:Figtree;font-weight:600;src:url(../../assets/fonts/Figtree-SemiBold.ttf)}
 @font-face{font-family:Figtree;font-weight:500;src:url(../../assets/fonts/Figtree-Medium.ttf)}
-:root{--blue:#3E7CB1;--navy:#1C2A3A;--cream:#F7F2EA}
+:root{--blue:#1272C9;--ink:#16181C;--night:#121316;--white:#FFFFFF}
 html,body{margin:0;overflow:hidden}
-body{font-family:Figtree;color:var(--cream);position:relative;background:var(--blue)}
-body.navy{background:var(--navy)}
+body{font-family:Figtree;color:var(--white);position:relative;background:var(--blue)}
+body.night{background:var(--night)}
 .glow{position:absolute;border-radius:50%;pointer-events:none}
-.g1{background:radial-gradient(circle,rgba(247,242,234,.18) 0,rgba(247,242,234,0) 62%)}
-.g2{background:radial-gradient(circle,rgba(28,42,58,.28) 0,rgba(28,42,58,0) 62%)}
-body.navy .g1{background:radial-gradient(circle,rgba(62,124,177,.35) 0,rgba(62,124,177,0) 62%)}
+.g1{background:radial-gradient(circle,rgba(255,255,255,.16) 0,rgba(255,255,255,0) 62%)}
+.g2{background:radial-gradient(circle,rgba(0,0,0,.22) 0,rgba(0,0,0,0) 62%)}
+body.night .g1{background:radial-gradient(circle,rgba(18,114,201,.38) 0,rgba(18,114,201,0) 62%)}
+body.night .g2{background:radial-gradient(circle,rgba(94,162,240,.14) 0,rgba(94,162,240,0) 62%)}
 .copy{position:absolute;left:0;right:0;text-align:center}
 h1{margin:0;font-weight:800;letter-spacing:-.02em;line-height:1.04}
 p{margin:0;font-weight:500;opacity:.9;line-height:1.3}
 .dots{display:flex;justify-content:center}
 .dots span{border-radius:50%}
-.device{position:absolute;background:#121A24;box-shadow:0 40px 90px rgba(10,18,28,.45),inset 0 0 0 3px rgba(255,255,255,.08)}
+.device{position:absolute;background:var(--ink);box-shadow:0 40px 90px rgba(0,0,0,.40),inset 0 0 0 3px rgba(255,255,255,.10)}
+body.night .device{box-shadow:0 40px 90px rgba(0,0,0,.6),inset 0 0 0 3px rgba(255,255,255,.16)}
 .device img{position:absolute;display:block;object-fit:cover;object-position:top}
 .island{position:absolute;background:#000;border-radius:999px}
 </style></head><body>
@@ -27,7 +29,7 @@ const q = new URLSearchParams(location.search);
 const W = +q.get('w'), H = +q.get('h'), kind = q.get('device');
 document.documentElement.style.width = W + 'px'; document.documentElement.style.height = H + 'px';
 document.body.style.width = W + 'px'; document.body.style.height = H + 'px';
-if (q.get('bg') === 'navy') document.body.classList.add('navy');
+if (q.get('bg') === 'night') document.body.classList.add('night');
 const u = W / 100; // 1u = 1% of width
 const tablet = kind === 'ipad' || kind === 'tablet';
 const head = document.getElementById('h'), sub = document.getElementById('s');
