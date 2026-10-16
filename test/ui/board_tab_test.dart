@@ -20,6 +20,8 @@ import 'package:busboard_nl/ui/alerts/service_alert_card.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/board/board_tab.dart';
 import 'package:busboard_nl/ui/home/follow_tip.dart';
+import 'package:busboard_nl/ui/home/home_shell.dart';
+import 'package:busboard_nl/ui/home/home_stop_line.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/material.dart';
@@ -422,6 +424,71 @@ void main() {
       expect(find.text('Showing schedule'), findsNothing, reason: 'nor is that announced');
       expect(find.text('Checking live data…'), findsOneWidget);
       expect(find.descendant(of: find.byType(BoardTab), matching: find.byType(BBSkeleton)), findsOneWidget);
+    });
+
+    /// Your stop C on the test network at [now], with no departures due (night): the Board, then the Map's stop line.
+    Future<void> nightBoard(WidgetTester tester, DateTime now, {TestNetwork? net}) => pumpPlannerApp(
+          tester,
+          net: net ?? TestNetwork(),
+          now: now,
+          tab: HomeTab.board,
+          use24h: false,
+          overrides: [
+            settingsProvider.overrideWith(() => _Settings('C')),
+            stopArrivalsProvider.overrideWith((ref, id) async => const <ArrivalRow>[]),
+          ],
+        );
+
+    Future<String> stopLineNote(WidgetTester tester) async {
+      await tester.tap(find.byKey(HomeShell.mapTabKey));
+      await tester.pumpAndSettle();
+      final line = find.byKey(HomeStopLine.lineKey);
+      final texts = find.descendant(of: line, matching: find.textContaining('First bus'));
+      return tester.widget<Text>(texts).data!.replaceFirst(' · ', '');
+    }
+
+    testWidgets("at night the Board names the first bus, in the stop line's own words (I2)", (tester) async {
+      final handle = tester.ensureSemantics();
+      await nightBoard(tester, DateTime(testDay.year, testDay.month, testDay.day, 0, 27));
+      expect(find.text('No upcoming departures'), findsNothing);
+      expect(find.text('No buses right now'), findsOneWidget);
+      expect(find.text('First bus 8:05 AM'), findsOneWidget);
+      expect(find.bySemanticsLabel('No buses right now. First bus 8:05 AM'), findsOneWidget);
+      expect(await stopLineNote(tester), 'First bus 8:05 AM', reason: 'the Map says the same');
+      handle.dispose();
+    });
+
+    testWidgets("on a Friday night with no weekend service: Monday's first bus, with its day (I2)", (tester) async {
+      final handle = tester.ensureSemantics();
+      final net = TestNetwork();
+      final every = net.repo.calendarsById[TestNetwork.serviceId]!;
+      net.repo.calendarsById[TestNetwork.serviceId] = ServiceCalendar(
+        serviceId: every.serviceId,
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: false,
+        sunday: false,
+        startDate: every.startDate,
+        endDate: every.endDate,
+      );
+      // testDay is a Wednesday: two days on is Friday.
+      await nightBoard(tester, DateTime(testDay.year, testDay.month, testDay.day + 2, 22, 0), net: net);
+      expect(find.text('First bus Mon 8:05 AM'), findsOneWidget);
+      expect(find.bySemanticsLabel('No buses right now. First bus Monday 8:05 AM'), findsOneWidget,
+          reason: 'the day in full for a screen reader, as the stop line says it');
+      expect(await stopLineNote(tester), 'First bus Mon 8:05 AM');
+      handle.dispose();
+    });
+
+    testWidgets('a gap in the day (not a first bus) still reads "No upcoming departures"', (tester) async {
+      // Stop C's morning buses are gone by 09:30 and the next leaves at 14:00.
+      final net = TestNetwork()..addTrip('2-late', '2', ['C', 'D'], 14 * 3600, 240);
+      await nightBoard(tester, DateTime(testDay.year, testDay.month, testDay.day, 9, 30), net: net);
+      expect(find.text('No upcoming departures'), findsOneWidget);
+      expect(find.textContaining('First bus'), findsNothing);
     });
   });
 }

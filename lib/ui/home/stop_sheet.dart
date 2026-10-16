@@ -18,6 +18,7 @@ import '../arrival_alerts/alert_strip.dart';
 import '../board/arrival_row_tile.dart';
 import '../kit/kit.dart';
 import 'follow_tip.dart';
+import 'home_stop_line.dart' show StopLineKind, stopLineInfoOf;
 
 /// A stop's sheet: everything the Board showed (spec 2026-10-12 §3.2). The Board tab shows the same stop with
 /// [info], [body] and [planFrom] (spec 2026-10-15 §3).
@@ -261,11 +262,7 @@ class _StopBody extends ConsumerWidget {
           else if (rows == null)
             const BBSkeleton(kind: BBSkeletonKind.arrivalRow, count: 5, label: 'Loading departures...')
           else if (rows.isEmpty)
-            const BBEmptyState(
-              icon: BBIcons.schedule,
-              title: 'No upcoming departures',
-              message: 'There are no scheduled departures\nfrom this stop right now.',
-            )
+            _NoDepartures(stopId: stopId, stopName: name)
           else
             // Rows enter staggered on first show, and slide when the list reorders (spec §3.2). Built only once the
             // data is here, so the stagger plays after the skeleton rather than behind it.
@@ -294,6 +291,34 @@ class _StopBody extends ConsumerWidget {
           if (rows != null && rows.any((r) => r.followableVehicle != null)) const FollowTip(),
         ],
       ),
+    );
+  }
+}
+
+/// No departures in the next three hours. At night, or before a day's service, the first bus, in the stop line's own
+/// words and from its own logic (spec 2026-10-14 §3.2), so the Board and the Map never disagree (final review I2).
+class _NoDepartures extends ConsumerWidget {
+  const _NoDepartures({required this.stopId, required this.stopName});
+  final String stopId;
+  final String stopName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final info = stopLineInfoOf(ref, stopId, stopName: stopName, arrivals: const AsyncData([]));
+    if (info.kind != StopLineKind.firstBus) {
+      return const BBEmptyState(
+        icon: BBIcons.schedule,
+        title: 'No upcoming departures',
+        message: 'There are no scheduled departures\nfrom this stop right now.',
+      );
+    }
+    const title = 'No buses right now';
+    final use24h = BBTime.use24h(context);
+    return Semantics(
+      // The weekday in full for a screen reader ("Monday"), where the screen shows "Mon".
+      label: '$title. ${info.note(use24h: use24h, spoken: true)}',
+      excludeSemantics: true,
+      child: BBEmptyState(icon: BBIcons.schedule, title: title, message: info.note(use24h: use24h)),
     );
   }
 }

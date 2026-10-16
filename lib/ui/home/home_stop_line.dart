@@ -147,6 +147,29 @@ class StopLineInfo {
   }
 }
 
+/// What the stop line says of [stopId] (named [stopName]) with [arrivals], at the planner clock's now: its first bus
+/// from the loaded schedule when none is due. The stop line and the stop's empty board (on the Board tab and the stop
+/// card) both use it, so the two never disagree about when service resumes (final review I2).
+StopLineInfo stopLineInfoOf(
+  WidgetRef ref,
+  String stopId, {
+  required String stopName,
+  required AsyncValue<List<ArrivalRow>> arrivals,
+  DateTime? updatedAt,
+  String? alertEffect,
+}) {
+  final repo = ref.watch(gtfsRepositoryProvider).value;
+  final now = ref.read(plannerClockProvider)();
+  return StopLineInfo.resolve(
+    stopName: stopName,
+    arrivals: arrivals,
+    updatedAt: updatedAt,
+    alertEffect: alertEffect,
+    firstBus: () => repo == null ? null : firstBusAfter(repo, stopId, now),
+    now: now,
+  );
+}
+
 /// The bar's second row (spec 2026-10-14 §3.1, §3.2): your stop and its next bus, one tap from the Board tab. With no
 /// stop chosen it is "Choose your stop", which pulls the sheet up to the nearby stops ([onChooseStop]) or, with none
 /// to show, opens a stop search.
@@ -212,14 +235,13 @@ class HomeStopLine extends ConsumerWidget {
     final alert = updates == null
         ? null
         : stopLineAlert(updates.activeAlertsAt(DateTime.now()), routes: routes, stopId: stop.stopId);
-    final now = ref.read(plannerClockProvider)();
-    final info = StopLineInfo.resolve(
+    final info = stopLineInfoOf(
+      ref,
+      stop.stopId,
       stopName: stop.stopName,
       arrivals: arrivals,
       updatedAt: updatedAt,
       alertEffect: alert?.effect.label,
-      firstBus: () => repo == null ? null : firstBusAfter(repo, stop.stopId, now),
-      now: now,
     );
 
     final muted = bb.text.body.copyWith(color: bb.colors.muted);
