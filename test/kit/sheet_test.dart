@@ -372,6 +372,30 @@ void main() {
       expect(ticks, 0, reason: 'a hint, not a settle on a new detent');
     });
 
+    // A cancelled nudge never finishes its own await (final review M3): its quiet must not outlive it.
+    for (final (name, interrupt) in <(String, Future<void> Function(WidgetTester, BBSheetController))>[
+      ('a drag', (tester, controller) => tester.drag(find.text('row 0'), const Offset(0, -260))),
+      ('a move by code', (tester, controller) async => unawaited(controller.animateToDetent(BBSheetDetent.half))),
+    ]) {
+      testWidgets('a nudge interrupted by $name: a later drag back to the same detent still ticks', (tester) async {
+        mockHaptics(tester);
+        final controller = BBSheetController();
+        await tester.pumpWidget(_host(controller));
+        await settle(tester);
+        unawaited(controller.nudge(24));
+        await tester.pump(const Duration(milliseconds: 60));
+        await interrupt(tester, controller);
+        await settle(tester);
+        expect(controller.size, closeTo(0.5, 0.01), reason: 'the interruption took the sheet to half');
+        final before = ticks;
+        // Off half and back onto it: a settle the rider made, so a tick.
+        await tester.drag(find.text('row 0'), const Offset(0, -40));
+        await settle(tester);
+        expect(controller.size, closeTo(0.5, 0.01));
+        expect(ticks, before + 1);
+      });
+    }
+
     group('a smaller peek (the content above it shrank: final review I1)', () {
       testWidgets('a sheet moved back to its peek by code settles at the new peek, with no tick', (tester) async {
         mockHaptics(tester);

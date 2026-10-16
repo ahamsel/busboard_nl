@@ -38,6 +38,8 @@ class BBSheetController extends DraggableScrollableController {
   Future<void> animateToDetent(BBSheetDetent detent) async {
     final sheet = _sheet;
     if (sheet == null || !isAttached) return;
+    // A move of its own: it cuts short any nudge, whose quiet would otherwise outlive it.
+    sheet._endQuiet();
     await animateTo(sheet._fractionOf(detent), duration: sheet._snapDuration, curve: BBMotion.emphasisCurve);
   }
 
@@ -57,14 +59,15 @@ class BBSheetController extends DraggableScrollableController {
     final rest = size;
     final atPeek = (rest - sheet.widget.peekFraction).abs() < _BBSheetState._tolerance;
     final up = math.min(rest + pixelsToSize(lift), sheet.widget.fullFraction);
-    sheet._quiet = true;
+    final token = sheet._beginQuiet();
     try {
       await animateTo(up, duration: BBMotion.standard, curve: BBMotion.curve);
       if (!isAttached) return;
       // From the peek, back to the peek as it is now: the content above it may have shrunk meanwhile.
       await animateTo(atPeek ? sheet.widget.peekFraction : rest, duration: BBMotion.emphasis, curve: BBMotion.curve);
     } finally {
-      sheet._quiet = false;
+      // Only this nudge's own quiet: a newer one may have begun since.
+      if (sheet._quietToken == token) sheet._endQuiet();
     }
   }
 }
@@ -164,8 +167,23 @@ class _BBSheetState extends State<BBSheet> {
   Duration _snapDuration = BBMotion.emphasis;
   bool _reduced = false;
 
-  /// While [BBSheetController.nudge] runs: leaving and coming back to a detent is not a new settle (no tick).
+  /// While [BBSheetController.nudge] runs: leaving and coming back to a detent is not a new settle (no tick). A drag
+  /// or another move cuts the nudge short, and its animation then never completes (a stopped ticker's future does
+  /// not), so they end the quiet themselves (final review M3).
   bool _quiet = false;
+
+  /// Counts nudges, so a nudge ends only its own quiet.
+  int _quietToken = 0;
+
+  int _beginQuiet() {
+    _quiet = true;
+    return ++_quietToken;
+  }
+
+  void _endQuiet() {
+    _quiet = false;
+    _quietToken++;
+  }
 
   @override
   void initState() {
@@ -369,7 +387,10 @@ class _BBSheetState extends State<BBSheet> {
   /// The list under the header: scrolled (hairline, shadow, top fade) and more below (bottom fade).
   bool _onList(Notification n) {
     // The rider took hold of the sheet (or its list): what code last asked of it no longer says where it rests.
-    if (n is ScrollStartNotification && n.depth == 0 && n.dragDetails != null) _controller._target = null;
+    if (n is ScrollStartNotification && n.depth == 0 && n.dragDetails != null) {
+      _controller._target = null;
+      _endQuiet();
+    }
     final ScrollMetrics metrics;
     if (n is ScrollNotification && n.depth == 0) {
       metrics = n.metrics;
