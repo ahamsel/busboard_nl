@@ -53,10 +53,11 @@ void main() {
     expect(tester.widget<BBNavBar>(find.byType(BBNavBar)).items.map((i) => i.label), ['Board', 'Map']);
     await tester.tap(find.byKey(TopActions.planKey));
     await tester.pumpAndSettle();
-    expect(find.text('Plan a trip'), findsOneWidget);
+    // The page's own title (the stop picker under it has a Plan a trip card too).
+    expect(find.descendant(of: find.byType(PlanScreen), matching: find.text('Plan a trip')), findsOneWidget);
     await tester.tap(find.byIcon(BBIcons.back));
     await tester.pumpAndSettle();
-    expect(find.text('Plan a trip'), findsNothing);
+    expect(find.byType(PlanScreen), findsNothing);
     expect(find.byType(BBNavBar), findsOneWidget);
   });
 
