@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../data/gtfs/gtfs_time.dart';
+import '../../data/gtfs/headsign.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../kit/kit.dart';
 
@@ -79,7 +80,7 @@ class ArrivalRowTile extends StatelessWidget {
     final expected = a.isLive && a.predictedTime != null
         ? ', expected ${BBTime.clock(a.displayTime.totalSeconds, use24h: use24h)}'
         : '';
-    return 'Route ${a.routeShortName} ${a.headsign}, ${status.toLowerCase()}, $when$expected';
+    return 'Route ${a.routeShortName} ${readableHeadsign(a.headsign)}, ${status.toLowerCase()}, $when$expected';
   }
 
   @override
@@ -116,7 +117,7 @@ class ArrivalRowTile extends StatelessWidget {
               children: [
                 ExcludeSemantics(
                   child: Text(
-                    a.headsign,
+                    readableHeadsign(a.headsign),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: bb.text.headline,

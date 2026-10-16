@@ -22,7 +22,7 @@ final _rows = [
   ArrivalRow(routeShortName: '23', headsign: 'Stavanger Drive', scheduledTime: GtfsTime.parse('09:52:00'),
       predictedTime: GtfsTime.parse('09:54:00'), minutesAway: 6, isLive: true, liveStatus: LiveStatus.behind,
       tripId: 'b', vehicleNumber: '1207'),
-  ArrivalRow(routeShortName: '10', headsign: 'Avalon Mall - MUN Centre - Downtown', scheduledTime: GtfsTime.parse('09:55:00'),
+  ArrivalRow(routeShortName: '10', headsign: 'AVALON MALL - MUN CENTRE - DOWNTOWN', scheduledTime: GtfsTime.parse('09:55:00'),
       predictedTime: GtfsTime.parse('09:55:00'), minutesAway: 9, isLive: true, isEnhanced: true, tripId: 'c'),
   ArrivalRow(routeShortName: '16', headsign: 'Avalon Mall', scheduledTime: GtfsTime.parse('09:48:00'),
       minutesAway: 0, tripId: 'd'),

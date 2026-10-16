@@ -17,10 +17,11 @@ ArrivalRow _row({
   String? routeRun,
   String? near,
   GtfsTime? predicted,
+  String headsign = 'Signal Hill Rd',
 }) =>
     ArrivalRow(
       routeShortName: '29',
-      headsign: 'Signal Hill Rd',
+      headsign: headsign,
       scheduledTime: GtfsTime.parse('09:52:00'),
       predictedTime: predicted,
       minutesAway: minutes,
@@ -42,6 +43,18 @@ void main() {
     expect(ArrivalRowTile.statusOf(_row(isLive: true, status: LiveStatus.onTime)), ('On time', BBPillTone.live));
     expect(ArrivalRowTile.statusOf(_row(isLive: true)), ('Live', BBPillTone.live));
     expect(ArrivalRowTile.statusOf(_row()), ('Scheduled', BBPillTone.neutral));
+  });
+
+  testWidgets("the feed's all-caps trip name reads in title case, on screen and to a screen reader", (tester) async {
+    final handle = tester.ensureSemantics();
+    final row = _row(headsign: 'AVALON MALL - MUN CENTRE - DOWNTOWN');
+    await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: row, onExplain: () {})));
+    expect(find.text('Avalon Mall - MUN Centre - Downtown'), findsOneWidget);
+    expect(find.text('AVALON MALL - MUN CENTRE - DOWNTOWN'), findsNothing);
+    expect(ArrivalRowTile.semanticsLabel(row, use24h: true),
+        'Route 29 Avalon Mall - MUN Centre - Downtown, scheduled, 4 minutes');
+    expect(find.semantics.byLabel('Route 29 Avalon Mall - MUN Centre - Downtown, scheduled, 4 minutes'), findsOne);
+    handle.dispose();
   });
 
   test('screen-reader sentence', () {
