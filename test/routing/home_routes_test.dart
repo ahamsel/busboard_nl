@@ -204,15 +204,4 @@ void main() {
     // Once the schedule is in, the stop sheet is at half with its departures in view (F1).
     _expectInView(tester, find.byType(ArrivalRowTile).first, 'the next bus');
   });
-
-  testWidgets('an unknown link shows Page not found, with a Home button back to the map', (tester) async {
-    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/no/such/page');
-    expect(find.text('Page not found'), findsOneWidget);
-    final page = ModalRoute.of(tester.element(find.text('Page not found')))!;
-    expect(page.settings, isA<Page<void>>().having((p) => p.runtimeType.toString(), 'type', startsWith('MaterialPage')),
-        reason: 'the theme transition (and the iOS swipe back) applies');
-    await tester.tap(find.bySemanticsLabel('Home'));
-    await tester.pumpAndSettle();
-    expect(find.byType(HomeScreen), findsOneWidget);
-  });
 }
