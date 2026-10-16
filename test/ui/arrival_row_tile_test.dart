@@ -44,6 +44,14 @@ void main() {
     expect(ArrivalRowTile.statusOf(_row()), ('Scheduled', BBPillTone.neutral));
   });
 
+  test('a row with no bus to follow says why: not live yet, or live without its number (M2)', () {
+    expect(ArrivalRowTile.whyNotFollowable(_row()), ArrivalRowTile.notLiveYet);
+    expect(ArrivalRowTile.whyNotFollowable(_row(vehicle: '2134')), ArrivalRowTile.notLiveYet);
+    expect(ArrivalRowTile.whyNotFollowable(_row(isLive: true)), ArrivalRowTile.noNumberYet);
+    expect(ArrivalRowTile.whyNotFollowable(_row(isLive: true, vehicle: '')), ArrivalRowTile.noNumberYet);
+    expect(ArrivalRowTile.noNumberYet, "This bus isn't sharing its number yet, so it can't be followed.");
+  });
+
   test('screen-reader sentence', () {
     expect(ArrivalRowTile.semanticsLabel(_row(isEnhanced: true, isLive: true, minutes: 4), use24h: true),
         'Route 29 Signal Hill Rd, live, 4 minutes');

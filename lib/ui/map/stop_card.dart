@@ -55,7 +55,7 @@ class ArrivalsList extends ConsumerWidget {
               arrival: a,
               onTap: _followable(ref, a),
               // A row with no bus to follow says why (spec 2026-10-14 §4.2).
-              onExplain: () => BBToast.show(context, ArrivalRowTile.notLiveYet, announce: true),
+              onExplain: () => BBToast.show(context, ArrivalRowTile.whyNotFollowable(a), announce: true),
             ),
         ],
       );

@@ -192,7 +192,7 @@ class _StopBody extends ConsumerWidget {
     }
 
     // A row with no bus to follow says why, and stays where it is (spec 2026-10-14 §4.2).
-    void explain() => BBToast.show(context, ArrivalRowTile.notLiveYet, announce: true);
+    void explain(ArrivalRow a) => BBToast.show(context, ArrivalRowTile.whyNotFollowable(a), announce: true);
 
     // Rows are keyed by trip and scheduled time (a loop route can pass a stop twice on one trip), plus a count for
     // exact repeats, so no two rows ever share a key.
@@ -253,7 +253,7 @@ class _StopBody extends ConsumerWidget {
                         child: ArrivalRowTile(
                           arrival: a,
                           onTap: follow(a),
-                          onExplain: explain,
+                          onExplain: () => explain(a),
                           action: AlertBell(arrival: a, stopId: stopId, stopName: name),
                         ),
                       ),

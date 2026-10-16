@@ -33,6 +33,12 @@ class ArrivalRowTile extends StatelessWidget {
   /// What a scheduled row's tap says (spec 2026-10-14 §4.2).
   static const notLiveYet = "No bus on this trip yet. You can follow it once it's live.";
 
+  /// What a live row with no bus number says: the row shows Live, so "no bus yet" would contradict it.
+  static const noNumberYet = "This bus isn't sharing its number yet, so it can't be followed.";
+
+  /// Why a row has no bus to follow, for its toast: a live row is missing only its bus number.
+  static String whyNotFollowable(ArrivalRow a) => a.isLive ? noNumberYet : notLiveYet;
+
   /// The Follow pill's screen-reader label.
   static String followLabel(String vehicle) => 'Follow bus $vehicle on the map';
 

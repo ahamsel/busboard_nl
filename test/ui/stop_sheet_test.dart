@@ -431,6 +431,7 @@ void main() {
       );
 
   testWidgets('scheduled-only and vehicle-less rows follow nothing', (tester) async {
+    final said = _announcements(tester);
     await _pump(tester, repo: _repo(), overrides: [
       stopArrivalsProvider.overrideWith((ref, stopId) async => [
             row(route: '5', live: false, vehicle: '2574'),
@@ -443,9 +444,26 @@ void main() {
       await tester.tap(find.bySemanticsLabel(RegExp('^Route $route ')));
       await tester.pumpAndSettle();
     }
-    expect(find.text(ArrivalRowTile.notLiveYet), findsOneWidget, reason: 'each says why instead');
+    // Each toast replaces the last: the announcements show that every row said why, in its own words.
+    expect(said, [ArrivalRowTile.notLiveYet, ArrivalRowTile.noNumberYet, ArrivalRowTile.noNumberYet],
+        reason: 'each says why instead');
     expect(_c(tester).read(followProvider), isNull);
     expect(_c(tester).read(homeSheetProvider), const StopSheet('1150'));
+    await _unmount(tester);
+  });
+
+  testWidgets('a live row with no bus number says the bus is not sharing it, not that it is not live (M2)',
+      (tester) async {
+    final said = _announcements(tester);
+    await _pump(tester, repo: _repo(), overrides: [
+      stopArrivalsProvider.overrideWith((ref, stopId) async => [row(route: '6', live: true)]),
+    ]);
+    await tester.tap(find.text('Downtown'));
+    await tester.pumpAndSettle();
+    expect(find.text(ArrivalRowTile.noNumberYet), findsOneWidget);
+    expect(find.text(ArrivalRowTile.notLiveYet), findsNothing, reason: 'the row says Live');
+    expect(said, [ArrivalRowTile.noNumberYet]);
+    expect(_c(tester).read(followProvider), isNull);
     await _unmount(tester);
   });
 
