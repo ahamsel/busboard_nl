@@ -234,6 +234,41 @@ void main() {
     expect(pillRect(tester).center.dx, closeTo(segmentRect(tester, 'Stop number').center.dx, 1));
   });
 
+  testWidgets('right-to-left: the pill tracks the selected segment', (tester) async {
+    Widget rtl(String selected) => kitHost(Directionality(
+          textDirection: TextDirection.rtl,
+          child: BBSegmented<String>(
+            segments: const [BBSegment(value: 'near', label: 'Near me'), BBSegment(value: 'id', label: 'Stop number')],
+            selected: selected,
+            onChanged: (_) {},
+          ),
+        ));
+    await tester.pumpWidget(rtl('near'));
+    // The first segment sits on the right in RTL, and so does its pill.
+    expect(segmentRect(tester, 'Near me').center.dx, greaterThan(segmentRect(tester, 'Stop number').center.dx));
+    expect(pillRect(tester).center.dx, closeTo(segmentRect(tester, 'Near me').center.dx, 1));
+    await tester.pumpWidget(rtl('id'));
+    await tester.pumpAndSettle();
+    expect(pillRect(tester).center.dx, closeTo(segmentRect(tester, 'Stop number').center.dx, 1));
+  });
+
+  testWidgets('a selected value that matches no segment shows no pill', (tester) async {
+    await tester.pumpWidget(kitHost(BBSegmented<String>(
+      segments: const [BBSegment(value: 'near', label: 'Near me'), BBSegment(value: 'id', label: 'Stop number')],
+      selected: 'nowhere',
+      onChanged: (_) {},
+    )));
+    expect(find.byKey(BBSegmented.pillKey), findsNothing);
+    expect(find.text('Near me'), findsOneWidget);
+  });
+
+  testWidgets('an empty segment list renders nothing and does not throw', (tester) async {
+    await tester.pumpWidget(kitHost(BBSegmented<String>(segments: const [], selected: 'x', onChanged: (_) {})));
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(BBSegmented.pillKey), findsNothing);
+    expect(find.descendant(of: find.byType(BBSegmented<String>), matching: find.byType(DecoratedBox)), findsNothing);
+  });
+
   testWidgets('Reduce Motion: the pill moves at once', (tester) async {
     await tester.pumpWidget(slidingHost(reduce: true));
     await tester.tap(find.text('Stop number'));

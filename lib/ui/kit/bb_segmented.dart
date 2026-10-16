@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/widgets.dart';
 
 import 'bb_pressable.dart';
@@ -32,7 +30,9 @@ class BBSegmented<T> extends StatelessWidget {
     final bb = context.bb;
     final duration = BBMotion.of(context, BBMotion.standard);
     final n = segments.length;
-    final index = math.max(0, segments.indexWhere((s) => s.value == selected));
+    if (n == 0) return const SizedBox.shrink();
+    // -1 when `selected` matches no segment: the control then shows no pill at all.
+    final index = segments.indexWhere((s) => s.value == selected);
     return DecoratedBox(
       decoration: bb.field(radius: BBRadius.badge),
       child: Padding(
@@ -42,28 +42,30 @@ class BBSegmented<T> extends StatelessWidget {
         child: IntrinsicHeight(
           child: Stack(
             children: [
-              Positioned.fill(
-                child: AnimatedAlign(
-                  key: pillKey,
-                  duration: duration,
-                  curve: BBMotion.curve,
-                  alignment: Alignment(n <= 1 ? 0 : -1 + 2 * index / (n - 1), 0),
-                  child: FractionallySizedBox(
-                    widthFactor: 1 / n,
-                    heightFactor: 1,
-                    // Brand-soft fill plus a 1.5 px brandEdge border: the fill alone is ~1.3:1 against
-                    // the track, so the edge carries the state (WCAG 1.4.11). brandEdge is brandInk in
-                    // light and brand in dark.
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: bb.colors.brandSoft,
-                        border: Border.all(color: bb.brandEdge, width: 1.5),
-                        borderRadius: BorderRadius.circular(9),
+              if (index >= 0)
+                Positioned.fill(
+                  child: AnimatedAlign(
+                    key: pillKey,
+                    duration: duration,
+                    curve: BBMotion.curve,
+                    // Directional, so in a right-to-left layout the pill follows the mirrored Row.
+                    alignment: AlignmentDirectional(n <= 1 ? 0 : -1 + 2 * index / (n - 1), 0),
+                    child: FractionallySizedBox(
+                      widthFactor: 1 / n,
+                      heightFactor: 1,
+                      // Brand-soft fill plus a 1.5 px brandEdge border: the fill alone is ~1.3:1 against
+                      // the track, so the edge carries the state (WCAG 1.4.11). brandEdge is brandInk in
+                      // light and brand in dark.
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: bb.colors.brandSoft,
+                          border: Border.all(color: bb.brandEdge, width: 1.5),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
