@@ -35,6 +35,13 @@ String _toStopCard(BuildContext context, GoRouterState state) {
   return '/';
 }
 
+/// A map link: the Map tab, as it was (final review M7).
+String _toMap(BuildContext context, GoRouterState state) {
+  final container = ProviderScope.containerOf(context, listen: false);
+  Future.microtask(() => container.read(homeTabProvider.notifier).select(HomeTab.map));
+  return '/';
+}
+
 /// [child] as a page of Flutter's own [MaterialApp], so the theme's page transition (with its iOS edge swipe back)
 /// runs. go_router 18 looks for `material_ui`'s MaterialApp, a different class from the one the app uses, and
 /// without a page builder falls back to a page with no transition and no swipe back.
@@ -58,7 +65,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
       ),
       GoRoute(path: '/stop/:stopId', redirect: _toStopCard),
       GoRoute(path: '/board/:stopId', redirect: _toBoard),
-      GoRoute(path: '/map', redirect: (_, _) => '/'),
+      GoRoute(path: '/map', redirect: _toMap),
       GoRoute(
         path: '/plan',
         redirect: (_, _) => '/',
@@ -91,7 +98,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
   );
 }
 
-/// An unknown link: says so, and goes back to the map.
+/// An unknown link: says so, and goes home (to the tab used last).
 class _NotFound extends StatelessWidget {
   const _NotFound();
 

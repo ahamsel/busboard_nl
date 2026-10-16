@@ -75,6 +75,12 @@ void main() {
     expect(_c(tester).read(homeTabProvider), HomeTab.map);
   });
 
+  testWidgets('/map opens home on the Map tab, whatever tab was used last (M7)', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/map', tab: HomeTab.board);
+    expect(_c(tester).read(homeTabProvider), HomeTab.map);
+    expect(find.byType(HomeScreen), findsOneWidget);
+  });
+
   testWidgets('/board/B opens home on the Board tab, showing that stop (spec 2026-10-15 §2.3)', (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/B');
     final c = ProviderScope.containerOf(tester.element(find.byType(HomeShell)));
