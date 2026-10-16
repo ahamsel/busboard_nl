@@ -241,6 +241,8 @@ class _NameFieldState extends State<_NameField> {
   Widget build(BuildContext context) => BBTextField(
     controller: _controller,
     hint: 'Trip name',
+    // The field opens on the current name: without a label it would be announced by that value alone.
+    semanticLabel: 'Trip name',
     autofocus: true,
     onChanged: widget.onChanged,
     inputFormatters: [LengthLimitingTextInputFormatter(savedTripNameMax)],

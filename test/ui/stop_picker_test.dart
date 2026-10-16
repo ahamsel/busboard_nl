@@ -166,6 +166,17 @@ void main() {
     expect(prefs.getString('selectedStopId'), '1150');
   });
 
+  testWidgets('the stop number field keeps its name for screen readers once a number is typed', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, gtfs: _repo);
+    await tester.enterText(find.byType(TextField), '1150');
+    await tester.pumpAndSettle(); // the hint has faded out
+    final field = tester.getSemantics(find.byType(EditableText));
+    expect(field.label, 'Stop number on the pole', reason: 'a stable name, read with the typed value');
+    expect(field.value, '1150');
+    handle.dispose();
+  });
+
   testWidgets('tapping a near-me stop saves it and opens its board', (tester) async {
     await _pump(tester, gtfs: _repo, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)]);
     await tester.tap(find.text('MUN Centre'));

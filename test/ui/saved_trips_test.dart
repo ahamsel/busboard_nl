@@ -104,6 +104,17 @@ void main() {
     );
   });
 
+  testWidgets('the Trip name field is named for screen readers, not just read by its value', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester);
+    await tester.tap(_more);
+    await tester.pumpAndSettle();
+    final field = tester.getSemantics(find.byType(EditableText));
+    expect(field.label, 'Trip name');
+    expect(field.value, 'Stop A → Stop C', reason: 'the field opens on the current name');
+    handle.dispose();
+  });
+
   testWidgets('long-pressing the card opens the same dialog', (tester) async {
     await _pump(tester);
     await tester.longPress(find.text('Stop A → Stop C'));

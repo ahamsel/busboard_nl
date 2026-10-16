@@ -61,6 +61,8 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
                 controller: _controller,
                 focusNode: _focusNode,
                 hint: 'Stop number on the pole',
+                // The same words name the field for screen readers, so it is not announced by its typed value alone.
+                semanticLabel: 'Stop number on the pole',
                 leadingIcon: BBIcons.pin,
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.go,
