@@ -1268,11 +1268,11 @@ void main() {
       await startFollowing(tester);
       await pan(tester);
       expect(find.text('Back to bus 2573'), findsOneWidget);
-      await tester.drag(find.byType(FollowCardHeader), const Offset(0, -300));
+      await tester.drag(find.byKey(BBSheet.handleKey), const Offset(0, -300));
       await _frames(tester, 30);
       expect(find.text('Back to bus 2573'), findsNothing, reason: 'the card is pulled up over that spot');
       expect(find.text('Following bus 2573'), findsOneWidget, reason: 'the top chip still leads back to the bus');
-      await tester.drag(find.byType(FollowCardHeader), const Offset(0, 400));
+      await tester.drag(find.byKey(BBSheet.handleKey), const Offset(0, 400));
       await _frames(tester, 30);
       expect(find.text('Back to bus 2573'), findsOneWidget, reason: 'down at peek again, it comes back');
     });
@@ -1293,7 +1293,7 @@ void main() {
     testWidgets('a pan never moves the follow card: it keeps its place (spec 2026-10-14 §3.4)', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
-      await tester.drag(find.byType(FollowCardHeader), const Offset(0, -300));
+      await tester.drag(find.byKey(BBSheet.handleKey), const Offset(0, -300));
       await _frames(tester, 30);
       final pulledUp = tester.getRect(find.byKey(BBSheet.cardKey)).top;
       await tester.dragFrom(const Offset(60, 170), const Offset(0, 40));

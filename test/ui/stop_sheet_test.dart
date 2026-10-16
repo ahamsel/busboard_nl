@@ -468,8 +468,10 @@ void main() {
           ]),
     ]);
     expect(find.byKey(ArrivalRowTile.followKey), findsNothing, reason: 'no bus to follow, no Follow pill');
-    for (final route in ['5', '6', '7']) {
-      await tester.tap(find.bySemanticsLabel(RegExp('^Route $route ')));
+    // Tap each row's destination text: the middle of the row itself is no hit target.
+    expect(find.text('Downtown'), findsNWidgets(3));
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.text('Downtown').at(i));
       await tester.pumpAndSettle();
     }
     // Each toast replaces the last: the announcements show that every row said why, in its own words.
