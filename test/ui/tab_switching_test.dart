@@ -123,6 +123,20 @@ void main() {
     expect(find.text('Following bus 2573'), findsOneWidget);
   });
 
+  testWidgets('a switch to the Map at an action is said to screen readers; one already on the Map is not (M4)',
+      (tester) async {
+    await _pumpOnBoard(tester);
+    tester.takeAnnouncements();
+    await tester.tap(find.byType(ArrivalRowTile).first);
+    await tester.pumpAndSettle();
+    _expectMap(tester);
+    expect(tester.takeAnnouncements(), [isAccessibilityAnnouncement('Map tab')]);
+    // Asked for again on the Map (the same bus): nothing changes for the rider, so nothing is said.
+    _c(tester).read(followProvider.notifier).follow('2573');
+    await tester.pumpAndSettle();
+    expect(tester.takeAnnouncements(), isEmpty);
+  });
+
   testWidgets('Where to? on the Board: a destination opens its trip options on the Map tab', (tester) async {
     await _pumpOnBoard(tester);
     await tester.tap(find.byKey(BoardTab.whereToKey));

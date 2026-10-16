@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/semantics.dart' show SemanticsService;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -52,7 +55,15 @@ class _HomeShellState extends ConsumerState<HomeShell> with SingleTickerProvider
     // What only the map can show switches to it (spec 2026-10-15 §2.3), from the Board or anywhere else: a bus
     // followed, a trip's options or steps (Where to? or Plan a trip from here on the Board), and choosing on the map.
     // Each of those asks at the action, so asking again for what is already set still switches.
-    ref.listenManual<int>(mapRequestProvider, (_, _) => ref.read(homeTabProvider.notifier).select(HomeTab.map));
+    // The switch is said to screen readers, as the Board they were on is taken away from them (final review M4).
+    ref.listenManual<int>(mapRequestProvider, (_, _) {
+      final tabs = ref.read(homeTabProvider.notifier);
+      final moved = ref.read(homeTabProvider) != HomeTab.map;
+      tabs.select(HomeTab.map);
+      if (moved && mounted) {
+        unawaited(SemanticsService.sendAnnouncement(View.of(context), 'Map tab', Directionality.of(context)));
+      }
+    });
   }
 
   @override

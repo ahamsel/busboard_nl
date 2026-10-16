@@ -267,6 +267,20 @@ void main() {
     expect(tester.widget<BBChip>(find.byKey(const ValueKey('board-chip-yours-A'))).selected, isFalse);
   });
 
+  testWidgets('while Near me looks for you, screen readers hear it too (M4)', (tester) async {
+    final handle = tester.ensureSemantics();
+    final fix = Completer<List<NearbyStop>>();
+    await _pumpBoard(tester, findNearby: () => fix.future);
+    await tester.tap(find.byKey(BoardTab.nearMeKey));
+    await tester.pump();
+    expect(find.text('Finding you…'), findsOneWidget);
+    expect(find.bySemanticsLabel('Near me, finding you'), findsOneWidget);
+    fix.complete([_near('D', 60)]);
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Near me, Stop D'), findsOneWidget);
+    handle.dispose();
+  });
+
   for (final (what, nearby) in [('location refused', <NearbyStop>[]), ('location off', StateError('off'))]) {
     testWidgets('Near me with $what explains, and offers a search instead', (tester) async {
       await _pumpBoard(tester, nearby: nearby);

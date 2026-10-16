@@ -208,7 +208,11 @@ class _StopChips extends ConsumerWidget {
             selected: nearMe,
             label: locating ? 'Finding you…' : 'Near me',
             icon: BBIcons.nearMe,
-            semanticLabel: nearMe ? 'Near me, ${nameOf(shown!.stopId)}' : 'Near me',
+            semanticLabel: locating
+                ? 'Near me, finding you'
+                : nearMe
+                    ? 'Near me, ${nameOf(shown!.stopId)}'
+                    : 'Near me',
             onTap: onNearMe,
           )),
           const SizedBox(width: BBSpace.s),
