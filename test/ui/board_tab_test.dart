@@ -245,6 +245,19 @@ void main() {
     expect(c.read(recentStopsProvider).value, ['C']);
   });
 
+  testWidgets('★ on another stop makes it your stop; the stop it replaced keeps a chip, as the most recent (M1)',
+      (tester) async {
+    final c = await _pumpBoard(tester, saved: [_homeC], rows: [_row(4)]);
+    await tester.tap(find.byKey(const ValueKey('board-chip-saved-C')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(StopSheetContent.starKey));
+    await tester.pumpAndSettle();
+    expect(c.read(settingsProvider).selectedStopId, 'C');
+    expect(c.read(recentStopsProvider).value, ['A', 'C']);
+    expect(_chipOrder(tester),
+        ['board-chip-yours-C', 'board-chip-recent-A', 'board-chip-near-me', 'board-chip-find-stop']);
+  });
+
   testWidgets('Near me shows the nearest stop and is the selected chip', (tester) async {
     await _pumpBoard(tester, nearby: [_near('D', 60), _near('E', 200)]);
     await tester.tap(find.byKey(BoardTab.nearMeKey));

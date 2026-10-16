@@ -18,6 +18,7 @@ import '../domain/map/delayed_track_renderer.dart';
 import '../domain/map/route_geometry.dart';
 import '../domain/map/bus_tracking_state.dart';
 import 'follow_providers.dart';
+import 'recent_stops_provider.dart';
 
 // ─── Settings ──────────────────────────────────────────────
 
@@ -85,7 +86,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
     );
   }
 
+  /// [stopId] becomes your stop. The stop it replaces becomes the most recent stop, so it keeps a chip on the Board
+  /// rather than needing a search to find again (final review M1).
   Future<void> setSelectedStop(String stopId) async {
+    final old = state.selectedStopId;
+    if (old != null && old != stopId) unawaited(ref.read(recentStopsProvider.notifier).push(old));
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('selectedStopId', stopId);
     state = state.copyWith(selectedStopId: stopId);

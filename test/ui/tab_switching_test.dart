@@ -19,6 +19,7 @@ import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_shell.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/search/search_screen.dart';
+import 'package:flutter/widgets.dart' show ValueKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -187,6 +188,8 @@ void main() {
     await tester.pumpAndSettle();
     _expectBoardOn(tester, '1150');
     expect(_c(tester).read(settingsProvider).selectedStopId, '1150');
+    // The stop it replaced keeps a chip, as the most recent stop (final review M1).
+    expect(find.byKey(const ValueKey('board-chip-recent-C')), findsOneWidget);
   });
 
   testWidgets('Choose on map, from a search opened on the Board, switches to the Map to choose', (tester) async {
