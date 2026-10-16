@@ -39,6 +39,9 @@ class ArrivalRowTile extends StatelessWidget {
   /// What a live row with no bus number says: the row shows Live, so "no bus yet" would contradict it.
   static const noNumberYet = "This bus isn't sharing its number yet, so it can't be followed.";
 
+  /// What a tap on a row with no bus to follow does, for TalkBack.
+  static const explainHint = "hear why this bus can't be followed yet";
+
   /// Why a row has no bus to follow, for its toast: a live row is missing only its bus number.
   static String whyNotFollowable(ArrivalRow a) => a.isLive ? noNumberYet : notLiveYet;
 
@@ -197,7 +200,11 @@ class ArrivalRowTile extends StatelessWidget {
               excludeSemantics: true,
               button: tap != null ? true : null,
               onTap: tap,
-              onTapHint: onTap == null ? null : 'follow bus ${a.vehicleNumber} on the map',
+              onTapHint: onTap != null
+                  ? 'follow bus ${a.vehicleNumber} on the map'
+                  : onExplain != null
+                      ? explainHint
+                      : null,
               hint: followable && defaultTargetPlatform == TargetPlatform.iOS ? followLabel(vehicle) : null,
               child: content,
             ),
