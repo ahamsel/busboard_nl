@@ -48,7 +48,7 @@ String nextBusDay(DateTime t, DateTime now) {
   };
 }
 
-/// The Plan tab (spec §2.2): saved trips, then From / To / When, then the results.
+/// The trip planner (spec §2.2), a page over the tabs: saved trips, then From / To / When, then the results.
 class PlanScreen extends ConsumerStatefulWidget {
   const PlanScreen({super.key});
 

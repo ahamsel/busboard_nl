@@ -88,7 +88,7 @@ DateTime defaultPlanTime(DateTime now) {
 }
 
 /// [defaultPlanTime] for now, moved on as the clock passes each 5-minute mark, so a Leave by or Arrive by time the
-/// rider never picked doesn't go stale while the Plan tab stays open.
+/// rider never picked doesn't go stale while the planner stays open.
 final planDefaultTimeProvider = Provider.autoDispose<DateTime>((ref) {
   final now = ref.read(plannerClockProvider)();
   final at = defaultPlanTime(now);
@@ -146,7 +146,7 @@ class OpenJourneyNotifier extends Notifier<Journey?> {
 
 /// The live feed for plans, fetched again every 30 s while anything watches it (spec §3.4); null when unreadable.
 ///
-/// Not while every listener is paused (the Plan tab's screens, hidden behind another tab): the refresh that falls due
+/// Not while every listener is paused (the planner's pages, hidden behind another page): the refresh that falls due
 /// then waits for a listener to resume, so a hidden screen that rebuilds reads the last answer instead of fetching,
 /// and coming back fetches once.
 final plannerLiveFeedProvider = FutureProvider.autoDispose<TimeTrackFetchResult?>((ref) async {

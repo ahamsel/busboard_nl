@@ -6,7 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _all = <IconData>[
-  BBIcons.board, BBIcons.boardFill, BBIcons.map, BBIcons.mapFill, BBIcons.alerts, BBIcons.alertsFill,
+  BBIcons.board, BBIcons.boardFill, BBIcons.map, BBIcons.mapFill, BBIcons.alerts,
   BBIcons.settings, BBIcons.search, BBIcons.location, BBIcons.nearMe, BBIcons.chevronRight,
   BBIcons.chevronDown, BBIcons.close, BBIcons.check, BBIcons.refresh, BBIcons.bus, BBIcons.stop,
   BBIcons.filter, BBIcons.info, BBIcons.warning, BBIcons.noService, BBIcons.schedule, BBIcons.star,
@@ -14,7 +14,7 @@ const _all = <IconData>[
   BBIcons.update, BBIcons.pin, BBIcons.timer, BBIcons.download, BBIcons.palette, BBIcons.detour,
   BBIcons.reducedService, BBIcons.stopMoved, BBIcons.accessible, BBIcons.additionalService,
   BBIcons.checkCircle, BBIcons.locationOff, BBIcons.layers, BBIcons.add, BBIcons.remove,
-  BBIcons.bell, BBIcons.bellFill, BBIcons.plan, BBIcons.planFill, BBIcons.swap, BBIcons.walk,
+  BBIcons.bell, BBIcons.bellFill, BBIcons.plan, BBIcons.swap, BBIcons.walk,
   BBIcons.calendar, BBIcons.more,
 ];
 
@@ -36,9 +36,7 @@ void main() {
     expect(BBIcons.board.fontFamily, 'PhosphorRegular');
     expect(BBIcons.boardFill.fontFamily, 'PhosphorFill');
     expect(BBIcons.mapFill.fontFamily, 'PhosphorFill');
-    expect(BBIcons.alertsFill.fontFamily, 'PhosphorFill');
     expect(BBIcons.plan.fontFamily, 'PhosphorRegular');
-    expect(BBIcons.planFill.fontFamily, 'PhosphorFill');
     expect(BBIcons.star.fontFamily, 'PhosphorFill');
     expect(BBIcons.starOutline.fontFamily, 'PhosphorRegular');
   });

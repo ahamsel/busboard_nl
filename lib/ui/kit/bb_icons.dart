@@ -12,7 +12,6 @@ abstract final class BBIcons {
   static const IconData map = IconData(0xe31a, fontFamily: 'PhosphorRegular'); // mapTrifold
   static const IconData mapFill = IconData(0xe31a, fontFamily: 'PhosphorFill'); // mapTrifold
   static const IconData alerts = IconData(0xe324, fontFamily: 'PhosphorRegular'); // megaphone
-  static const IconData alertsFill = IconData(0xe324, fontFamily: 'PhosphorFill'); // megaphone
   static const IconData settings = IconData(0xe272, fontFamily: 'PhosphorRegular'); // gearSix
   static const IconData search = IconData(0xe30c, fontFamily: 'PhosphorRegular'); // magnifyingGlass
   static const IconData location = IconData(0xe1d6, fontFamily: 'PhosphorRegular'); // crosshair
@@ -54,7 +53,6 @@ abstract final class BBIcons {
   static const IconData bell = IconData(0xe0ce, fontFamily: 'PhosphorRegular'); // bell
   static const IconData bellFill = IconData(0xe0ce, fontFamily: 'PhosphorFill'); // bell
   static const IconData plan = IconData(0xe39c, fontFamily: 'PhosphorRegular'); // path
-  static const IconData planFill = IconData(0xe39c, fontFamily: 'PhosphorFill'); // path
   static const IconData swap = IconData(0xe098, fontFamily: 'PhosphorRegular'); // arrowsDownUp
   static const IconData walk = IconData(0xe73a, fontFamily: 'PhosphorRegular'); // personSimpleWalk
   static const IconData calendar = IconData(0xe10a, fontFamily: 'PhosphorRegular'); // calendarBlank

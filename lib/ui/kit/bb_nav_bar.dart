@@ -4,13 +4,12 @@ import 'bb_pressable.dart';
 import 'tokens.dart';
 
 class BBNavItem {
-  const BBNavItem({required this.label, required this.icon, this.activeIcon, this.badgeCount = 0});
+  const BBNavItem({required this.label, required this.icon, this.activeIcon});
   final String label;
   final IconData icon;
 
   /// Shown while the tab is selected (the fill weight); defaults to [icon].
   final IconData? activeIcon;
-  final int badgeCount;
 }
 
 /// White floating pill bar; the active tab is a full Harbour Blue pill.
@@ -25,7 +24,7 @@ class BBNavBar extends StatelessWidget {
   static const double height = 56;
 
   /// Largest text scale the bar follows; beyond it the labels stop growing so
-  /// all three tabs stay the same size and the bar stays compact.
+  /// every tab stays the same size and the bar stays compact.
   static const double maxTextScale = 1.3;
 
   /// Gap between the bar and the bottom safe area.
@@ -80,13 +79,12 @@ class _Tab extends StatelessWidget {
   Widget build(BuildContext context) {
     final bb = context.bb;
     final fg = selected ? bb.colors.onBrand : bb.colors.muted;
-    final label = item.badgeCount > 0 ? '${item.label}, ${item.badgeCount} active' : item.label;
     return Semantics(
       selected: selected,
       child: BBPressable(
         onTap: onTap,
         haptic: true,
-        semanticLabel: label,
+        semanticLabel: item.label,
         child: AnimatedContainer(
           duration: BBMotion.of(context, BBMotion.standard),
           curve: BBMotion.curve,
@@ -104,23 +102,6 @@ class _Tab extends StatelessWidget {
                 Icon(selected ? (item.activeIcon ?? item.icon) : item.icon, size: 18, color: fg),
                 const SizedBox(width: 6),
                 Text(item.label, maxLines: 1, style: bb.text.label.copyWith(color: fg)),
-                if (item.badgeCount > 0) ...[
-                  const SizedBox(width: 5),
-                  Container(
-                    constraints: const BoxConstraints(minWidth: 16),
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(color: bb.colors.dangerInk, borderRadius: BorderRadius.circular(8)),
-                    child: Text(
-                      '${item.badgeCount}',
-                      textAlign: TextAlign.center,
-                      style: bb.text.caption.copyWith(
-                        color: bb.colors.surface,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
