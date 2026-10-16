@@ -102,9 +102,11 @@ Color _land(Brightness b) {
 
 /// The real app at [initial] on a 390x844 phone at 3x, on [tab]: stop 1150 is the rider's stop, one saved place, one
 /// alert that applies to routes 29 and 23 and to the stop, and four fixed departures (so the picture does not move).
-Future<void> _pumpApp(WidgetTester tester, Brightness b, {String initial = '/', HomeTab tab = HomeTab.map}) async {
-  tester.view.physicalSize = const Size(390 * 3, 844 * 3);
-  tester.view.devicePixelRatio = 3;
+/// [tablet] makes it a 1024x768 tablet at 2x instead.
+Future<void> _pumpApp(WidgetTester tester, Brightness b,
+    {String initial = '/', HomeTab tab = HomeTab.map, bool tablet = false}) async {
+  tester.view.physicalSize = tablet ? const Size(1024 * 2, 768 * 2) : const Size(390 * 3, 844 * 3);
+  tester.view.devicePixelRatio = tablet ? 2 : 3;
   addTearDown(tester.view.reset);
   await pumpPlannerApp(
     tester,
@@ -155,6 +157,13 @@ void main() {
       await _pumpApp(tester, b, tab: HomeTab.board);
       expect(tester.takeException(), isNull);
       await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/board_tab_${b.name}.png'));
+    });
+
+    // A tablet: the map's side panel, and the floating tab bar centred under the map, the panel ending above it.
+    testWidgets('home tablet ${b.name}', (tester) async {
+      await _pumpApp(tester, b, tablet: true);
+      expect(tester.takeException(), isNull);
+      await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/home_tablet_${b.name}.png'));
     });
 
     testWidgets('stop sheet at full ${b.name}', (tester) async {
