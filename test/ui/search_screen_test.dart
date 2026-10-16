@@ -298,6 +298,25 @@ void main() {
     expect(c.read(homeSheetProvider), const HomeSheetHome());
   });
 
+  for (final (location, name) in [
+    ('/search', 'Search for a stop or a place'),
+    ('/search?pickStop=1', 'Type the stop number on the pole'),
+  ]) {
+    testWidgets('$location: the search field keeps its name once text is typed, not just its value', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _openSearch(tester, location: location);
+      await tester.enterText(find.byKey(SearchScreen.fieldKey), '1150');
+      await tester.pumpAndSettle();
+      final field = tester.getSemantics(
+        find.descendant(of: find.byKey(SearchScreen.fieldKey), matching: find.byType(EditableText)),
+      );
+      expect(field.label, name, reason: 'a stable name, read with the typed value');
+      expect(field.value, '1150');
+      expect(field.flagsCollection.isTextField, isTrue);
+      handle.dispose();
+    });
+  }
+
   testWidgets('save=1: the Name field keeps a visible label once the user types', (tester) async {
     await _openSearch(tester, location: '/search?save=1');
     await _findMun(tester);

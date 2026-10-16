@@ -81,6 +81,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       ? 'Choose a start'
       : 'Where to?';
 
+  /// The field's hint, and its name for screen readers.
+  String get _fieldName => widget.pickStop ? 'Type the stop number on the pole' : 'Search for a stop or a place';
+
   /// A pick or a location fix is being worked out: further taps are ignored until it ends.
   var _busy = false;
 
@@ -242,7 +245,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             controller: _controller,
             autofocus: true,
             leadingIcon: BBIcons.search,
-            hint: widget.pickStop ? 'Type the stop number on the pole' : 'Search for a stop or a place',
+            hint: _fieldName,
+            // The same words name the field for screen readers, so it is not announced by its typed value alone.
+            semanticLabel: _fieldName,
             textInputAction: TextInputAction.search,
             onChanged: (_) => setState(() {}),
           ),
