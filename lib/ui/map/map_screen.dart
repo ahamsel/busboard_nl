@@ -887,8 +887,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
             ),
             Positioned(
               top: media.padding.top + BBSpace.s,
-              left: BBSpace.s,
-              right: BBSpace.s,
+              // In landscape, clear of the sensor housing on either side.
+              left: media.padding.left + BBSpace.s,
+              right: media.padding.right + BBSpace.s,
               child: Column(
                 key: _controlsKey,
                 mainAxisSize: MainAxisSize.min,
