@@ -416,7 +416,7 @@ void main() {
           tester,
           net: TestNetwork(),
           now: DateTime(2026, 10, 12, 13, 0),
-          initial: '/board/1150',
+          initial: '/stop/1150',
           textScale: 2.0,
           use24h: false,
           theme: dark ? BBTheme.dark() : BBTheme.light(),

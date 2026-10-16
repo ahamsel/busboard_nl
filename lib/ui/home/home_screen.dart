@@ -3,8 +3,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/semantics.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -217,7 +215,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   final _retiredSheets = <BBSheetController>[];
 
   // A newly opened card goes to half once its sheet is built (it may not be yet: a link opened before the schedule
-  // loaded), and a stop's card brings the camera to its stop once there is a camera. "Open board" asks for full.
+  // loaded), and a stop's card brings the camera to its stop once there is a camera.
   BBSheetDetent? _detentPending;
 
   /// The last layout's: the side panel (a tablet) rather than the pull-up sheet.
@@ -692,8 +690,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// lowest stop, once per gesture (spec 2026-10-14 §3.4): the home sheet to its bar, a stop, bus, options or trip card
   /// to its own peek. Only the map's Listener calls it, so the sheet's own drags and scrolls never do. Not while
   /// following (the follow card keeps its place), on the tablet panel, while choosing on the map, or at full height
-  /// (the Board, opened on purpose: a pan in the strip above it must not close it). Under Reduce Motion the sheet's
-  /// 1 ms snap makes it a jump.
+  /// (pulled up on purpose: a pan in the strip above it must not close it). Under Reduce Motion the sheet's 1 ms snap
+  /// makes it a jump.
   void _tuckSheet() {
     if (_tucked) return;
     _tucked = true;
@@ -886,53 +884,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       }
       if (!_sheet.isAttached) return;
       _detentPending = null;
-      if (detent == BBSheetDetent.full && _sheetAtFull) {
-        // Already the Board: back up to the next buses, just under the pinned header; already there, say so.
-        if (!_scrollSheetToTop()) _sayBoardOpen();
-      } else {
-        unawaited(_sheet.animateToDetent(detent));
-      }
+      unawaited(_sheet.animateToDetent(detent));
     });
-  }
-
-  /// "Open board" (a stop's sheet just opened, or already showing): full height, or the panel's departures.
-  void _onBoardRequest(BoardRequest? request) {
-    if (request == null || ref.read(homeSheetProvider) != StopSheet(request.stopId)) return;
-    _toDetentAfterBuild(BBSheetDetent.full);
-  }
-
-  /// The pull-up sheet's list back to its top. False when it is there already.
-  bool _scrollSheetToTop() {
-    final header = _headerKey.currentContext;
-    final scrollable = header == null ? null : Scrollable.maybeOf(header);
-    if (scrollable == null || !scrollable.position.hasPixels || scrollable.position.pixels <= 0) return false;
-    unawaited(scrollable.position.animateTo(0, duration: BBMotion.of(context, BBMotion.emphasis), curve: BBMotion.curve));
-    return true;
-  }
-
-  /// "Open board" on the Board itself, with nothing to move: a tick, and a word for screen readers.
-  void _sayBoardOpen() {
-    unawaited(HapticFeedback.selectionClick());
-    unawaited(SemanticsService.sendAnnouncement(View.of(context), 'Board open', Directionality.of(context)));
   }
 
   /// The pull-up sheet is at its full height.
   bool _sheetAtFull = false;
 
-  /// The id of the sheet now showing, for [sheetAtFullProvider].
-  String get _sheetId => sheetIdOf(_sheetKey ?? const HomeSheetHome());
-
   bool _onSheetExtent(DraggableScrollableNotification n) {
     _sheetExtent = n.extent;
-    final wasAtFull = _sheetAtFull;
     _sheetAtFull = n.extent >= n.maxExtent - 0.004;
     final abovePeek = n.extent > n.minExtent + 0.02;
-    if (wasAtFull != _sheetAtFull || abovePeek != _sheetAbovePeek) {
+    if (abovePeek != _sheetAbovePeek) {
       // The notification can come mid-layout: what it changes is built on the next frame.
       void apply() {
-        if (!mounted) return;
-        ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull ? _sheetId : null);
-        if (abovePeek != _sheetAbovePeek) setState(() => _sheetAbovePeek = abovePeek);
+        if (mounted && abovePeek != _sheetAbovePeek) setState(() => _sheetAbovePeek = abovePeek);
       }
       if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
         apply();
@@ -1079,13 +1045,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _sheetExtent = 0;
       _headerKey = GlobalKey();
       _headerHeight = null;
-      // Its header is measured once laid out (a first layout sends no size-changed notification). The last sheet's
-      // "at full" names that sheet, so this one never reads it as its own; it is cleared once the frame is done
-      // (provider changes wait for the frame).
+      // Its header is measured once laid out (a first layout sends no size-changed notification).
       _scheduleHeaderMeasure();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull ? _sheetId : null);
-      });
       _actionsKey = GlobalKey();
       _actionsBottom = null;
       _retiredSheets.add(_sheet);
@@ -1167,7 +1128,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       if (next is HomeSheetHome) WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_hintBar()));
     });
     ref.listen<int>(homeSheetReopenedProvider, (_, _) => _onSheetOpened(ref.read(homeSheetProvider), again: true));
-    ref.listen<BoardRequest?>(boardRequestProvider, (_, next) => _onBoardRequest(next));
     final journey = ref.watch(journeyOnMapProvider);
     final pick = ref.watch(mapPickProvider);
     _syncFollow(ref.watch(followProvider));

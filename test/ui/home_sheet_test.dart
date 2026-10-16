@@ -11,6 +11,7 @@ import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
+import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/saved_place_providers.dart';
@@ -463,13 +464,14 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets("the stop line opens your stop's Board, at full height (spec 2026-10-14 §3.2)", (tester) async {
+  testWidgets('the stop line opens your stop on the Board tab (spec 2026-10-15 §2.3)', (tester) async {
     await _pumpHome(tester, arrivals: [_arrival(4)]);
+    final c = _c(tester);
     await tester.tap(find.byKey(HomeStopLine.lineKey));
     await tester.pumpAndSettle();
-    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
-    final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.fullFraction * homeSheetArea(tester), 1));
+    expect(c.read(homeTabProvider), HomeTab.board);
+    expect(c.read(boardStopProvider), const BoardStop('C'));
+    expect(c.read(homeSheetProvider), isA<HomeSheetHome>(), reason: 'the map is left as it was');
   });
 
   testWidgets('pulled up, Your stop opens its sheet', (tester) async {
@@ -580,8 +582,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.peekFraction * area, 1));
 
-      // A notification for the stop opens its Board link.
-      GoRouter.of(routerElement(tester)).go('/board/C');
+      // A link to the stop opens it again.
+      GoRouter.of(routerElement(tester)).go('/stop/C');
       await tester.pumpAndSettle();
       expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
       expect(_c(tester).read(homeSheetProvider.notifier).stack, hasLength(2), reason: 'still one card over home');

@@ -94,17 +94,6 @@ class HomeSheetNotifier extends Notifier<HomeSheet> {
     state = _stack.last;
   }
 
-  /// "Open board": [stopId]'s sheet, pulled up to full height (its Board); on the tablet panel, scrolled to its
-  /// departures. A sheet already showing the stop stays as it is in the stack.
-  void openBoard(String stopId) {
-    final sheet = StopSheet(stopId);
-    if (_stack.last != sheet) open(sheet);
-    ref.read(boardRequestProvider.notifier)._request(stopId);
-  }
-
-  /// "Show map", from a Board at full height: the card on top back to half, its stop centred on the map.
-  void showMap() => ref.read(homeSheetReopenedProvider.notifier)._bump();
-
   /// False when already home (the caller lets the system leave the app).
   bool back() {
     if (_stack.length <= 1) return false;
@@ -132,47 +121,3 @@ class HomeSheetReopenedNotifier extends Notifier<int> {
 
   void _bump() => state++;
 }
-
-/// A request to show [stopId]'s Board: its sheet at full height. A new object every time, so asking twice is two
-/// requests.
-final class BoardRequest {
-  BoardRequest(this.stopId);
-  final String stopId;
-}
-
-/// The latest "Open board" (or a cold start reopening the Board left open); the home screen moves the sheet.
-final boardRequestProvider = NotifierProvider<BoardRequestNotifier, BoardRequest?>(BoardRequestNotifier.new);
-
-class BoardRequestNotifier extends Notifier<BoardRequest?> {
-  @override
-  BoardRequest? build() => null;
-
-  void _request(String stopId) => state = BoardRequest(stopId);
-}
-
-/// Which sheet the phone's pull-up sheet is showing at its full height, by [sheetIdOf], or null when none is: a stop's
-/// sheet there is its Board, and its header button turns from "Open board" into "Show map". A sheet compares the id
-/// with its own, so a value left by the sheet it replaced never matches. Always null on the tablet panel, which has no
-/// detents.
-final sheetAtFullProvider = NotifierProvider<SheetAtFullNotifier, String?>(SheetAtFullNotifier.new);
-
-class SheetAtFullNotifier extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  /// [sheetId] is at full height; null when no sheet is.
-  void set(String? sheetId) {
-    if (state != sheetId) state = sheetId;
-  }
-}
-
-/// The id [sheetAtFullProvider] holds for the pull-up sheet showing [sheetKey]: a [HomeSheet], or the follow card's
-/// own key (`follow:2573`).
-String sheetIdOf(Object sheetKey) => switch (sheetKey) {
-      HomeSheetHome() => 'home',
-      StopSheet(:final stopId) => 'stop:$stopId',
-      BusSheet(:final vehicleId) => 'bus:$vehicleId',
-      OptionsSheet() => 'options',
-      JourneySheet(:final journey) => 'journey:${identityHashCode(journey)}',
-      _ => '$sheetKey',
-    };

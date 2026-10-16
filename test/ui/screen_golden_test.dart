@@ -148,7 +148,7 @@ void main() {
     });
 
     testWidgets('stop sheet at full ${b.name}', (tester) async {
-      await _pumpApp(tester, b, initial: '/board/1150');
+      await _pumpApp(tester, b, initial: '/stop/1150');
       await tester.drag(find.byType(BBPill).first, const Offset(0, -600));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

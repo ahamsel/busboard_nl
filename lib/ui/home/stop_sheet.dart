@@ -8,6 +8,7 @@ import '../../domain/trip_planner/place.dart';
 import '../../state/arrival_alert_providers.dart';
 import '../../state/follow_providers.dart';
 import '../../state/home_sheet_provider.dart';
+import '../../state/home_tab_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
@@ -26,7 +27,6 @@ abstract final class StopSheetContent {
   static const planFromKey = ValueKey('stop-plan-from');
   static const closeKey = ValueKey('stop-close');
   static const openBoardKey = ValueKey('stop-open-board');
-  static const showMapKey = ValueKey('stop-show-map');
 
   /// The card's header: [info], Close, Open board and Plan a trip from here.
   static Widget header(String stopId) => _StopHeader(stopId: stopId);
@@ -55,32 +55,20 @@ class _StopHeader extends ConsumerWidget {
         children: [
           _StopInfo(stopId: stopId, closable: true),
           const SizedBox(height: BBSpace.s),
-          // For riders used to the Board tab: the whole Board in one tap (the sheet at full height; on the tablet panel,
-          // its departures). With the Board open it turns into the way back: "Show map" brings the sheet to half over
-          // the stop. One button either way, so the header keeps one height and the detents never move under a drag.
+          // The stop's departures on the Board tab (spec 2026-10-15 §2.3), however far the card is pulled up.
           Padding(
             // The header is padded l on the left but s on the right (for the icon buttons' own hit area): this evens
             // the filled button's sides.
             padding: const EdgeInsets.only(right: BBSpace.l - BBSpace.s),
-            child: ref.watch(sheetAtFullProvider) == sheetIdOf(StopSheet(stopId))
-                ? BBButton(
-                    key: StopSheetContent.showMapKey,
-                    label: 'Show map',
-                    semanticLabel: 'Show the map, $name',
-                    icon: BBIcons.map,
-                    expand: true,
-                    wrap: true,
-                    onPressed: () => ref.read(homeSheetProvider.notifier).showMap(),
-                  )
-                : BBButton(
-                    key: StopSheetContent.openBoardKey,
-                    label: 'Open board',
-                    semanticLabel: 'Open board, $name',
-                    icon: BBIcons.board,
-                    expand: true,
-                    wrap: true,
-                    onPressed: () => ref.read(homeSheetProvider.notifier).openBoard(stopId),
-                  ),
+            child: BBButton(
+              key: StopSheetContent.openBoardKey,
+              label: 'Open board',
+              semanticLabel: 'Open board, $name',
+              icon: BBIcons.board,
+              expand: true,
+              wrap: true,
+              onPressed: () => ref.read(homeTabProvider.notifier).showBoard(stopId),
+            ),
           ),
           _PlanFrom(stopId: stopId),
         ],

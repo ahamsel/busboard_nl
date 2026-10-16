@@ -10,6 +10,7 @@ import '../../domain/location/locate_me.dart';
 import '../../state/alerts_for_you_provider.dart';
 import '../../state/arrival_alert_providers.dart';
 import '../../state/home_sheet_provider.dart';
+import '../../state/home_tab_provider.dart';
 import '../../state/providers.dart';
 import '../../state/saved_place_providers.dart';
 import '../../state/trip_planner_providers.dart';
@@ -238,8 +239,8 @@ class _Header extends ConsumerWidget {
                 ],
               ),
             ),
-            // For riders used to the Board tab: their stop's whole Board in one tap. The same filled button as in
-            // the stop's own sheet, so it reads as the way in, not a link.
+            // Their stop on the Board tab in one tap (spec 2026-10-15 §2.3). The same filled button as in the stop's
+            // own sheet, so it reads as the way in, not a link.
             const SizedBox(height: BBSpace.s),
             BBButton(
               key: HomeSheetContent.openBoardKey,
@@ -248,7 +249,7 @@ class _Header extends ConsumerWidget {
               icon: BBIcons.board,
               expand: true,
               wrap: true,
-              onPressed: () => ref.read(homeSheetProvider.notifier).openBoard(stop.stopId),
+              onPressed: () => ref.read(homeTabProvider.notifier).showBoard(stop.stopId),
             ),
             ArrivalsPreview(stopId: stop.stopId, max: 3),
           ],

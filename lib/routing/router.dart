@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../state/home_sheet_provider.dart';
+import '../state/home_tab_provider.dart';
 import '../state/map_pick_provider.dart';
 import '../ui/alerts/alerts_screen.dart';
 import '../ui/home/home_shell.dart';
@@ -13,12 +14,24 @@ import '../ui/settings/settings_screen.dart';
 /// The app's router.
 final appRouter = buildAppRouter();
 
-/// Opens [stopId]'s sheet on home: links and notifications for a stop land here (spec 2026-10-12 §3.6).
-String _toStopSheet(BuildContext context, GoRouterState state) {
+/// A Board link, and an arrival alert's notification (spec 2026-10-15 §2.3): the Board tab, showing [stopId].
+String _toBoard(BuildContext context, GoRouterState state) {
   final id = state.pathParameters['stopId']!;
   final container = ProviderScope.containerOf(context, listen: false);
-  // A redirect can run while the widget tree builds (the first route), when a provider may not change.
-  Future.microtask(() => container.read(homeSheetProvider.notifier).open(StopSheet(id)));
+  // A redirect can run while the widget tree builds (the first route), when a provider may not change. The tab is
+  // state, so a link that lands before home is built is shown once it is.
+  Future.microtask(() => container.read(homeTabProvider.notifier).showBoard(id));
+  return '/';
+}
+
+/// A stop link: the stop's card on the Map tab (spec 2026-10-12 §3.6).
+String _toStopCard(BuildContext context, GoRouterState state) {
+  final id = state.pathParameters['stopId']!;
+  final container = ProviderScope.containerOf(context, listen: false);
+  Future.microtask(() {
+    container.read(homeSheetProvider.notifier).open(StopSheet(id));
+    container.read(homeTabProvider.notifier).select(HomeTab.map);
+  });
   return '/';
 }
 
@@ -43,8 +56,8 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
         path: '/',
         pageBuilder: (context, state) => _page(state, const HomeShell()),
       ),
-      GoRoute(path: '/stop/:stopId', redirect: _toStopSheet),
-      GoRoute(path: '/board/:stopId', redirect: _toStopSheet),
+      GoRoute(path: '/stop/:stopId', redirect: _toStopCard),
+      GoRoute(path: '/board/:stopId', redirect: _toBoard),
       GoRoute(path: '/map', redirect: (_, _) => '/'),
       GoRoute(
         path: '/plan',

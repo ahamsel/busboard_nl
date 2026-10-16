@@ -9,6 +9,7 @@ import '../../data/trip_planner/saved_place_store.dart';
 import '../../domain/location/locate_me.dart';
 import '../../domain/trip_planner/place.dart';
 import '../../state/home_sheet_provider.dart';
+import '../../state/home_tab_provider.dart';
 import '../../state/map_pick_provider.dart';
 import '../../state/providers.dart';
 import '../../state/saved_place_providers.dart';
@@ -117,6 +118,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final query = ref.read(planQueryProvider.notifier);
     final recent = ref.read(recentPlacesProvider.notifier);
     final sheet = ref.read(homeSheetProvider.notifier);
+    final tabs = ref.read(homeTabProvider.notifier);
     // A fresh trip has no start; a changed destination keeps the trip's start (fillStart keeps one chosen meanwhile).
     final needsStart = !widget.keepStart || ref.read(planQueryProvider).from == null;
     _busy = true;
@@ -125,7 +127,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (widget.pickStop) {
         if (place is! StopPlace) return;
         final settings = ref.read(settingsProvider.notifier);
-        sheet.open(StopSheet(place.stopId));
+        // On the Board, the Board shows it; on the map, its card (spec 2026-10-15 §2.3).
+        tabs.openStop(place.stopId);
         _leave(router);
         await recent.push(place);
         await settings.setSelectedStop(place.stopId);
@@ -147,7 +150,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         );
         if (goHere == null) return;
         if (!goHere) {
-          sheet.open(StopSheet(place.stopId));
+          tabs.openStop(place.stopId);
           if (mounted) _leave(router);
           return;
         }

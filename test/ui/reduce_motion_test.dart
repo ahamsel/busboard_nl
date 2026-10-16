@@ -8,6 +8,7 @@ import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_shell.dart';
 import 'package:busboard_nl/ui/home/home_stop_line.dart';
 import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
@@ -69,17 +70,23 @@ void main() {
     );
     await settlesWithin100ms(tester, 'home at rest');
 
-    // A stop's Board, from the bar's stop line.
+    // The bar's stop line switches to the Board tab, on your stop (spec 2026-10-15 §2.1: instant).
     await tester.tap(find.byKey(HomeStopLine.lineKey));
-    await settlesWithin100ms(tester, 'opening the stop sheet');
+    await settlesWithin100ms(tester, 'switching to the Board');
     expect(find.byType(BBLiveDot), findsWidgets, reason: 'the live dot is there, but still');
     await tester.tap(find.byKey(StopSheetContent.refreshKey));
     await settlesWithin100ms(tester, 'refreshing the stop');
+    await tester.tap(find.byKey(HomeShell.mapTabKey));
+    await settlesWithin100ms(tester, 'back to the map');
+
+    // A stop's card.
+    final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    c.read(homeSheetProvider.notifier).open(const StopSheet('A'));
+    await settlesWithin100ms(tester, 'opening the stop sheet');
     await tester.tap(find.byKey(StopSheetContent.closeKey));
     await settlesWithin100ms(tester, 'closing the stop sheet');
 
     // Options.
-    final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
     c.read(planQueryProvider.notifier).setTrip(
           StopPlace(stopId: 'A', name: 'Stop A'),
           StopPlace(stopId: 'C', name: 'Stop C'),

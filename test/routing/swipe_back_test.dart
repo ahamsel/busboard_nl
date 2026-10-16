@@ -46,7 +46,7 @@ void main() {
   }
 
   testWidgets('Android: system back closes a pushed page, then walks the sheet stack as before', (tester) async {
-    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/C');
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/stop/C');
     final c = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
     GoRouter.of(routerElement(tester)).push('/settings');
     await tester.pumpAndSettle();

@@ -378,7 +378,7 @@ void main() {
   });
 
   testWidgets('the stop sheet\'s Plan a trip from here starts the search from that stop', (tester) async {
-    await pumpPlannerApp(tester, net: _network(), now: _now, initial: '/board/C');
+    await pumpPlannerApp(tester, net: _network(), now: _now, initial: '/stop/C');
     // The sheet's header holds the button; bring the sheet up so it is on screen.
     await tester.drag(find.byType(BBPill).first, const Offset(0, -600));
     await tester.pumpAndSettle();

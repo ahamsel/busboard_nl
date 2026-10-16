@@ -8,7 +8,7 @@ import 'package:intl/intl.dart' show DateFormat;
 import '../../data/realtime/service_alert_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/first_bus.dart';
-import '../../state/home_sheet_provider.dart';
+import '../../state/home_tab_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
@@ -226,7 +226,7 @@ class HomeStopLine extends ConsumerWidget {
     return BBPressable(
       key: lineKey,
       semanticLabel: info.semantics(use24h: use24h),
-      onTap: () => ref.read(homeSheetProvider.notifier).openBoard(stop.stopId),
+      onTap: () => ref.read(homeTabProvider.notifier).showBoard(stop.stopId),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: minHeight),
         child: LayoutBuilder(

@@ -1022,21 +1022,21 @@ void main() {
       expect(top(tester), closeTo(bar, 1));
     });
 
-    testWidgets('not when the sheet is at full: a pan in the strip above the Board leaves it open', (tester) async {
+    testWidgets('not when the sheet is at full: a pan in the strip above the card leaves it there', (tester) async {
       await _pump(tester, prefs: {'selectedStopId': '1150'});
-      container(tester).read(homeSheetProvider.notifier).openBoard('1150');
+      container(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      await frames(tester);
+      await tester.drag(find.text('STOP 1150'), const Offset(0, -600));
       await frames(tester);
       final full = top(tester);
-      final board = tester.widget<BBSheet>(find.byType(BBSheet));
-      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(board.fullFraction * (844 - 2 * BBSpace.s), 1));
-      expect(container(tester).read(sheetAtFullProvider), sheetIdOf(const StopSheet('1150')));
+      final card = tester.widget<BBSheet>(find.byType(BBSheet));
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(card.fullFraction * (844 - 2 * BBSpace.s), 1));
       // Bare map above the card's top (about 91 pt) and below the chips.
       expect(full, greaterThan(86));
       await tester.dragFrom(const Offset(60, 58), const Offset(0, 26));
       await frames(tester);
-      expect(top(tester), full, reason: 'the Board stays open');
-      expect(container(tester).read(sheetAtFullProvider), sheetIdOf(const StopSheet('1150')));
-      expect(find.byKey(StopSheetContent.showMapKey), findsOneWidget);
+      expect(top(tester), full, reason: 'the card stays up');
+      expect(find.byKey(StopSheetContent.openBoardKey), findsOneWidget, reason: 'at full it is still Open board');
     });
   });
 
@@ -1095,27 +1095,20 @@ void main() {
       expect(top(tester), closeTo(bar, 1));
     });
 
-    testWidgets('a stop card opened after home was pulled to full opens at half with Open board, not Show map',
-        (tester) async {
+    testWidgets('a stop card opened after home was pulled to full opens at half, with Open board', (tester) async {
       await _pump(tester, prefs: {'selectedStopId': '1150'},
           overrides: [homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen())]);
       await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -300));
       await frames(tester);
       await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -400));
       await frames(tester);
-      expect(container(tester).read(sheetAtFullProvider), sheetIdOf(const HomeSheetHome()), reason: 'home is at full');
+      final home = tester.widget<BBSheet>(find.byType(BBSheet));
+      expect(height(tester), closeTo(home.fullFraction * area, 1), reason: 'home is at full');
       container(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
-      // Not even for the card's first frame: the home sheet's "at full" is not the card's.
-      for (var i = 0; i < 6; i++) {
-        await tester.pump(i == 0 ? Duration.zero : const Duration(milliseconds: 16));
-        expect(find.byKey(StopSheetContent.showMapKey), findsNothing, reason: 'frame $i says Show map');
-      }
       await frames(tester);
       final card = tester.widget<BBSheet>(find.byType(BBSheet));
       expect(height(tester), closeTo(card.halfFraction * area, 1), reason: 'the card opens at half');
-      expect(container(tester).read(sheetAtFullProvider), isNull);
       expect(find.byKey(StopSheetContent.openBoardKey), findsOneWidget);
-      expect(find.byKey(StopSheetContent.showMapKey), findsNothing);
     });
   });
 
@@ -1775,6 +1768,31 @@ void main() {
         await _frames(tester, 3);
         expect(find.text('Lost contact with bus 2573'), findsOneWidget);
         expect(containerOf(tester).read(followProvider), isNull);
+        await tester.pump(const Duration(seconds: 5));
+      });
+
+      testWidgets('a follow started on the Board, 6 min after the map was last shown: it waits for a fresh poll',
+          (tester) async {
+        var skew = Duration.zero;
+        DateTime now() => DateTime.now().add(skew);
+        await pumpFollow(tester, broadcast: true, overrides: [mapClockProvider.overrideWithValue(now)]);
+        // The Map goes behind the Board; the rider follows a bus from the Board, which switches back to the Map.
+        _tickerMode.value = false;
+        _homeActive.value = false;
+        await _frames(tester, 3);
+        skew = const Duration(minutes: 6);
+        await startFollowing(tester);
+        _tickerMode.value = true;
+        _homeActive.value = true;
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the old feed is not judged');
+        expect(find.byKey(BBToast.cardKey), findsNothing);
+        expect(find.text('Following bus 2573'), findsOneWidget);
+
+        feed.add({'2573': followed(gps: now())});
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull);
+        expect(find.textContaining('stops to'), findsOneWidget);
         await tester.pump(const Duration(seconds: 5));
       });
 

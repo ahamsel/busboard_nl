@@ -6,9 +6,11 @@ import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
+import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
+import 'package:busboard_nl/ui/home/home_shell.dart';
 import 'package:busboard_nl/ui/home/map_buttons.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
@@ -67,15 +69,22 @@ void main() {
     expect(_c(tester).read(homeSheetProvider), isA<HomeSheetHome>());
   });
 
-  for (final path in ['/board/1150', '/stop/1150']) {
-    testWidgets('$path opens home with that stop\'s sheet', (tester) async {
-      await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: path);
-      expect(_c(tester).read(homeSheetProvider), const StopSheet('1150'));
-    });
-  }
+  testWidgets("/stop/1150 opens home on the Map tab with that stop's sheet", (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/stop/1150', tab: HomeTab.board);
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('1150'));
+    expect(_c(tester).read(homeTabProvider), HomeTab.map);
+  });
 
-  testWidgets('a board link opens the stop sheet at half, with its next buses in view (F1, spec §3.2)', (tester) async {
-    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/C', overrides: [_rows]);
+  testWidgets('/board/1150 opens home on the Board tab, showing that stop (spec 2026-10-15 §2.3)', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/1150');
+    final c = ProviderScope.containerOf(tester.element(find.byType(HomeShell)));
+    expect(c.read(homeTabProvider), HomeTab.board);
+    expect(c.read(boardStopProvider), const BoardStop('1150'));
+    expect(c.read(homeSheetProvider), isA<HomeSheetHome>());
+  });
+
+  testWidgets('a stop link opens the stop sheet at half, with its next buses in view (F1, spec §3.2)', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/stop/C', overrides: [_rows]);
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
     _expectInView(tester, find.byType(ArrivalRowTile).first, 'the next bus');
   });
@@ -119,7 +128,7 @@ void main() {
   });
 
   testWidgets('system back walks the sheet stack, then leaves (Review Focus 2)', (tester) async {
-    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/board/1150');
+    await pumpPlannerApp(tester, net: TestNetwork(), now: now, initial: '/stop/1150');
     expect(_c(tester).read(homeSheetProvider), const StopSheet('1150'));
     final popped = await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -176,7 +185,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a board link before the schedule loads shows the stop sheet loading, then its rows (Review Focus 1)',
+  testWidgets('a stop link before the schedule loads shows the stop sheet loading, then its rows (Review Focus 1)',
       (tester) async {
     // 'C' is a stop of TestNetwork; 1150 is not, and an unknown stop shows no card.
     final net = TestNetwork();
@@ -185,7 +194,7 @@ void main() {
       tester,
       net: net,
       now: now,
-      initial: '/board/C',
+      initial: '/stop/C',
       repoFuture: schedule.future,
       settle: false,
       overrides: [_rows],

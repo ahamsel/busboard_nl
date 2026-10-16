@@ -167,7 +167,7 @@ class _PhoneRunner implements AlertRunner {
   Future<void> stop() async {}
 }
 
-/// The real app at [initial] (a stop's Board link), with the stop's sheet pulled to full.
+/// The real app at [initial] (a stop's link), with the stop's sheet pulled to full.
 Future<void> _pump(
   WidgetTester tester, {
   GtfsRepository? repo,
@@ -176,7 +176,7 @@ Future<void> _pump(
   double textScale = 1.0,
   bool settle = true,
   bool pullUp = true,
-  String initial = '/board/1150',
+  String initial = '/stop/1150',
   List<Override> overrides = const [],
   AlertRunner? alertRunner,
   bool use24h = true,
@@ -309,7 +309,7 @@ void main() {
   });
 
   testWidgets('an unknown stop still gets a sheet: "Stop 9999" and the empty state', (tester) async {
-    await _pump(tester, repo: _repo(), initial: '/board/9999');
+    await _pump(tester, repo: _repo(), initial: '/stop/9999');
     expect(_c(tester).read(homeSheetProvider), const StopSheet('9999'));
     expect(find.text('STOP 9999'), findsOneWidget);
     expect(find.text('Stop 9999'), findsOneWidget);
