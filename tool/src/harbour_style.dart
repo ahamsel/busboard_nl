@@ -39,11 +39,12 @@ class HarbourPalette {
   );
 
   /// A neutral dark grey a step below the app's dark `surface` (#1F2024), so sheets, cards and map buttons stand
-  /// clear of the map; their shadow and top highlight do the rest.
+  /// clear of the map; their hairline border does the rest. Water is a deeper blue than the land around it
+  /// (ΔE OKLab 0.039), so the harbour, the coastline and the ponds stay visible at night.
   static const dark = HarbourPalette(
     name: 'Harbour dark',
     land: '#17181B',
-    water: '#0F1820',
+    water: '#0E1F2E',
     park: '#172019',
     road: '#26282C',
     roadCasing: '#2F3237',
