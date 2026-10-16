@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/rendering.dart';
@@ -42,10 +43,33 @@ class BBScrollPage extends StatefulWidget {
 class _BBScrollPageState extends State<BBScrollPage> {
   bool _under = false;
   double _inset = 0;
+  bool _seeded = false;
 
   /// The list is back at the top and the title is growing back to large: the bar passes through
   /// every height on the way, and the inset must not follow it down (the content would dip).
   bool _returning = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The bar is only measured after its first frame. Until then the inset is an estimate of the resting bar,
+    // so the first row does not start under it for one frame and then jump down.
+    if (!_seeded) {
+      _seeded = true;
+      _inset = _estimateBarHeight(context);
+    }
+  }
+
+  /// The resting bar: the top bar's padding around its tallest part, the (scaled) title or the 44 pt back
+  /// button. A [BBScrollPage.below] or a subtitle is only known once measured.
+  double _estimateBarHeight(BuildContext context) {
+    final bb = context.bb;
+    final scaler = MediaQuery.textScalerOf(context);
+    final style = widget.large ? bb.text.display : bb.text.title;
+    final title = scaler.scale(style.fontSize!) * (style.height ?? 1.2);
+    final subtitle = widget.subtitle == null ? 0.0 : scaler.scale(bb.text.caption.fontSize!) * (bb.text.caption.height ?? 1.2);
+    return BBSpace.s * 2 + math.max(title + subtitle, widget.onBack == null ? 0 : 44);
+  }
 
   bool _onScroll(ScrollNotification n) {
     if (n.depth != 0 || n.metrics.axis != Axis.vertical) return false;

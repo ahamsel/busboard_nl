@@ -73,6 +73,36 @@ void main() {
           greaterThanOrEqualTo(tester.getBottomLeft(find.byKey(BBScrollPage.barKey)).dy - 0.5));
     });
 
+    testWidgets('the very first frame already starts the content below the bar, before the bar is measured',
+        (tester) async {
+      for (final scale in [1.0, 2.0]) {
+        for (final back in [true, false]) {
+          await tester.pumpWidget(const SizedBox());
+          await tester.pumpWidget(kitHost(
+            SizedBox(
+              height: 600,
+              child: BBScrollPage(
+                // Short, so the test font (one em per letter) keeps it on one line even at 2×.
+                title: 'Stops',
+                large: true,
+                onBack: back ? () {} : null,
+                body: (context, topInset) => ListView(
+                  padding: EdgeInsets.only(top: topInset),
+                  children: [for (var i = 0; i < 40; i++) SizedBox(height: 44, child: Text('row $i'))],
+                ),
+              ),
+            ),
+            textScale: scale,
+          ));
+          // No settle: this is the first frame, and the measured inset has not arrived.
+          final barBottom = tester.getBottomLeft(find.byKey(BBScrollPage.barKey)).dy;
+          final rowTop = tester.getTopLeft(find.text('row 0')).dy;
+          expect(rowTop, greaterThanOrEqualTo(barBottom - 0.5), reason: '${scale}x back=$back: row under the bar');
+          expect(rowTop, lessThanOrEqualTo(barBottom + 2), reason: '${scale}x back=$back: not a big gap either');
+        }
+      }
+    });
+
     testWidgets('after scrolling 40 px: the title condenses, the bar frosts and gets a hairline', (tester) async {
       await tester.pumpWidget(_page());
       await tester.pumpAndSettle();
