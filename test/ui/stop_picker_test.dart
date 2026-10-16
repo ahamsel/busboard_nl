@@ -260,6 +260,26 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
   });
 
+  testWidgets('a schedule that fails to reload keeps the picker, Near me and its route pills on the one loaded',
+      (tester) async {
+    // Settings, Refresh schedule, while offline: the second load fails (Settings says so in a toast).
+    var loads = 0;
+    await _pump(
+      tester,
+      gtfs: () => ++loads > 1 ? Future<GtfsRepository>.error(Exception('offline')) : _repo(),
+      nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)],
+    );
+    expect(find.text('MUN Centre'), findsOneWidget);
+    expect(find.text('10'), findsOneWidget);
+    ProviderScope.containerOf(tester.element(find.byType(StopPickerScreen))).invalidate(gtfsRepositoryProvider);
+    await tester.pumpAndSettle();
+    expect(loads, greaterThanOrEqualTo(2), reason: 'the reload ran (and failed, as do its retries)');
+    expect(find.text('Failed to load schedule'), findsNothing, reason: 'not an error until a relaunch');
+    expect(find.text('MUN Centre'), findsOneWidget);
+    expect(find.text('10'), findsOneWidget, reason: 'the route pills stay too');
+    expect(find.text('Stop number'), findsOneWidget);
+  });
+
   testWidgets('near-me empty and error states', (tester) async {
     await _pump(tester, gtfs: _repo, nearby: () => const []);
     expect(find.text('No stops found within 800m.'), findsOneWidget);

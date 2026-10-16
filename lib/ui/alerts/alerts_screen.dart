@@ -87,7 +87,7 @@ class _AlertsContent extends ConsumerWidget {
     final now = DateTime.now();
     final active = updates.activeAlertsAt(now);
     final upcoming = updates.alerts.where((a) => !a.isActiveAt(now) && !a.hasEndedBefore(now)).toList();
-    final repo = ref.watch(gtfsRepositoryProvider).asData?.value;
+    final repo = ref.watch(gtfsRepositoryProvider).value;
     final stopNames = <String, String>{
       if (repo != null)
         for (final alert in updates.alerts)
