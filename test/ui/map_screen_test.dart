@@ -1051,6 +1051,20 @@ void main() {
       expect(await sheetTop(tester), peek);
     });
 
+    testWidgets('with the sheet pulled up, Back to bus resumes the follow and brings the sheet to peek', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final peek = await sheetTop(tester);
+      await pan(tester);
+      await expandSheet(tester);
+      expect(await sheetTop(tester), lessThan(peek - 100));
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      await tester.tap(find.text('Back to bus 2573'));
+      await settle(tester);
+      expect(await sheetTop(tester), peek);
+      expect(find.text('Back to bus 2573'), findsNothing);
+    });
+
     testWidgets('the followed bus is still drawn when the route filter excludes its route', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
