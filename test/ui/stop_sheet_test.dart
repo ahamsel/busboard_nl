@@ -514,6 +514,37 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('exact repeats (same trip, same scheduled time) each get their own row and key', (tester) async {
+    ArrivalRow dup(int minutes) => ArrivalRow(
+          routeShortName: '3',
+          headsign: 'Loop',
+          scheduledTime: GtfsTime.parse('09:52:00'),
+          minutesAway: minutes,
+          isLive: false,
+          tripId: 'loop-1',
+        );
+    await _pump(tester, repo: _repo(), overrides: [
+      stopArrivalsProvider.overrideWith((ref, stopId) async => [dup(4), dup(4), dup(4)]),
+    ]);
+    expect(tester.takeException(), isNull, reason: 'no duplicate keys');
+    final tiles = find.byType(ArrivalRowTile);
+    expect(tiles, findsNWidgets(3));
+    // The occurrence counter makes the keys differ, so no two rows share one and none is dropped.
+    final keys = find
+        .ancestor(of: tiles, matching: find.byWidgetPredicate((w) => w.key is ValueKey && (w.key! as ValueKey).value is (String, int, int)))
+        .evaluate()
+        .map((e) => e.widget.key)
+        .toList();
+    expect(keys, hasLength(3));
+    expect(keys.toSet(), hasLength(3), reason: 'three distinct keys');
+    expect({for (final k in keys) (k! as ValueKey<dynamic>).value}, {
+      ('loop-1', 9 * 3600 + 52 * 60, 0),
+      ('loop-1', 9 * 3600 + 52 * 60, 1),
+      ('loop-1', 9 * 3600 + 52 * 60, 2),
+    });
+    await _unmount(tester);
+  });
+
   testWidgets('after the skeleton, the loaded rows stagger in (spec §3.2)', (tester) async {
     ArrivalRow at(String route, int minutes) => ArrivalRow(
           routeShortName: route,

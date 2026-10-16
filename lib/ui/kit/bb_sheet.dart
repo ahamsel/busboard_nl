@@ -18,8 +18,14 @@ class BBSheetController extends DraggableScrollableController {
   /// Where the last move asked by code ([animateTo], [jumpTo]) takes the sheet; null once the rider drags it.
   double? _target;
 
+  /// How many moves by code ([animateTo]) the controller has been asked for, so a test can show that a gesture
+  /// moved the sheet exactly once.
+  @visibleForTesting
+  int animateCount = 0;
+
   @override
   Future<void> animateTo(double size, {required Duration duration, required Curve curve}) {
+    animateCount++;
     _target = size;
     return super.animateTo(size, duration: duration, curve: curve);
   }

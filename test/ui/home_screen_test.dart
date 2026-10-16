@@ -967,6 +967,8 @@ void main() {
 
     testWidgets('a two-finger pinch lowers the sheet once, to its bar', (tester) async {
       final bar = await homeAtHalf(tester);
+      BBSheetController controller() => tester.widget<BBSheet>(find.byType(BBSheet)).controller!;
+      final before = controller().animateCount;
       final a = await tester.startGesture(const Offset(60, 150), pointer: 1);
       final b = await tester.startGesture(const Offset(60, 190), pointer: 2);
       for (var i = 0; i < 4; i++) {
@@ -978,6 +980,8 @@ void main() {
       await b.up();
       await frames(tester);
       expect(top(tester), closeTo(bar, 1));
+      // Both fingers travel past the pan distance, and each could tuck: the sheet is asked to move once.
+      expect(controller().animateCount - before, 1, reason: 'one tuck for the whole pinch');
       expect(tester.takeException(), isNull);
     });
 
