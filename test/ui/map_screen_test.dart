@@ -71,6 +71,9 @@ final _tickerMode = ValueNotifier<bool>(true);
 /// Taps that reached the "map" (a tap on empty map is forwarded to onTap).
 var _mapTaps = 0;
 
+/// The My location button (its one-item control pill).
+final _myLocation = find.byType(BBControlPill);
+
 Widget _stubMap(MapViewConfig config) {
   _config = config;
   scheduleMicrotask(() => config.onReady(_surface, _surface));
@@ -316,11 +319,60 @@ void main() {
     expect((await tester.runAsync(styleLoaded))!, first);
   });
 
-  testWidgets('My location is a labelled control', (tester) async {
+  testWidgets('My location is a labelled 44 pt control', (tester) async {
     final semantics = tester.ensureSemantics();
     await _pump(tester);
     expect(find.bySemanticsLabel('My location'), findsOneWidget);
+    expect(tester.getSize(_myLocation), const Size(44, 44));
     semantics.dispose();
+  });
+
+  group('My location button', () {
+    const credit = '© OpenStreetMap · OpenFreeMap';
+
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('at 360 wide text x$scale sits bottom right on the credit line, just above the peeking card',
+          (tester) async {
+        await _pump(tester, size: const Size(360, 780), textScale: scale);
+        final button = tester.getRect(_myLocation);
+        final hit = tester.getRect(find.ancestor(of: find.text(credit), matching: find.byType(BBPressable)));
+        final card = tester.getRect(find.byKey(BBSheet.cardKey));
+        expect(button.right, closeTo(360 - BBSpace.s, 0.5), reason: 'at the right screen margin');
+        expect(button.bottom, closeTo(hit.bottom, 0.5), reason: "on the credit link's baseline");
+        expect(button.bottom, lessThanOrEqualTo(card.top), reason: 'above the peeking card');
+        expect(card.top - button.bottom, lessThanOrEqualTo(12), reason: 'just above it');
+        expect(button.top, greaterThan(tester.getRect(find.text('All routes')).bottom), reason: 'no longer up with the chips');
+        expect(hit.overlaps(button), isFalse, reason: 'clear of the credit link');
+        expect(tester.getRect(find.text(credit)).right, lessThanOrEqualTo(button.left));
+        // MapLibre's own info button (about 20 pt) sits right after the link.
+        expect(_config!.attributionMargin.x + 24, lessThanOrEqualTo(button.left), reason: "clear of the map's info button");
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('in landscape it keeps clear of the sensor housing, like the top controls', (tester) async {
+      tester.view.padding = const FakeViewPadding(left: 47, right: 47, bottom: 21);
+      tester.view.viewPadding = const FakeViewPadding(left: 47, right: 47, bottom: 21);
+      await _pump(tester, size: const Size(844, 390));
+      final button = tester.getRect(_myLocation);
+      expect(button.right, closeTo(844 - 47 - BBSpace.s, 0.5));
+      expect(button.bottom, lessThanOrEqualTo(tester.getRect(find.byKey(BBSheet.cardKey)).top));
+      expect(button.overlaps(tester.getRect(find.text('All routes'))), isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a sheet pulled up covers it', (tester) async {
+      await _pump(tester, size: const Size(390, 844));
+      expect(_myLocation.hitTestable(), findsOneWidget);
+      _config!.onTap(const LatLng(47.5701, -52.7300)); // a stop's card opens at half
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Open board'), findsOneWidget);
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, lessThan(tester.getRect(_myLocation).top));
+      expect(_myLocation, findsOneWidget);
+      expect(_myLocation.hitTestable(), findsNothing, reason: 'the sheet is in front of it');
+    });
   });
 
 
@@ -360,7 +412,7 @@ void main() {
 
     testWidgets('a tap beside the text, in the same band, reaches the map', (tester) async {
       await _pump(tester, size: const Size(390, 844));
-      final text = tester.getRect(find.text(credit)); // test fonts are wide: it ends at x=360
+      final text = tester.getRect(find.text(credit)); // test fonts are wide: it stops short of My location
       await tester.tapAt(Offset(text.right + 16, text.center.dy));
       await tester.pump(const Duration(milliseconds: 400));
       expect(_mapTaps, 1);
@@ -421,7 +473,7 @@ void main() {
       final surface = _SequencedLocationSurface([null, const LatLng(47.55, -52.70)]);
       _surface = surface;
       await _pump(tester);
-      await tester.tap(find.byType(BBControlPill));
+      await tester.tap(_myLocation);
       for (var i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 300));
       }
@@ -435,7 +487,7 @@ void main() {
       final surface = _SequencedLocationSurface([null, null, null, null]);
       _surface = surface;
       await _pump(tester);
-      await tester.tap(find.byType(BBControlPill));
+      await tester.tap(_myLocation);
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 300));
       }
@@ -786,6 +838,25 @@ void main() {
       expect(surface.fits, hasLength(2), reason: 'the camera moves at once on resume');
     });
 
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('at 360 wide text x$scale Back to bus and My location do not overlap', (tester) async {
+        await pumpFollow(tester, size: const Size(360, 780), textScale: scale);
+        await startFollowing(tester);
+        // At 2x the peeking card is tall: pan on the map between the chips and the card.
+        final mapBand = (tester.getRect(find.text('All routes')).bottom + tester.getRect(find.byKey(BBSheet.cardKey)).top) / 2;
+        await tester.dragFrom(Offset(180, mapBand), const Offset(0, -30));
+        await tester.pump(const Duration(milliseconds: 100));
+        final chip =tester.getRect(find.ancestor(of: find.text('Back to bus 2573'), matching: find.byType(BBChip)));
+        final button = tester.getRect(_myLocation);
+        final hit = tester.getRect(find.ancestor(of: find.textContaining('OpenStreetMap'), matching: find.byType(BBPressable)));
+        expect(chip.overlaps(button), isFalse, reason: 'Back to bus is one row above');
+        expect(chip.bottom, lessThanOrEqualTo(button.top));
+        expect(hit.overlaps(button), isFalse);
+        expect(_myLocation.hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
     testWidgets('a plain tap on the map does not pause', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
@@ -826,6 +897,8 @@ void main() {
       final screenHeight = tester.getBottomLeft(find.byType(MapScreen)).dy;
       final creditTop = tester.getTopLeft(find.textContaining('OpenStreetMap')).dy;
       expect(padding.bottom, greaterThanOrEqualTo(screenHeight - creditTop + 16), reason: 'above the credit and the peeking sheet');
+      final buttonTop = tester.getTopLeft(_myLocation).dy;
+      expect(padding.bottom, greaterThanOrEqualTo(screenHeight - buttonTop + 16), reason: 'above the My location button');
     });
 
     testWidgets('while following, the route is drawn as a driven and an ahead part', (tester) async {
