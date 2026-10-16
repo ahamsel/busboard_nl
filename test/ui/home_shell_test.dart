@@ -7,6 +7,7 @@ import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/seen_flags.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/board/board_tab.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_shell.dart';
@@ -270,4 +271,24 @@ void main() {
     expect(find.text('STOP REMOVED'), findsNothing);
     expect(_c(tester).read(boardStopProvider), isNull);
   });
+
+  for (final textScale in [1.0, 2.0]) {
+    testWidgets('a toast sits above the tab bar and leaves its tabs to tap (M2, ${textScale}x text)', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(bottom: 34);
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(tester,
+          net: TestNetwork(), now: _now, tab: HomeTab.board, overrides: _longBoard, textScale: textScale);
+      // A scheduled row says why it has no bus to follow.
+      await tester.tap(find.byType(ArrivalRowTile).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      final toast = tester.getRect(find.byKey(BBToast.cardKey));
+      final bar = tester.getRect(find.byType(BBTabBar));
+      expect(toast.bottom, lessThanOrEqualTo(bar.top), reason: 'not over the tab labels');
+      expect(find.byKey(HomeShell.mapTabKey).hitTestable(), findsOneWidget, reason: 'the Map tab takes the tap');
+      await tester.pumpAndSettle(const Duration(seconds: 4));
+    });
+  }
 }

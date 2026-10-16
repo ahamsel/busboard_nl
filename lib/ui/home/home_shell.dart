@@ -67,44 +67,50 @@ class _HomeShellState extends ConsumerState<HomeShell> with SingleTickerProvider
     final tab = ref.watch(homeTabProvider);
     // The tab used last is still being read (a frame or two at launch).
     if (tab == null) return ColoredBox(color: bb.colors.bg);
+    final layers = Stack(
+      fit: StackFit.expand,
+      children: [
+        _TabLayer(
+          key: HomeShell.mapLayerKey,
+          board: _board,
+          isBoard: false,
+          active: tab == HomeTab.map,
+          child: HomeScreen(active: tab == HomeTab.map),
+        ),
+        _TabLayer(
+          key: HomeShell.boardLayerKey,
+          board: _board,
+          isBoard: true,
+          active: tab == HomeTab.board,
+          // Its own page: opaque bg over the map, status-bar icons for the theme, clear of a side notch.
+          child: const BBScaffold(safeTop: false, body: BoardTab()),
+        ),
+      ],
+    );
     // No page scaffold around both: the map runs under the status bar and handles the side insets itself (the tablet
     // panel clears a notch); the Board brings its own.
     return ColoredBox(
       color: bb.colors.bg,
-      child: Column(
-        children: [
-          Expanded(
-            child: MediaQuery.removePadding(
-              context: context,
-              removeBottom: true,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _TabLayer(
-                    key: HomeShell.mapLayerKey,
-                    board: _board,
-                    isBoard: false,
-                    active: tab == HomeTab.map,
-                    child: HomeScreen(active: tab == HomeTab.map),
-                  ),
-                  _TabLayer(
-                    key: HomeShell.boardLayerKey,
-                    board: _board,
-                    isBoard: true,
-                    active: tab == HomeTab.board,
-                    // Its own page: opaque bg over the map, status-bar icons for the theme, clear of a side notch.
-                    child: const BBScaffold(safeTop: false, body: BoardTab()),
-                  ),
-                ],
+      child: LayoutBuilder(
+        builder: (context, shell) => Column(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                // A toast shown from either tab clears the tab bar (its height, safe area included, grows with the
+                // text), so it never covers the tabs or takes their taps (final review M2).
+                builder: (context, tabs) => BBToastInset(
+                  bottom: shell.maxHeight - tabs.maxHeight,
+                  child: MediaQuery.removePadding(context: context, removeBottom: true, child: layers),
+                ),
               ),
             ),
-          ),
-          BBTabBar(
-            tabs: HomeShell._tabs,
-            index: tab.index,
-            onSelect: (i) => ref.read(homeTabProvider.notifier).select(HomeTab.values[i]),
-          ),
-        ],
+            BBTabBar(
+              tabs: HomeShell._tabs,
+              index: tab.index,
+              onSelect: (i) => ref.read(homeTabProvider.notifier).select(HomeTab.values[i]),
+            ),
+          ],
+        ),
       ),
     );
   }

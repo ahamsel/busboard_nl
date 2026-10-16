@@ -6,7 +6,22 @@ import 'package:flutter/widgets.dart';
 
 import 'tokens.dart';
 
-/// Floating message above the bottom safe area (replaces SnackBar). Only one is
+/// Fixed chrome along the bottom of the screen that a toast must clear: [bottom] is its height from the screen's bottom
+/// edge, safe area included (the home's tab bar). [BBToast.show] reads it from the context it is called from, so a
+/// toast shown from a page without the chrome sits just above the safe area as before.
+class BBToastInset extends InheritedWidget {
+  const BBToastInset({super.key, required this.bottom, required super.child});
+
+  final double bottom;
+
+  /// The inset around [context], or 0. Read once when a toast shows: no dependency.
+  static double of(BuildContext context) => context.getInheritedWidgetOfExactType<BBToastInset>()?.bottom ?? 0;
+
+  @override
+  bool updateShouldNotify(BBToastInset oldWidget) => oldWidget.bottom != bottom;
+}
+
+/// Floating message above the bottom safe area (replaces SnackBar), and above a [BBToastInset] around the caller. Only one is
 /// visible at a time; a new one replaces the current one.
 abstract final class BBToast {
   static const cardKey = ValueKey('bb-toast-card');
@@ -26,10 +41,12 @@ abstract final class BBToast {
       unawaited(SemanticsService.sendAnnouncement(View.of(context), message, Directionality.of(context)));
     }
     final overlay = Overlay.of(context, rootOverlay: true);
+    final inset = BBToastInset.of(context);
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _ToastView(
         message: message,
+        inset: inset,
         duration: duration,
         announce: announce,
         onDone: () {
@@ -52,6 +69,7 @@ abstract final class BBToast {
 class _ToastView extends StatefulWidget {
   const _ToastView({
     required this.message,
+    required this.inset,
     required this.duration,
     required this.announce,
     required this.onDone,
@@ -59,6 +77,9 @@ class _ToastView extends StatefulWidget {
 
   final String message;
   final Duration duration;
+
+  /// The [BBToastInset] around the caller: chrome to clear, safe area included.
+  final double inset;
 
   /// Already announced by [BBToast.show]: not a live region too, or TalkBack reads it twice.
   final bool announce;
@@ -122,9 +143,10 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
     return Positioned(
       left: BBSpace.l,
       right: BBSpace.l,
-      // Just above the safe area, or above the keyboard when that is taller.
+      // Just above the safe area (or the chrome around the caller, such as the tab bar, when that is taller), or
+      // above the keyboard when that is taller still.
       bottom: math.max(
-            MediaQuery.paddingOf(context).bottom + BBSpace.l,
+            math.max(MediaQuery.paddingOf(context).bottom, widget.inset) + BBSpace.l,
             MediaQuery.viewInsetsOf(context).bottom,
           ) +
           BBSpace.s,
