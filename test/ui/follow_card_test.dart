@@ -195,6 +195,11 @@ void main() {
     expect(find.text('to Downtown'), findsOneWidget);
   });
 
+  testWidgets("header: the feed's all-caps destination reads in title case", (tester) async {
+    await _host(tester, _snap(busHeadsign: 'STAVANGER DRIVE - THE VILLAGE'));
+    expect(find.text('to Stavanger Drive - The Village'), findsOneWidget);
+  });
+
   testWidgets('header: your stop not on the trip says so', (tester) async {
     await _host(tester, _snap(yourIndex: null, toGo: null), minutes: null);
     expect(find.text("Your stop isn't on this trip"), findsOneWidget);

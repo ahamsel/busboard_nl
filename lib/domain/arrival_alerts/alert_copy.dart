@@ -1,3 +1,4 @@
+import '../../data/gtfs/headsign.dart';
 import '../../ui/kit/bb_time.dart';
 import 'alert_tracker.dart';
 import 'arrival_alert.dart';
@@ -47,7 +48,7 @@ AlertMessage alertMessage(
 }
 
 /// The Android countdown's title (spec §2.2).
-String ongoingTitle(ArrivalAlert a) => 'Route ${a.routeShortName} to ${a.headsign}';
+String ongoingTitle(ArrivalAlert a) => 'Route ${a.routeShortName} to ${readableHeadsign(a.headsign)}';
 
 /// The Android countdown's line.
 String ongoingText(AlertStep s) {

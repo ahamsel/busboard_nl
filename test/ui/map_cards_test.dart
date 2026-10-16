@@ -105,6 +105,14 @@ void main() {
     expect(find.text('Bus 2573 · 1 min late'), findsOneWidget);
   });
 
+  testWidgets("bus card: the feed's all-caps destination reads in title case", (tester) async {
+    await _host(tester,
+        header: const BusCardHeader(vehicleId: '2573'),
+        body: const BusCardBody(vehicleId: '2573'),
+        buses: {'2573': _bus(headsign: 'AVALON MALL - MUN CENTRE - DOWNTOWN')});
+    expect(find.text('to Avalon Mall - MUN Centre - Downtown'), findsOneWidget);
+  });
+
   testWidgets('bus card Follow button follows this bus and closes the selection', (tester) async {
     await _host(tester,
         header: const BusCardHeader(vehicleId: '2573'), body: const BusCardBody(vehicleId: '2573'), buses: {'2573': _bus()});

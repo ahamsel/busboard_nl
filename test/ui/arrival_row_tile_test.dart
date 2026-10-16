@@ -17,10 +17,11 @@ ArrivalRow _row({
   String? routeRun,
   String? near,
   GtfsTime? predicted,
+  String headsign = 'Signal Hill Rd',
 }) =>
     ArrivalRow(
       routeShortName: '29',
-      headsign: 'Signal Hill Rd',
+      headsign: headsign,
       scheduledTime: GtfsTime.parse('09:52:00'),
       predictedTime: predicted,
       minutesAway: minutes,
@@ -50,6 +51,18 @@ void main() {
     expect(ArrivalRowTile.whyNotFollowable(_row(isLive: true)), ArrivalRowTile.noNumberYet);
     expect(ArrivalRowTile.whyNotFollowable(_row(isLive: true, vehicle: '')), ArrivalRowTile.noNumberYet);
     expect(ArrivalRowTile.noNumberYet, "This bus isn't sharing its number yet, so it can't be followed.");
+  });
+
+  testWidgets("the feed's all-caps trip name reads in title case, on screen and to a screen reader", (tester) async {
+    final handle = tester.ensureSemantics();
+    final row = _row(headsign: 'AVALON MALL - MUN CENTRE - DOWNTOWN');
+    await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: row, onExplain: () {})));
+    expect(find.text('Avalon Mall - MUN Centre - Downtown'), findsOneWidget);
+    expect(find.text('AVALON MALL - MUN CENTRE - DOWNTOWN'), findsNothing);
+    expect(ArrivalRowTile.semanticsLabel(row, use24h: true),
+        'Route 29 Avalon Mall - MUN Centre - Downtown, scheduled, 4 minutes');
+    expect(find.semantics.byLabel('Route 29 Avalon Mall - MUN Centre - Downtown, scheduled, 4 minutes'), findsOne);
+    handle.dispose();
   });
 
   test('screen-reader sentence', () {
