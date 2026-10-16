@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../routing/push_once.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
 import 'near_me_list.dart';
@@ -104,8 +105,9 @@ class _LastStopCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bb = context.bb;
     final name = ref.watch(stopInfoProvider(stopId))?.stopName ?? 'Stop $stopId';
-    return BBCard(
-      onTap: () => context.push('/board/$stopId'),
+    // Once for a quick double tap: two taps before the Board shows would push two.
+    return PushOnce(builder: (context, push) => BBCard(
+      onTap: () => push('/board/$stopId'),
       semanticLabel: 'Last stop, $name, stop $stopId',
       child: Row(children: [
         const BBIconTile(icon: BBIcons.history, tone: BBPillTone.live),
@@ -119,6 +121,6 @@ class _LastStopCard extends ConsumerWidget {
         Text('#$stopId', style: bb.text.label.copyWith(color: bb.colors.brandInk, fontSize: 15)),
         Icon(BBIcons.chevronRight, color: bb.colors.muted),
       ]),
-    );
+    ));
   }
 }
