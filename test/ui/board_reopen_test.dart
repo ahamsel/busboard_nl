@@ -5,6 +5,7 @@ import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
+import 'package:busboard_nl/state/seen_flags.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/stop_sheet.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
@@ -16,6 +17,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/planner_app.dart';
+import '../map/support/fake_map_surface.dart';
 import '../trip_planner/test_network.dart';
 
 /// The app reopens the way the rider left it: a stop's Board (its sheet at full height) open when the app went to
@@ -197,6 +199,47 @@ void main() {
     expect(_c(tester).read(homeSheetProvider.notifier).stack, hasLength(2));
     _expectAt(tester, (s) => s.halfFraction, 'half');
     expect(await _saved(), isNull);
+  });
+
+  testWidgets("the bar's one-time lift waits while the Board left open is restored, and is kept for later (M11)",
+      (tester) async {
+    final checked = Completer<bool>();
+    // A map that reports ready, as the real one does: the lift waits for a camera.
+    final surface = FakeMapSurface();
+    var ready = false;
+    await pumpPlannerApp(tester,
+        net: TestNetwork(),
+        now: _now,
+        overrides: _overrides,
+        asyncPrefs: {_key: 'C'},
+        launchLinkChecked: checked,
+        barHintSeen: false,
+        settle: false,
+        mapView: (c) {
+          if (!ready) {
+            ready = true;
+            scheduleMicrotask(() => c.onReady(surface, surface));
+          }
+          return const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF0F2));
+        });
+    // The restore waits for the launch check: the bar shows meanwhile, and must not lift.
+    final tops = <double>[];
+    for (var i = 0; i < 60; i++) {
+      await tester.pump(const Duration(milliseconds: 25));
+      if (find.byKey(BBSheet.cardKey).evaluate().isNotEmpty) tops.add(tester.getRect(find.byKey(BBSheet.cardKey)).top);
+    }
+    expect(tops, isNotEmpty);
+    expect(tops.every((t) => (t - tops.last).abs() < 0.5), isTrue, reason: 'the bar did not lift: $tops');
+    expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isNull, reason: 'not seen, so not stored');
+    checked.complete(false);
+    await tester.pumpAndSettle();
+    expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
+    _expectAt(tester, (s) => s.fullFraction, 'full');
+    expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isNull, reason: 'the Board covers the bar');
+    // Back at the bar, the lift plays, once.
+    _c(tester).read(homeSheetProvider.notifier).back();
+    await tester.pumpAndSettle();
+    expect(await SharedPreferencesAsync().getBool(barHintSeenKey), isTrue);
   });
 
   testWidgets('with no launch link, the restore goes ahead once the check is done', (tester) async {

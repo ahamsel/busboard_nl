@@ -901,10 +901,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The first time the bar shows with the map ready, the sheet lifts [_barHintLift] and settles back, once ever
   /// (spec 2026-10-14 §3.6). Not under Reduce Motion (nothing is stored then, so it can play once motion is back), on
-  /// the tablet panel, while following or choosing on the map, or with a card open.
+  /// the tablet panel, while following or choosing on the map, with a card open, or while the Board left open may
+  /// still be restored over the bar (final review M11: it is tried again once the restore is done).
   Future<void> _hintBar() async {
     if (_barHintTried || !mounted || _camera == null || BBMotion.reduced(context)) return;
-    if (_wide || _follow != null || ref.read(mapPickProvider) != null) return;
+    if (_wide || _follow != null || ref.read(mapPickProvider) != null || _restoringBoard) return;
     if (ref.read(homeSheetProvider) is! HomeSheetHome) return;
     final sheet = _sheet;
     if (!sheet.isAttached) return;
@@ -918,7 +919,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     }
     if (seen || !mounted) return;
     // Something took the bar's place while the flag was read (a card, a follow, a map pick): try again once it is back.
-    if (!identical(sheet, _sheet) || !sheet.isAttached || _follow != null || ref.read(mapPickProvider) != null) {
+    if (!identical(sheet, _sheet) ||
+        !sheet.isAttached ||
+        _follow != null ||
+        ref.read(mapPickProvider) != null ||
+        _restoringBoard) {
       _barHintTried = false;
       return;
     }
@@ -930,6 +935,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The stop id saved as the open Board ([BoardOpenStore]), as far as this screen knows.
   String? _savedBoard;
+
+  /// A cold start's restore of the Board left open has not finished: it may still open the Board over the bar.
+  bool _restoringBoard = true;
 
   /// The stop whose Board is showing: its sheet at full height, or in the side panel (which has no detents).
   String? get _boardShowing {
@@ -962,6 +970,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// that launched it and the schedule says the stop still exists. A link or a notification opened at launch wins,
   /// and the Board is forgotten.
   Future<void> _restoreBoard() async {
+    try {
+      await _restoreBoardIfLeftOpen();
+    } finally {
+      _restoringBoard = false;
+      // The bar's one-time lift waited for this; with the bar still showing (no Board opened) it plays now.
+      if (mounted) unawaited(_hintBar());
+    }
+  }
+
+  Future<void> _restoreBoardIfLeftOpen() async {
     final store = ref.read(boardOpenStoreProvider);
     final launchChecked = ref.read(launchLinkCheckedProvider).future;
     String? id;
