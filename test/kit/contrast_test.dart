@@ -62,9 +62,10 @@ void main() {
         });
       }
 
-      // Placeholders are not text: they only need to stay visible on the card they sit in.
+      // Placeholders are not text: they only need to stay visible on the card they sit in. Dark keeps 1.4.1's
+      // ~1.39:1 (#2C3A4A on #18222E), so loading blocks are no fainter than they were.
       test('skeleton blocks stay visible on surface', () {
-        expect(contrast(c.skeleton, c.surface), greaterThanOrEqualTo(name == 'dark' ? 1.3 : 1.2));
+        expect(contrast(c.skeleton, c.surface), greaterThanOrEqualTo(name == 'dark' ? 1.35 : 1.2));
       });
 
       // Neutral greys (spec §2.1): no hue tint. Measured as OKLCH chroma, which stays meaningful near white and
@@ -145,7 +146,7 @@ void main() {
     expect(d.bg, const Color(0xFF121316));
     expect(d.surface, const Color(0xFF1F2024));
     expect(d.surfaceSunken, const Color(0xFF18191C));
-    expect(d.skeleton, const Color(0xFF33353B));
+    expect(d.skeleton, const Color(0xFF36383E));
     expect(d.line, const Color(0xFF3A3D44));
     expect(d.ink, const Color(0xFFF2F3F5));
     expect(d.muted, const Color(0xFFA3A7AF));

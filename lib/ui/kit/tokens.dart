@@ -81,7 +81,7 @@ class BBColors {
     bg: Color(0xFF121316),
     surface: Color(0xFF1F2024),
     surfaceSunken: Color(0xFF18191C),
-    skeleton: Color(0xFF33353B),
+    skeleton: Color(0xFF36383E),
     line: Color(0xFF3A3D44),
     handle: Color(0xFF6E727B),
     ink: Color(0xFFF2F3F5),
