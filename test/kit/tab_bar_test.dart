@@ -128,4 +128,16 @@ void main() {
       expect(tester.getSize(find.byType(BBTabBar)).height, greaterThan(BBTabBar.height));
     });
   }
+
+  testWidgets('on a wide screen the bar spans it, and its tabs keep to a centred row', (tester) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_host(0, (_) {}, width: 1024));
+    expect(tester.getSize(find.byType(BBTabBar)).width, 1024);
+    final board = tester.getRect(find.byKey(const ValueKey('t-board')));
+    final map = tester.getRect(find.byKey(const ValueKey('t-map')));
+    expect(map.right - board.left, BBTabBar.maxRowWidth);
+    expect((board.left + map.right) / 2, 512, reason: 'centred');
+  });
 }

@@ -22,7 +22,8 @@ class BBTab {
 /// `line` hairline on top. Inactive tabs are `muted`; the active one is `brandInk`, its filled icon on a `brandSoft`
 /// pill, so the selection never rests on colour alone. Each tab is a button with a selected state that screen readers
 /// read as "Board, tab 1 of 2, selected". The pill cross-fades over [BBMotion.standard], at once under Reduce Motion.
-/// Labels grow with the text size, and the bar grows with them.
+/// Labels grow with the text size, and the bar grows with them. On a wide screen the bar still spans it, but its tabs
+/// keep to a centred row [maxRowWidth] wide, so the two never sit half a tablet apart.
 class BBTabBar extends StatelessWidget {
   const BBTabBar({super.key, required this.tabs, required this.index, required this.onSelect});
 
@@ -32,6 +33,9 @@ class BBTabBar extends StatelessWidget {
 
   /// The bar's height above the bottom safe area, at 1x text.
   static const double height = 56;
+
+  /// The widest the row of tabs gets (a tablet, a phone on its side).
+  static const double maxRowWidth = 480;
 
   @override
   Widget build(BuildContext context) {
@@ -47,24 +51,27 @@ class BBTabBar extends StatelessWidget {
           role: SemanticsRole.tabBar,
           container: true,
           explicitChildNodes: true,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: height),
-            // Both tabs as tall as the taller one, and the whole height theirs to tap.
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final (i, tab) in tabs.indexed)
-                    Expanded(
-                      child: _TabButton(
-                        key: tab.key,
-                        tab: tab,
-                        active: i == index,
-                        semanticLabel: '${tab.label}, tab ${i + 1} of ${tabs.length}',
-                        onTap: () => onSelect(i),
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: height, maxWidth: maxRowWidth),
+              // Both tabs as tall as the taller one, and the whole height theirs to tap.
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final (i, tab) in tabs.indexed)
+                      Expanded(
+                        child: _TabButton(
+                          key: tab.key,
+                          tab: tab,
+                          active: i == index,
+                          semanticLabel: '${tab.label}, tab ${i + 1} of ${tabs.length}',
+                          onTap: () => onSelect(i),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

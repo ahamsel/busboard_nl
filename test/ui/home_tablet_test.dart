@@ -1,11 +1,13 @@
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/state/home_sheet_provider.dart';
+import 'package:busboard_nl/state/home_tab_provider.dart';
+import 'package:busboard_nl/ui/board/board_tab.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
+import 'package:busboard_nl/ui/home/home_shell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/planner_app.dart';
 import '../trip_planner/test_network.dart';
@@ -168,5 +170,53 @@ void main() {
     final panel = tester.getRect(find.byKey(const ValueKey('home-side-panel')));
     expect(panel.left, 40 + BBSpace.s);
     expect(tester.getRect(find.text('All routes')).left, greaterThan(panel.right));
+  });
+
+  group('the two tabs on a tablet (spec 2026-10-15 §3)', () {
+    testWidgets('the Map keeps its side panel, which ends above the tab bar', (tester) async {
+      tester.view.physicalSize = const Size(1024, 768);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(bottom: 20);
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
+      final panel = tester.getRect(find.byKey(const ValueKey('home-side-panel')));
+      final tabBar = tester.getRect(find.byType(BBTabBar));
+      expect(tabBar.width, 1024, reason: 'the tab bar spans the screen');
+      expect(tabBar.bottom, 768);
+      expect(panel.bottom, closeTo(tabBar.top - BBSpace.s, 1), reason: 'the panel sits on the tab bar');
+    });
+
+    testWidgets('the Board is a centred column at most 640 pt wide, and the tabs are under it', (tester) async {
+      tester.view.physicalSize = const Size(1024, 768);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', tab: HomeTab.board);
+      final board = tester.getRect(find.descendant(of: find.byType(BoardTab), matching: find.byType(BBScrollPage)));
+      expect(board.width, BoardTab.maxWidth);
+      expect(board.center.dx, 512);
+      final where = tester.getRect(find.byKey(BoardTab.whereToKey));
+      expect(where.left, greaterThanOrEqualTo(board.left));
+      expect(where.right, lessThanOrEqualTo(board.right));
+      final tabs = tester.getRect(find.byKey(HomeShell.boardTabKey)).expandToInclude(
+          tester.getRect(find.byKey(HomeShell.mapTabKey)));
+      expect(tabs.center.dx, 512);
+      expect(tabs.width, lessThanOrEqualTo(board.width));
+    });
+
+    testWidgets("the panel's Open board shows the stop on the Board, and the panel keeps its card", (tester) async {
+      tester.view.physicalSize = const Size(1024, 768);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/stop/B');
+      await tester.tap(find.bySemanticsLabel('Open board, Stop B'));
+      await tester.pumpAndSettle();
+      final c = ProviderScope.containerOf(tester.element(find.byType(HomeShell)));
+      expect(c.read(homeTabProvider), HomeTab.board);
+      expect(find.text('STOP B'), findsOneWidget);
+      await tester.tap(find.byKey(HomeShell.mapTabKey));
+      await tester.pumpAndSettle();
+      expect(c.read(homeSheetProvider), const StopSheet('B'));
+      expect(find.byKey(const ValueKey('home-side-panel')), findsOneWidget);
+    });
   });
 }
