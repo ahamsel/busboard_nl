@@ -1,24 +1,28 @@
 BusBoard NL is a focused transit companion for Metrobus riders in St. John's, Mount Pearl, and Paradise.
 
-See what is happening now
+Two tabs keep it simple: the Board for your stop's next buses, and the Map for everything else.
 
-• View current bus locations on an interactive map.
-• Track each physical bus separately, with smooth movement between Metrobus position updates.
-• Follow a bus to your stop: see its route, the stops left, and when it arrives.
-• Filter the map by route, then tap a bus for its vehicle and trip details.
+Check your stop on the Board
 
-Check any stop
-
+• See your stop's live departures in a list, with no map in the way.
+• Keep your stops as chips at the top and switch between them in a tap, or pick Near me.
 • Enter a four-digit stop ID, or choose a nearby stop and see where each route goes from it.
 • Compare Metrobus live predictions with scheduled departures.
-• Set an arrival alert: get a notification when your bus is 3, 5 or 10 minutes away.
-• See run and vehicle details when Metrobus provides them.
+• At night, see when the first bus comes.
+• Set an arrival alert: get a notification when your bus should be 3, 5 or 10 minutes away.
 • Pull to refresh for the latest available information.
+
+See every bus on the Map
+
+• View current bus locations on an interactive map, with smooth movement between Metrobus position updates.
+• Tap any stop for its live departures, right on the map.
+• Follow a bus to your stop: tap Follow on a live bus to see its route, the stops left, and when it arrives.
+• Filter the map by route, then tap a bus for its vehicle and trip details.
 
 Plan a trip
 
-• Plan from one place to another, leaving now, leaving by or arriving by any minute you pick.
-• Start or end at a stop, your location, or any spot on the map.
+• Tap "Where to?" and plan to a stop, your location, any spot on the map, or a saved place like Home or Work.
+• Leave now, leave by or arrive by any minute you pick.
 • Save the trips you take often and see their next buses at a glance.
 • Plans use live bus times for the next hour, all worked out on your phone.
 
@@ -26,7 +30,7 @@ Stay informed
 
 • Read current Metrobus service alerts and route or stop impacts.
 • See alerts that apply to the stop or bus you are viewing.
-• Use light or dark mode with a clean interface built for quick checks.
+• Use light or dark mode. Motion stays calm, and turns off when your phone's Reduce Motion setting is on.
 
 BusBoard NL uses Metrobus public schedule, GTFS-Realtime, and stop-prediction data. Vehicle positions and predictions update periodically and can be delayed or unavailable. Please be at your stop early.
 

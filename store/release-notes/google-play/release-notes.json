@@ -1,6 +1,6 @@
 [
   {
     "language": "en-US",
-    "text": "New in 1.4.1:\n• Nearby stops show where each route goes from there, like 10 to Downtown or Kelsey Drive\n• Live times show after midnight for buses still running from the night before"
+    "text": "New in 1.5.0:\n• Two tabs. The Board shows your stop's live buses with no map in the way. You asked for it! The Map is for planning and following\n• A brighter blue look and a new icon\n• Tap Follow on a live bus to watch it come to you\n• Tap \"Where to?\" to plan a trip, and save places like Home and Work\n• On the map, a slim bar tucks away as you pan\n• Our own day-and-time picker\n• Trip names in normal case, not ALL CAPS\n• First bus times at night\n• Back button goes back one step at a time"
   }
 ]
