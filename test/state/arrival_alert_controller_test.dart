@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:busboard_nl/data/arrival_alerts/alert_notifications.dart';
 import 'package:busboard_nl/data/arrival_alerts/alert_store.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/arrival_alerts/alert_copy.dart';
 import 'package:busboard_nl/domain/arrival_alerts/arrival_alert.dart';
@@ -14,6 +15,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+
+import '../helpers/feed_fixtures.dart';
 
 class FakeNotifications implements AlertNotifications {
   FakeNotifications({this.grant = true});
@@ -66,6 +69,16 @@ class FakeRunner implements AlertRunner {
   }
 }
 
+/// The open GTFS-RT feeds as the iPhone re-timer reads them: counts its fetches.
+class FakeFeed {
+  int calls = 0;
+  TimeTrackFetchResult result = const TimeTrackFetchResult.failure(error: 'offline');
+  Future<TimeTrackFetchResult> call() async {
+    calls++;
+    return result;
+  }
+}
+
 final now = DateTime(2026, 10, 6, 8, 0);
 ArrivalRow row({int predicted = 8 * 3600 + 14 * 60, String trip = 't1'}) => ArrivalRow(
       routeShortName: '10',
@@ -84,12 +97,15 @@ void main() {
   late FakeRunner runner;
   late FakeNotifications notes;
   late DateTime clock;
+  late FakeFeed feed;
 
   ProviderContainer container() {
     final c = ProviderContainer(overrides: [
       alertRunnerProvider.overrideWithValue(runner),
       alertNotificationsProvider.overrideWithValue(notes),
       alertClockProvider.overrideWithValue(() => clock),
+      alertLiveFeedProvider.overrideWithValue(feed.call),
+      alertRetimeEveryProvider.overrideWithValue(const Duration(milliseconds: 20)),
     ]);
     addTearDown(c.dispose);
     return c;
@@ -100,6 +116,7 @@ void main() {
     runner = FakeRunner();
     notes = FakeNotifications();
     clock = now;
+    feed = FakeFeed();
   });
 
   test('set stores the alert, remembers the lead and starts the runner', () async {
@@ -435,6 +452,104 @@ void main() {
       await c.read(arrivalAlertProvider.future);
       await c.read(arrivalAlertProvider.notifier).onAppPaused();
       expect(runner.backgrounded, isEmpty);
+    });
+  });
+
+  group('iPhone: the alert keeps being re-timed whichever tab or page is showing', () {
+    // Several re-time intervals (20 ms in these tests).
+    Future<void> ticks() => Future<void>.delayed(const Duration(milliseconds: 90));
+    TimeTrackFetchResult sixBehind() => fakeFeed([fakeVehicle(fix: clock.subtract(const Duration(seconds: 20)))]);
+
+    test('with no Board or trip page feeding it, the live feed re-times and re-schedules it', () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await c.read(arrivalAlertProvider.notifier).set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      feed.result = sixBehind();
+      await ticks();
+      expect(feed.calls, greaterThanOrEqualTo(1));
+      expect(runner.updated.single.expectedAt, DateTime(2026, 10, 6, 8, 18), reason: 'scheduled 08:12, 6 min behind');
+      expect(c.read(arrivalAlertProvider).value!.expectedAt, DateTime(2026, 10, 6, 8, 18));
+      expect((await AlertStore().read())!.expectedAt, DateTime(2026, 10, 6, 8, 18));
+    });
+
+    test('a Board refresh within the interval spares the fetch', () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      final ctl = c.read(arrivalAlertProvider.notifier);
+      await ctl.set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      ctl.onBoardArrivals('1150', [row(predicted: 8 * 3600 + 18 * 60)]);
+      await ticks();
+      expect(feed.calls, 0, reason: 'the Board on screen already re-times it');
+    });
+
+    test('a stored alert found at launch is re-timed at once', () async {
+      await AlertStore().write(ArrivalAlert.fromArrival(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5, now: now));
+      clock = DateTime(2026, 10, 6, 8, 1);
+      feed.result = sixBehind();
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(feed.calls, 1);
+      expect(runner.updated.single.expectedAt, DateTime(2026, 10, 6, 8, 18));
+    });
+
+    test('in the background it stops (the scheduler has its last word), and on return it fetches again', () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await c.read(arrivalAlertProvider.notifier).set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      final binding = TestWidgetsFlutterBinding.instance;
+      for (final s in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused]) {
+        binding.handleAppLifecycleStateChanged(s);
+      }
+      await ticks();
+      expect(feed.calls, 0);
+      for (final s in [AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+        binding.handleAppLifecycleStateChanged(s);
+      }
+      await ticks();
+      expect(feed.calls, greaterThanOrEqualTo(1));
+    });
+
+    test('a failed fetch or no live bus leaves the alert as it is', () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await c.read(arrivalAlertProvider.notifier).set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      await ticks();
+      feed.result = fakeFeed([fakeVehicle(trip: 't2', fix: clock)]);
+      await ticks();
+      expect(feed.calls, greaterThanOrEqualTo(2));
+      expect(runner.updated, isEmpty);
+      expect(c.read(arrivalAlertProvider).value!.expectedAt, DateTime(2026, 10, 6, 8, 14));
+    });
+
+    test('past the alert time, or once cancelled, nothing is fetched', () async {
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      final ctl = c.read(arrivalAlertProvider.notifier);
+      await ctl.set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 8); // the alert time: the OS shows the notification
+      await ticks();
+      expect(feed.calls, 0);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      await ctl.set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      await ctl.cancel();
+      clock = DateTime(2026, 10, 6, 8, 2);
+      await ticks();
+      expect(feed.calls, 0);
+    });
+
+    test('Android: the watcher re-times it, so the app fetches nothing', () async {
+      runner = FakeRunner(watchesLive: true);
+      final c = container();
+      await c.read(arrivalAlertProvider.future);
+      await c.read(arrivalAlertProvider.notifier).set(row(), stopId: '1150', stopName: 'MUN Centre', leadMinutes: 5);
+      clock = DateTime(2026, 10, 6, 8, 1);
+      await ticks();
+      expect(feed.calls, 0);
     });
   });
 }

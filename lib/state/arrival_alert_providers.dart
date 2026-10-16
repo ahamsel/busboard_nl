@@ -7,17 +7,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/arrival_alerts/alert_notifications.dart';
 import '../data/arrival_alerts/alert_store.dart';
+import '../data/realtime/timetrack_api.dart';
 import '../domain/arrival/arrival_models.dart';
 import '../domain/arrival_alerts/alert_tracker.dart';
 import '../domain/arrival_alerts/arrival_alert.dart';
+import '../domain/arrival_alerts/gtfs_rt_source.dart';
 import '../platform/alert_runner.dart';
 import '../platform/android_alert_watcher.dart';
 import '../platform/ios_alert_scheduler.dart';
 import '../routing/notification_route.dart';
+import 'providers.dart' show timetrackApiProvider;
 
 final alertStoreProvider = Provider<AlertStore>((ref) => AlertStore());
 final alertNotificationsProvider = Provider<AlertNotifications>((ref) => LocalAlertNotifications(onOpen: openAlertRoute));
 final alertClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
+
+/// What the iPhone re-timer reads: the open GTFS-RT feeds, as the Android watcher does.
+final alertLiveFeedProvider =
+    Provider<Future<TimeTrackFetchResult> Function()>((ref) => ref.read(timetrackApiProvider).fetchLiveVehiclesResult);
+
+/// How often the iPhone re-timer checks the live feed when no Board or trip page has fed the alert a newer time.
+final alertRetimeEveryProvider = Provider<Duration>((ref) => const Duration(seconds: 30));
 
 final alertRunnerProvider = Provider<AlertRunner>((ref) {
   final notifications = ref.watch(alertNotificationsProvider);
@@ -46,6 +56,15 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
   AlertRunner get _runner => ref.read(alertRunnerProvider);
   DateTime _now() => ref.read(alertClockProvider)();
 
+  /// iPhone: re-times the armed alert from the live feed, whichever tab or page shows (the Board and a trip's steps
+  /// stop polling behind other tabs). Runs while the app is in front; the scheduler has the last word on pause.
+  Timer? _retimer;
+  bool _foreground = true;
+  bool _fetching = false;
+
+  /// When a Board or a trip's steps last gave the alert's stop fresh rows: the re-timer need not fetch until later.
+  DateTime? _fedAt;
+
   @override
   Future<ArrivalAlert?> build() async {
     final sub = _runner.finished.listen((_) async {
@@ -53,14 +72,77 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
       state = const AsyncData(null);
     });
     final lifecycle = AppLifecycleListener(
-      onPause: () => unawaited(onAppPaused()),
-      onResume: () => unawaited(_reload()),
+      onPause: () {
+        _foreground = false;
+        _syncRetimer();
+        unawaited(onAppPaused());
+      },
+      onResume: () {
+        _foreground = true;
+        unawaited(_reload());
+      },
     );
+    listenSelf((_, _) => _syncRetimer());
     ref.onDispose(() {
       unawaited(sub.cancel());
       lifecycle.dispose();
+      _retimer?.cancel();
+      _retimer = null;
     });
     return _settle(await _loadFresh());
+  }
+
+  /// Runs the re-timer while an iPhone alert waits for its time with the app in front; on (re)start it checks at once.
+  void _syncRetimer() {
+    final a = state.value;
+    final wanted = _foreground && a != null && a.firedAt == null && !_runner.watchesLive && _now().isBefore(a.alertAt);
+    if (!wanted) {
+      _retimer?.cancel();
+      _retimer = null;
+      return;
+    }
+    if (_retimer != null) return;
+    _retimer = Timer.periodic(ref.read(alertRetimeEveryProvider), (_) => unawaited(_retimeFromFeed()));
+    unawaited(_retimeFromFeed());
+  }
+
+  Future<void> _retimeFromFeed() async {
+    final a = state.value;
+    if (a == null || a.firedAt != null || _fetching) return;
+    final now = _now();
+    if (!now.isBefore(a.alertAt)) {
+      // The OS shows the notification scheduled for this time; nothing left to re-time.
+      _syncRetimer();
+      return;
+    }
+    final fed = _fedAt;
+    if (fed != null && now.difference(fed) < ref.read(alertRetimeEveryProvider)) return;
+    _fetching = true;
+    TimeTrackFetchResult? feed;
+    try {
+      feed = await ref.read(alertLiveFeedProvider)();
+    } catch (_) {
+      feed = null;
+    } finally {
+      _fetching = false;
+    }
+    if (!ref.mounted) return;
+    final current = state.value;
+    // Cancelled, replaced or fired while the request was in flight.
+    if (current == null || !current.isSameAlert(a) || current.firedAt != null) return;
+    final at = _now();
+    final departures = liveResultForAlert(current, feed, at).departures;
+    if (departures.isEmpty) return;
+    final d = departures.first;
+    final predicted = d.predictedGtfsTime ?? d.scheduledGtfsTime;
+    if (predicted != null) _retime(current, instantOfServiceTime(predicted, at), at);
+  }
+
+  /// Hands the alert re-timed to [expectedAt] (a live prediction seen at [now]) to the iPhone scheduler.
+  void _retime(ArrivalAlert a, DateTime expectedAt, DateTime now) {
+    final retimed = a.copyWith(expectedAt: expectedAt, live: true, lastSeenAt: now);
+    if (retimed.expectedAt == a.expectedAt) return;
+    unawaited(_deliverOnce(a, retimed, _runner.update));
   }
 
   Future<ArrivalAlert?> _loadFresh() async {
@@ -103,6 +185,8 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
     final alert = ArrivalAlert.fromArrival(row, stopId: stopId, stopName: stopName, leadMinutes: leadMinutes, now: _now());
     await _store.write(alert);
     await _store.saveLead(leadMinutes);
+    // Set from the Board's fresh rows: the re-timer need not fetch at once.
+    _fedAt = _now();
     try {
       await _runner.start(alert);
     } catch (_) {
@@ -125,16 +209,15 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
     await _store.clear();
   }
 
-  /// The Board refreshed [stopId]. On iPhone a newer live prediction re-times the alert.
+  /// The Board (or a trip's steps) refreshed [stopId]. On iPhone a newer live prediction re-times the alert.
   void onBoardArrivals(String stopId, List<ArrivalRow> rows) {
     final a = state.value;
     if (a == null || a.stopId != stopId || _runner.watchesLive) return;
+    _fedAt = _now();
     for (final r in rows) {
       if (r.tripId != a.tripId || !r.isLive || r.predictedTime == null) continue;
       final now = _now();
-      final retimed = a.copyWith(expectedAt: instantOfServiceTime(r.displayTime, now), live: true, lastSeenAt: now);
-      if (retimed.expectedAt == a.expectedAt) return;
-      unawaited(_deliverOnce(a, retimed, _runner.update));
+      _retime(a, instantOfServiceTime(r.displayTime, now), now);
       return;
     }
   }
