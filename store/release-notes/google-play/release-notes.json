@@ -1,6 +1,6 @@
 [
   {
     "language": "en-US",
-    "text": "New in 1.4.1:\n• Nearby stops show where each route goes from there, like 10 to Downtown or Kelsey Drive\n• Live times show after midnight for buses still running from the night before"
+    "text": "New in 1.5.0:\n• A fresh look: new icon, brighter blue, cleaner greys\n• Two tabs, Board and Map. Plan a trip, service alerts and settings sit at the top of both\n• A Plan a trip card on the first screen, with your saved trips and their next bus\n• Live buses show a Follow button: tap the row to follow your bus on the map\n• Trip names read normally instead of in capitals\n• Late at night, a stop shows when its first bus comes\n• Times no longer freeze when the schedule reloads, plus other fixes"
   }
 ]
