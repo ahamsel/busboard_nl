@@ -4,9 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
 import '../../data/gtfs/gtfs_repository.dart';
-import '../../domain/location/locate_me.dart';
 import '../../domain/trip_planner/place.dart';
-import '../../state/home_sheet_provider.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../kit/kit.dart';
@@ -23,9 +21,7 @@ Place mapPlaceAt(GtfsRepository? repo, LatLng at) {
       : StopPlace(stopId: stop.stopId, name: stop.stopName);
 }
 
-/// The long-press sheet (spec §2.1): "Plan from here" starts a trip from the press and opens the search for where
-/// to (which keeps that start); "Plan to here" starts a fresh trip to it and opens its options, from the phone's
-/// position (Ruling 14).
+/// The long-press sheet (spec §2.1): "Plan from here" or "Plan to here" sets that end and opens the planner.
 Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) async {
   final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, at);
   final fromHere = await showGeneralDialog<bool>(
@@ -40,16 +36,8 @@ Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) as
   );
   if (fromHere == null || !context.mounted) return;
   final q = ref.read(planQueryProvider.notifier);
-  if (fromHere) {
-    q.startFrom(place);
-    await GoRouter.of(context).push('/search?keep=1');
-  } else {
-    q.startFresh(place);
-    ref.read(homeSheetProvider.notifier).open(const OptionsSheet());
-    final here = await locateMe();
-    // A start the rider chose while the fix was awaited wins.
-    if (here != null) q.fillStart(here);
-  }
+  fromHere ? q.setFrom(place) : q.setTo(place);
+  context.go('/plan');
 }
 
 class _MapPlanCard extends StatelessWidget {

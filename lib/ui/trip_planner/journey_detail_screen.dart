@@ -2,25 +2,26 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../data/gtfs/gtfs_repository.dart';
 import '../../data/realtime/timetrack_api.dart';
+import '../../data/trip_planner/saved_trip_store.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
 import '../../domain/arrival_alerts/alert_tracker.dart';
+import '../../domain/location/nearest_stop_service.dart';
 import '../../domain/trip_planner/journey.dart';
 import '../../domain/trip_planner/live_overlay.dart';
 import '../../domain/trip_planner/place.dart';
 import '../../state/arrival_alert_providers.dart';
 import '../../state/follow_providers.dart';
-import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../kit/kit.dart';
-import '../trip_planner/journey_card.dart';
-import 'options_sheet.dart';
+import 'journey_card.dart';
 
 /// The arrival the Board shows for [leg]'s trip at its board stop: the Board's own row (same service, same live
 /// vehicles), the call nearest the leg's departure. The Board counts from today's midnight, so a journey on last
@@ -49,68 +50,39 @@ ArrivalRow? boardArrivalFor(Journey j, RideLeg leg, GtfsRepository repo, TimeTra
   return best;
 }
 
+/// [p] as a saved trip keeps it (spec §3.5): a "My location" pin is where the phone was, so it is saved as "Near"
+/// the closest stop rather than as a My location that would no longer follow the phone.
+Place placeForSaving(Place p, GtfsRepository? repo) {
+  if (p is! PinPlace || p.label != myLocationLabel) return p;
+  final nearest = repo == null
+      ? null
+      : NearestStopService()
+          .findNearestStops(
+            latitude: p.lat,
+            longitude: p.lon,
+            allStops: repo.stopsById.values,
+            maxDistance: double.infinity,
+            maxResults: 1,
+          )
+          .firstOrNull;
+  return PinPlace(lat: p.lat, lon: p.lon, label: nearest == null ? 'Dropped pin' : 'Near ${nearest.stop.stopName}');
+}
+
 /// What the detail says when the live times break the trip (spec §3.4).
 const brokenByLiveTimes = 'This trip no longer works with live times. Go back for updated options.';
 
-/// One planned trip in the home sheet, leg by leg (spec 2026-10-12 §3.4): its steps under [JourneySheetContent.header].
-abstract final class JourneySheetContent {
-  static Widget header(Journey j) => _JourneyHeader(journey: j);
-  static Widget body(Journey j) => _JourneyBody(journey: j);
-}
-
-/// The journey as the live feed times it now: overlaid when the feed answered, as planned otherwise.
-Journey _timed(Journey planned, TimeTrackFetchResult? feed, DateTime now) =>
-    feed != null && feed.succeeded ? overlayLive(planned, feed, now) : planned;
-
-/// Back, "Your trip", and when it leaves and arrives with the live times.
-class _JourneyHeader extends ConsumerWidget {
-  const _JourneyHeader({required this.journey});
+/// One planned trip, leg by leg (spec §2.3): the timeline, Follow and the bell on the first ride, Show on map and
+/// Save trip. Each live refresh re-times the legs and checks the trip still works (spec §3.4).
+class JourneyDetailScreen extends ConsumerStatefulWidget {
+  const JourneyDetailScreen({super.key, required this.journey});
 
   final Journey journey;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final bb = context.bb;
-    final feed = ref.watch(plannerLiveFeedProvider).value;
-    final j = _timed(journey, feed, ref.read(plannerClockProvider)());
-    final use24h = BBTime.use24h(context);
-    String clock(int s) => BBTime.of(j.at(s), use24h: use24h);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(BBSpace.xs, 0, BBSpace.l, BBSpace.s),
-      child: Row(
-        children: [
-          BBIconButton(
-            icon: BBIcons.back,
-            semanticLabel: 'Back',
-            onPressed: () => ref.read(homeSheetProvider.notifier).back(),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Semantics(header: true, child: Text('Your trip', style: bb.text.headline)),
-                Text('Leave ${clock(j.departs)} · arrive ${clock(j.arrives)}', style: bb.text.caption),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  ConsumerState<JourneyDetailScreen> createState() => _JourneyDetailScreenState();
 }
 
-/// The timeline, Follow and the bell on the first ride, and Save trip. Each live refresh re-times the legs and checks
-/// the trip still works (spec §3.4). The journey is on the map while its steps show.
-class _JourneyBody extends ConsumerStatefulWidget {
-  const _JourneyBody({required this.journey});
-
-  final Journey journey;
-
-  @override
-  ConsumerState<_JourneyBody> createState() => _JourneyBodyState();
-}
-
-class _JourneyBodyState extends ConsumerState<_JourneyBody> {
+class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
   /// An add is in flight: a second tap must not fire another.
   bool _saving = false;
 
@@ -120,12 +92,7 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
     // As the Board does on each refresh: a newer live time for the first ride re-times its alert (iPhone).
     ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _retimeAlert(ref.read(plannerLiveFeedProvider).value);
-      // A card's tap has drawn it already; a journey opened any other way is drawn now.
-      if (!identical(ref.read(journeyOnMapProvider), widget.journey)) {
-        ref.read(journeyOnMapProvider.notifier).show(widget.journey);
-      }
+      if (mounted) _retimeAlert(ref.read(plannerLiveFeedProvider).value);
     });
   }
 
@@ -137,10 +104,28 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
     if (arrival != null) ref.read(arrivalAlertProvider.notifier).onBoardArrivals(ride.boardStopId, [arrival]);
   }
 
-  Future<void> _save(Place from, Place to) async {
+  Future<void> _save(Place draftFrom, Place draftTo) async {
     setState(() => _saving = true);
+    final repo = ref.read(gtfsRepositoryProvider).value;
+    final from = placeForSaving(draftFrom, repo);
+    final to = placeForSaving(draftTo, repo);
     try {
-      await saveTrip(context, ref, from, to);
+      final trips = await ref.read(savedTripsProvider.future);
+      if (!mounted) return;
+      final same = trips.any((t) => t.from == from && t.to == to);
+      if (trips.length >= maxSavedTrips && !same) {
+        BBToast.show(context, 'You can save up to $maxSavedTrips trips');
+        return;
+      }
+      final added = await ref.read(savedTripsProvider.notifier).add(SavedTrip(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            name: '${from.label} → ${to.label}',
+            from: from,
+            to: to,
+          ));
+      if (mounted) BBToast.show(context, added ? 'Saved' : 'Already saved');
+    } catch (_) {
+      if (mounted) BBToast.show(context, "Couldn't save the trip");
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -153,12 +138,11 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
     // Refreshes every 30 s: the legs' live times, the bell and Follow with it.
     final feed = ref.watch(plannerLiveFeedProvider).value;
     final draft = ref.watch(planQueryProvider);
-    // Kept alive under the steps, so back shows the options at once instead of planning again.
-    ref.listen(planResultsProvider, (_, _) {});
+    final saved = ref.watch(savedTripsProvider).value ?? const <SavedTrip>[];
     final now = ref.read(plannerClockProvider)();
     final use24h = BBTime.use24h(context);
     final live = feed != null && feed.succeeded;
-    final j = _timed(widget.journey, feed, now);
+    final j = live ? overlayLive(widget.journey, feed, now) : widget.journey;
     // Only what is still ahead counts: no ride that has left already (the rider may be on the bus, past a change
     // that was tight), and the start checked only while the first ride hasn't left. A rider already walking to the
     // stop set out at the planned start, so the start is broken only when the live times moved it earlier than
@@ -178,50 +162,88 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
 
     final from = draft.from;
     final to = draft.to;
+    final isSaved = from != null && to != null && saved.any((t) => t.from == from && t.to == to);
     final firstRideAt = j.legs.indexWhere((l) => l is RideLeg);
     final firstRide = widget.journey.legs.whereType<RideLeg>().firstOrNull;
     final arrival =
         firstRide == null || repo == null ? null : boardArrivalFor(widget.journey, firstRide, repo, feed, now);
     final onSave = from == null || to == null || _saving ? null : () => _save(from, to);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (broken)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(BBSpace.screen, 0, BBSpace.screen, BBSpace.s),
-            child: _BrokenWarning(),
+    return BBScaffold(
+      body: ListView(
+        children: [
+          BBTopBar(
+            title: 'Your trip',
+            subtitle: 'Leave ${clock(j.departs)} · arrive ${clock(j.arrives)}',
+            onBack: () => context.pop(),
           ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: BBSpace.screen),
-          child: BBCard(
-            padding: const EdgeInsets.all(BBSpace.l),
+          if (broken)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(BBSpace.screen, 0, BBSpace.screen, BBSpace.s),
+              child: _BrokenWarning(),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: BBSpace.screen),
+            child: BBCard(
+              padding: const EdgeInsets.all(BBSpace.l),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (i, leg) in j.legs.indexed)
+                    if (leg is RideLeg) ...[
+                      _RideRow(leg: leg, repo: repo, clock: clock),
+                      if (i == firstRideAt && arrival != null)
+                        _FirstRideActions(arrival: arrival, stopId: leg.boardStopId, stopName: _stopName(repo, leg.boardStopId)),
+                      const SizedBox(height: BBSpace.l),
+                    ] else if (leg is WalkLeg && leg.seconds > 0) ...[
+                      _WalkRow(leg: leg, repo: repo, clock: clock),
+                      const SizedBox(height: BBSpace.l),
+                    ],
+                  _TimelineRow(
+                    leading: Icon(BBIcons.stop, size: 22, color: bb.colors.brand),
+                    children: [Text('Arrive ${clock(j.arrives)}', style: bb.text.headline)],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.l, BBSpace.screen, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final (i, leg) in j.legs.indexed)
-                  if (leg is RideLeg) ...[
-                    _RideRow(leg: leg, repo: repo, clock: clock),
-                    if (i == firstRideAt && arrival != null)
-                      _FirstRideActions(arrival: arrival, stopId: leg.boardStopId, stopName: _stopName(repo, leg.boardStopId)),
-                    const SizedBox(height: BBSpace.l),
-                  ] else if (leg is WalkLeg && leg.seconds > 0) ...[
-                    _WalkRow(leg: leg, repo: repo, clock: clock),
-                    const SizedBox(height: BBSpace.l),
-                  ],
-                _TimelineRow(
-                  leading: Icon(BBIcons.stop, size: 22, color: bb.colors.brand),
-                  children: [Text('Arrive ${clock(j.arrives)}', style: bb.text.headline)],
+                BBButton(
+                  label: 'Show on map',
+                  icon: BBIcons.map,
+                  expand: true,
+                  wrap: true,
+                  onPressed: () {
+                    ref.read(journeyOnMapProvider.notifier).show(j);
+                    context.go('/map');
+                  },
+                ),
+                const SizedBox(height: BBSpace.s),
+                Semantics(
+                  button: true,
+                  enabled: onSave != null,
+                  label: isSaved ? 'Save trip, saved' : 'Save trip',
+                  onTap: onSave,
+                  excludeSemantics: true,
+                  child: BBButton(
+                    label: 'Save trip',
+                    icon: isSaved ? BBIcons.star : BBIcons.starOutline,
+                    kind: BBButtonKind.quiet,
+                    expand: true,
+                    wrap: true,
+                    onPressed: onSave,
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.l, BBSpace.screen, BBSpace.xxl),
-          child: SaveTripButton(from: from, to: to, onSave: onSave),
-        ),
-      ],
+          SizedBox(height: BBNavBar.reservedHeight(context) + BBSpace.l),
+        ],
+      ),
     );
   }
 }
@@ -374,9 +396,9 @@ class _FirstRideActions extends ConsumerWidget {
     );
   }
 
-  /// The follow counts to this trip's boarding stop, not the Board's saved stop. Its card takes the sheet.
+  /// The follow counts to this trip's boarding stop, not the Board's saved stop.
   void _follow(BuildContext context, WidgetRef ref, String vehicle) {
     ref.read(followProvider.notifier).follow(vehicle, stopId: stopId);
-    ref.read(homeSheetProvider.notifier).home();
+    context.go('/map');
   }
 }
