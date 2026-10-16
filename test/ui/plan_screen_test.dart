@@ -69,6 +69,20 @@ void main() {
     );
   });
 
+  testWidgets('the empty results name whichever end is missing: the destination first, else the start',
+      (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
+    expect(find.text("Choose where you're going"), findsOneWidget, reason: 'nothing chosen yet');
+    await _choose(tester, 'Choose a destination', 'C', 'Stop C (C)');
+    expect(find.text("Choose where you're starting"), findsOneWidget, reason: 'only the start is missing');
+    expect(find.text("Choose where you're going"), findsNothing);
+    _container(tester).read(planQueryProvider.notifier)
+      ..setTo(null)
+      ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'));
+    await tester.pumpAndSettle();
+    expect(find.text("Choose where you're going"), findsOneWidget, reason: 'only the destination is missing');
+  });
+
   testWidgets('the 30 s live refresh keeps the results up instead of flashing the loading dots', (tester) async {
     // A feed that takes 2 s to answer, as a phone network can.
     final slow = MockClient((_) => Future.delayed(const Duration(seconds: 2), () => http.Response('', 503)));
