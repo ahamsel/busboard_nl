@@ -240,7 +240,7 @@ class _BBSheetState extends State<BBSheet> {
           margin: const EdgeInsets.only(top: BBSpace.s, bottom: BBSpace.s),
           width: 34,
           height: 4,
-          decoration: BoxDecoration(color: bb.colors.line, borderRadius: BorderRadius.circular(2)),
+          decoration: BoxDecoration(color: bb.colors.handle, borderRadius: BorderRadius.circular(2)),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Colour roles for one brightness (spec §4.1, contrast-amended).
+/// Colour roles for one brightness (spec 2026-10-14 §2: neutral greys and the brightened Harbour blue).
+/// Only the brand, routes, live and status states carry colour; everything else is a neutral grey.
 /// Raw colour values live only here and in route_palette.dart.
 @immutable
 class BBColors {
@@ -10,6 +11,7 @@ class BBColors {
     required this.surfaceSunken,
     required this.skeleton,
     required this.line,
+    required this.handle,
     required this.ink,
     required this.muted,
     required this.brand,
@@ -34,6 +36,9 @@ class BBColors {
   /// stay visible on [surface] in dark mode.
   final Color skeleton;
   final Color line;
+
+  /// The sheet's grab handle: a control, so a neutral grey at 3:1 on the sheet (WCAG 1.4.11), unlike [line].
+  final Color handle;
   final Color ink;
   final Color muted;
   final Color brand;
@@ -50,17 +55,18 @@ class BBColors {
   final Color dangerInk;
 
   static const light = BBColors(
-    bg: Color(0xFFF7F2EA),
+    bg: Color(0xFFF4F5F7),
     surface: Color(0xFFFFFFFF),
-    surfaceSunken: Color(0xFFEFE7DA),
-    skeleton: Color(0xFFEFE7DA),
-    line: Color(0xFFECE4D8),
-    ink: Color(0xFF1C2A3A),
-    muted: Color(0xFF5A6674),
-    brand: Color(0xFF3C79AE),
+    surfaceSunken: Color(0xFFEEF0F2),
+    skeleton: Color(0xFFE6E8EB),
+    line: Color(0xFFE3E5E8),
+    handle: Color(0xFF8E939B),
+    ink: Color(0xFF16181C),
+    muted: Color(0xFF5F646C),
+    brand: Color(0xFF1272C9),
     onBrand: Color(0xFFFFFFFF),
-    brandInk: Color(0xFF2C5F8E),
-    brandSoft: Color(0xFFDCE8F4),
+    brandInk: Color(0xFF0D5DA6),
+    brandSoft: Color(0xFFE3EEFA),
     live: Color(0xFF2BA36B),
     liveInk: Color(0xFF1B7048),
     liveSoft: Color(0xFFDDF1E6),
@@ -72,17 +78,18 @@ class BBColors {
   );
 
   static const dark = BBColors(
-    bg: Color(0xFF0F1720),
-    surface: Color(0xFF18222E),
-    surfaceSunken: Color(0xFF121B25),
-    skeleton: Color(0xFF2C3A4A),
-    line: Color(0xFF243140),
-    ink: Color(0xFFF2EDE4),
-    muted: Color(0xFF8E9AA8),
-    brand: Color(0xFF6FA6DA),
-    onBrand: Color(0xFF0F1720),
-    brandInk: Color(0xFF8DBBE6),
-    brandSoft: Color(0xFF1D3348),
+    bg: Color(0xFF121316),
+    surface: Color(0xFF1F2024),
+    surfaceSunken: Color(0xFF18191C),
+    skeleton: Color(0xFF33353B),
+    line: Color(0xFF3A3D44),
+    handle: Color(0xFF6E727B),
+    ink: Color(0xFFF2F3F5),
+    muted: Color(0xFFA3A7AF),
+    brand: Color(0xFF5EA2F0),
+    onBrand: Color(0xFF08203A),
+    brandInk: Color(0xFF8CC0F7),
+    brandSoft: Color(0xFF16304A),
     live: Color(0xFF4CC38A),
     liveInk: Color(0xFF4CC38A),
     liveSoft: Color(0xFF16332A),
@@ -101,6 +108,7 @@ class BBColors {
       surfaceSunken: l(surfaceSunken, other.surfaceSunken),
       skeleton: l(skeleton, other.skeleton),
       line: l(line, other.line),
+      handle: l(handle, other.handle),
       ink: l(ink, other.ink),
       muted: l(muted, other.muted),
       brand: l(brand, other.brand),
@@ -242,14 +250,14 @@ class BBTokens extends ThemeExtension<BBTokens> {
   bool get isDark => brightness == Brightness.dark;
 
   /// Floating elements: nav bar, chips, sheets, dialogs, toasts. The one
-  /// shadow in light mode; a hairline border instead in dark mode.
+  /// shadow in light mode (neutral black, no tint); a hairline border instead in dark mode.
   BoxDecoration floating({double radius = BBRadius.card, BorderRadius? borderRadius}) {
     return BoxDecoration(
       color: colors.surface,
       borderRadius: borderRadius ?? BorderRadius.circular(radius),
       boxShadow: isDark
           ? null
-          : const [BoxShadow(color: Color(0x241C2A3A), blurRadius: 16, offset: Offset(0, 4))],
+          : const [BoxShadow(color: Color(0x24000000), blurRadius: 16, offset: Offset(0, 4))],
       border: isDark ? Border.all(color: colors.line) : null,
     );
   }
