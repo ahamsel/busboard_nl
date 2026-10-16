@@ -21,6 +21,7 @@ class BBTextField extends StatelessWidget {
     this.focusNode,
     this.textAlign = TextAlign.start,
     this.style,
+    this.semanticLabel,
   });
 
   final TextEditingController? controller;
@@ -37,10 +38,15 @@ class BBTextField extends StatelessWidget {
   final TextAlign textAlign;
   final TextStyle? style;
 
+  /// Names the field for screen readers, empty or not: the hint alone goes once text is typed, and the field is then
+  /// announced by its value alone. With it the hint is only drawn, so the name is read once.
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
     final textStyle = bb.text.body.merge(style);
+    final hintStyle = textStyle.copyWith(color: bb.colors.muted);
     final hasError = errorText != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,33 +71,51 @@ class BBTextField extends StatelessWidget {
                 // field also works on kit pages that (correctly) have none.
                 child: Material(
                   type: MaterialType.transparency,
-                  child: TextField(
-                    controller: controller,
-                    onChanged: onChanged,
-                    onSubmitted: onSubmitted,
-                    keyboardType: keyboardType,
-                    textInputAction: textInputAction,
-                    autofocus: autofocus,
-                    inputFormatters: inputFormatters,
-                    focusNode: focusNode,
-                    textAlign: textAlign,
-                    style: textStyle,
-                    cursorColor: bb.colors.brand,
-                    // Fully bare field: BBTextField draws its own container, so the
-                    // theme's filled/outlined InputDecorationTheme must not leak in.
-                    decoration: InputDecoration(
-                      isCollapsed: true,
-                      filled: false,
-                      contentPadding: EdgeInsets.zero,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      errorBorder: InputBorder.none,
-                      focusedErrorBorder: InputBorder.none,
-                      hintText: hint,
-                      hintMaxLines: 2,
-                      hintStyle: textStyle.copyWith(color: bb.colors.muted),
+                  child: Semantics(
+                    label: semanticLabel,
+                    child: TextField(
+                      controller: controller,
+                      onChanged: onChanged,
+                      onSubmitted: onSubmitted,
+                      keyboardType: keyboardType,
+                      textInputAction: textInputAction,
+                      autofocus: autofocus,
+                      inputFormatters: inputFormatters,
+                      focusNode: focusNode,
+                      textAlign: textAlign,
+                      style: textStyle,
+                      cursorColor: bb.colors.brand,
+                      // Fully bare field: BBTextField draws its own container, so the
+                      // theme's filled/outlined InputDecorationTheme must not leak in.
+                      decoration: InputDecoration(
+                        isCollapsed: true,
+                        filled: false,
+                        contentPadding: EdgeInsets.zero,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        errorBorder: InputBorder.none,
+                        focusedErrorBorder: InputBorder.none,
+                        // With a semanticLabel the hint is only drawn: the label already names the field, and a
+                        // hint exposed too would be read twice while the field is empty.
+                        hintText: semanticLabel == null ? hint : null,
+                        hint: semanticLabel != null && hint != null
+                            ? ExcludeSemantics(
+                                child: Text(
+                                  hint!,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: textAlign,
+                                  // The style the field gives a hintText (the theme's body text under the field's
+                                  // own), so the hint is drawn exactly as it is without a label.
+                                  style: Theme.of(context).textTheme.bodyLarge!.merge(textStyle).merge(hintStyle),
+                                ),
+                              )
+                            : null,
+                        hintMaxLines: 2,
+                        hintStyle: hintStyle,
+                      ),
                     ),
                   ),
                 ),

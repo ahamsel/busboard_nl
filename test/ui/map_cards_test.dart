@@ -1,6 +1,7 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
@@ -8,6 +9,7 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
 import 'package:busboard_nl/ui/map/my_stop_card.dart';
@@ -56,8 +58,11 @@ Future<void> _host(
   List<ArrivalRow> arrivals = const [],
   Map<String, Object> prefs = const {},
   Map<String, BusTrackingState> buses = const {},
+  List<ServiceAlert> alerts = const [],
   double textScale = 1,
   double width = 390,
+  GtfsRepository? repo,
+  DateTime? now,
 }) async {
   SharedPreferences.setMockInitialValues(prefs);
   final router = GoRouter(routes: [
@@ -76,9 +81,12 @@ Future<void> _host(
   addTearDown(tester.view.reset);
   await tester.pumpWidget(ProviderScope(
     overrides: [
-      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      gtfsRepositoryProvider.overrideWith((ref) async => repo ?? _repo()),
+      if (now != null) plannerClockProvider.overrideWithValue(() => now),
       stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
       busTrackingStreamProvider.overrideWith((ref) => Stream.value(buses)),
+      serviceUpdatesProvider.overrideWith((ref) => Stream.value(
+          ServiceUpdates(alerts: alerts, serviceStatus: null, fetchedAt: DateTime(2026, 10, 4), feedTimestamp: null))),
     ],
     child: MaterialApp.router(
       theme: BBTheme.light(),
@@ -114,7 +122,7 @@ void main() {
     expect(find.text('BOARD 1150'), findsOneWidget);
   });
 
-  testWidgets('stop card: Plan a trip from here starts a plan from this stop on the Plan tab', (tester) async {
+  testWidgets('stop card: Plan a trip from here starts a plan from this stop on the planner page', (tester) async {
     await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
     final open = tester.getTopLeft(find.text('Open board')).dy;
     expect(tester.getTopLeft(find.text('Plan a trip from here')).dy, greaterThan(open), reason: 'under Open board');
@@ -148,6 +156,102 @@ void main() {
         vehicleNumber: vehicle,
       );
 
+  /// MUN Centre on weekday service only, its first bus 06:30 and its last 17:00 (2026-10-16 is a Friday).
+  GtfsRepository weekdayRepo() {
+    final repo = _repo();
+    repo.calendarsById['wk'] = ServiceCalendar(
+      serviceId: 'wk',
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: DateTime(2026, 1, 1),
+      endDate: DateTime(2026, 12, 31),
+    );
+    repo.tripsById['wk-am'] =
+        const TripInfo(tripId: 'wk-am', routeId: 'r16', serviceId: 'wk', tripHeadsign: 'Downtown', directionId: 0);
+    repo.tripsById['wk-pm'] =
+        const TripInfo(tripId: 'wk-pm', routeId: 'r16', serviceId: 'wk', tripHeadsign: 'Downtown', directionId: 0);
+    for (final (trip, time) in [('wk-am', '06:30:00'), ('wk-pm', '17:00:00')]) {
+      repo.stopTimesByStopId['1150'] = [
+        ...?repo.stopTimesByStopId['1150'],
+        StopTimeRow(tripId: trip, arrivalTime: time, departureTime: time, stopId: '1150', stopSequence: 1),
+      ];
+    }
+    return repo;
+  }
+
+  group('with no bus due', () {
+    final fridayNight = DateTime(2026, 10, 16, 23, 0);
+    final thursdayNight = DateTime(2026, 10, 15, 23, 0);
+
+    testWidgets('stop card: at night it names the first bus', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          repo: weekdayRepo(),
+          now: thursdayNight);
+      expect(find.text('First bus 6:30 AM'), findsOneWidget);
+      expect(find.text('No buses due soon'), findsNothing);
+      expect(find.bySemanticsLabel('First bus 6:30 AM'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('stop card: over a weekend it names the weekday, in full for a screen reader', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          repo: weekdayRepo(),
+          now: fridayNight);
+      expect(find.text('First bus Mon 6:30 AM'), findsOneWidget);
+      expect(find.bySemanticsLabel('First bus Monday 6:30 AM'), findsOneWidget);
+      expect(find.bySemanticsLabel('First bus Mon 6:30 AM'), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('stop card: a gap in the day keeps "No buses due soon"', (tester) async {
+      // Midday Friday: the next bus (17:00) is not the day's first.
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          repo: weekdayRepo(),
+          now: DateTime(2026, 10, 16, 9, 0));
+      expect(find.text('No buses due soon'), findsOneWidget);
+    });
+
+    testWidgets('stop card: with no service in the schedule at all it keeps "No buses due soon"', (tester) async {
+      // The default repository has no stop times.
+      await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun), now: fridayNight);
+      expect(find.text('No buses due soon'), findsOneWidget);
+    });
+
+    testWidgets('your-stop card: at night it names the first bus', (tester) async {
+      await _host(tester,
+          header: MyStopCard.header(),
+          body: MyStopCard.body(),
+          prefs: {'selectedStopId': '1150'},
+          repo: weekdayRepo(),
+          now: fridayNight);
+      expect(find.text('First bus Mon 6:30 AM'), findsOneWidget);
+      expect(find.text('No buses due soon'), findsNothing);
+    });
+
+    testWidgets('a bus due keeps the rows and no first-bus line', (tester) async {
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          arrivals: [row(route: '21', live: true, vehicle: '2573')],
+          repo: weekdayRepo(),
+          now: fridayNight);
+      expect(find.textContaining('First bus'), findsNothing);
+    });
+  });
+
   testWidgets('stop card: tapping a live row follows that bus and closes the card', (tester) async {
     await _host(tester,
         header: const StopCardHeader(stop: _mun),
@@ -162,7 +266,22 @@ void main() {
     expect(find.text('BOARD 1150'), findsNothing, reason: 'the rider stays on the map');
   });
 
-  testWidgets('stop card: scheduled-only and vehicle-less rows are inert', (tester) async {
+  testWidgets('stop card: the Follow pill does what tapping the row does', (tester) async {
+    await _host(tester,
+        header: const StopCardHeader(stop: _mun),
+        body: const StopCardBody(stop: _mun),
+        arrivals: [row(route: '21', live: true, vehicle: '2573')]);
+    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
+    container.read(mapSelectionProvider.notifier).select(const StopSelection('1150'));
+    expect(find.textContaining('Follow 2573'), findsOneWidget);
+    await tester.tap(find.byKey(ArrivalRowTile.followKey));
+    await tester.pumpAndSettle();
+    expect(container.read(followProvider), const FollowTarget('2573'));
+    expect(container.read(mapSelectionProvider), isNull);
+    expect(find.text('BOARD 1150'), findsNothing, reason: 'the rider stays on the map');
+  });
+
+  testWidgets('stop card: scheduled and number-less rows follow nothing and say why', (tester) async {
     await _host(tester,
         header: const StopCardHeader(stop: _mun),
         body: const StopCardBody(stop: _mun),
@@ -172,10 +291,16 @@ void main() {
           row(route: '7', live: true, vehicle: ''),
         ]);
     final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
-    for (final route in ['5', '6', '7']) {
-      await tester.tap(find.bySemanticsLabel(RegExp('^Route $route ')));
-      await tester.pumpAndSettle();
-    }
+    expect(find.byKey(ArrivalRowTile.followKey), findsNothing);
+    await tester.tap(find.byType(ArrivalRowTile).at(0));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text(ArrivalRowTile.notLiveYet), findsOneWidget);
+    await tester.tap(find.byType(ArrivalRowTile).at(1));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text(ArrivalRowTile.noNumberYet), findsOneWidget);
+    expect(find.text(ArrivalRowTile.notLiveYet), findsNothing, reason: 'one toast at a time');
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
     expect(container.read(followProvider), isNull);
   });
 
@@ -196,7 +321,7 @@ void main() {
     );
     expect(
       find.semantics.byLabel('Route 5 Downtown, scheduled, 4 minutes'),
-      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: false, hasTapAction: false),
+      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: true, hasTapAction: true),
     );
     handle.dispose();
   });
@@ -207,6 +332,14 @@ void main() {
     expect(find.bySemanticsLabel('Route 10'), findsOneWidget);
     expect(find.text('to Downtown'), findsOneWidget);
     expect(find.text('Bus 2573 · 1 min late'), findsOneWidget);
+  });
+
+  testWidgets("bus card: the feed's all-caps destination reads in title case", (tester) async {
+    await _host(tester,
+        header: const BusCardHeader(vehicleId: '2573'),
+        body: const BusCardBody(vehicleId: '2573'),
+        buses: {'2573': _bus(headsign: 'AVALON MALL - MUN CENTRE - DOWNTOWN')});
+    expect(find.text('to Avalon Mall - MUN Centre - Downtown'), findsOneWidget);
   });
 
   testWidgets('bus card Follow button follows this bus and closes the selection', (tester) async {
@@ -269,5 +402,49 @@ void main() {
   testWidgets('your-stop card names your stop', (tester) async {
     await _host(tester, header: MyStopCard.header(), body: MyStopCard.body(), prefs: {'selectedStopId': '1150'});
     expect(find.text('MUN Centre'), findsOneWidget);
+  });
+
+  group('a quick double tap opens one page', () {
+    const detour = ServiceAlert(
+      sourceIds: {'a'},
+      header: 'Water Street Detour',
+      description: '',
+      cause: ServiceAlertCause.construction,
+      effect: ServiceAlertEffect.detour,
+      severity: ServiceAlertSeverity.warning,
+      activePeriods: [],
+      targets: [],
+    );
+
+    Future<void> doubleTap(WidgetTester tester, Finder target) async {
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      await tester.tap(target);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('stop card: Plan a trip from here', (tester) async {
+      await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
+      await doubleTap(tester, find.text('Plan a trip from here'));
+      expect(find.text('PLAN', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets("stop card: the stop's alert", (tester) async {
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun), alerts: const [detour]);
+      await doubleTap(tester, find.text('Water Street Detour'));
+      expect(find.text('ALERTS', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets("bus card: the route's alert", (tester) async {
+      await _host(tester,
+          header: const BusCardHeader(vehicleId: '2573'),
+          body: const BusCardBody(vehicleId: '2573'),
+          buses: {'2573': _bus()},
+          alerts: const [detour]);
+      await doubleTap(tester, find.text('Water Street Detour'));
+      expect(find.text('ALERTS', skipOffstage: false), findsOneWidget);
+    });
   });
 }

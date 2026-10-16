@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,7 +30,7 @@ Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) as
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Close',
-    barrierColor: const Color(0x331C2A3A),
+    barrierColor: const Color(0x33000000),
     transitionDuration: BBMotion.of(context, BBMotion.standard),
     pageBuilder: (_, _, _) => _MapPlanCard(title: place.label),
     transitionBuilder: (_, animation, _, child) =>
@@ -37,7 +39,10 @@ Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) as
   if (fromHere == null || !context.mounted) return;
   final q = ref.read(planQueryProvider.notifier);
   fromHere ? q.setFrom(place) : q.setTo(place);
-  context.go('/plan');
+  // A new plan: a trip left open no longer comes back from the Plan button.
+  ref.read(openJourneyProvider.notifier).close();
+  // The planner opens over the map; back returns to it.
+  unawaited(context.push('/plan'));
 }
 
 class _MapPlanCard extends StatelessWidget {

@@ -54,6 +54,21 @@ void main() {
   test('due now', () {
     expect(alertMessage(_a, source: AlertSource.live, minutesAway: 0, use24h: true).title, 'Route 10 is due now');
   });
+  test("the ongoing notification names the trip in title case, not the feed's capitals", () {
+    final caps = ArrivalAlert(
+      stopId: '1150',
+      stopName: 'MUN Centre',
+      routeShortName: '10',
+      headsign: 'AVALON MALL - MUN CENTRE - DOWNTOWN',
+      tripId: 't1',
+      scheduledAt: DateTime(2026, 10, 6, 8, 12),
+      expectedAt: DateTime(2026, 10, 6, 8, 12),
+      live: true,
+      leadMinutes: 5,
+      setAt: DateTime(2026, 10, 6, 8, 0),
+    );
+    expect(ongoingTitle(caps), 'Route 10 to Avalon Mall - MUN Centre - Downtown');
+  });
   test('ongoing notification', () {
     expect(ongoingTitle(_a), 'Route 10 to MUN-CNA-MI');
     expect(ongoingText(_step(AlertSource.live, 12)), 'About 12 min · live');

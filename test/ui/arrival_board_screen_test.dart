@@ -7,9 +7,11 @@ import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
+import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
+import 'package:busboard_nl/ui/shell/top_actions.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,10 +20,13 @@ import 'package:go_router/go_router.dart';
 import 'package:gtfs_realtime_bindings/gtfs_realtime_bindings.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../kit/kit_test_helpers.dart';
 import '../helpers/fake_alerts.dart';
+import '../helpers/planner_app.dart';
+import '../trip_planner/test_network.dart';
 
 final _failing = MockClient((_) async => http.Response('down', 500));
 final _emptyKiosk = MockClient((_) async => http.Response('{"arrivals":[]}', 200));
@@ -77,6 +82,16 @@ String _clock(int seconds) {
 }
 
 /// A hand-filled repository has no loader to flip the loaded flag.
+/// The stop-prediction feed, counting the stops asked for.
+class _CountingMobile extends MetrobusMobileApi {
+  final asked = <String>[];
+  @override
+  Future<MetrobusDeparturesResult> fetchDeparturesResult(String stopId, {bool forceRefresh = false}) async {
+    asked.add(stopId);
+    return MetrobusDeparturesResult.failure();
+  }
+}
+
 class _LoadedRepository extends GtfsRepository {
   @override
   bool get isLoaded => true;
@@ -132,12 +147,44 @@ ServiceAlert _alert(String header) => ServiceAlert(
       targets: const [ServiceAlertTarget(stopId: '1150')],
     );
 
+/// MUN Centre whose service starts [daysAhead] days from today, so nothing is due today: its first bus leaves at 06:30
+/// that day, and a later one at 17:00.
+GtfsRepository _repoStartingIn(int daysAhead) {
+  final today = DateTime.now();
+  final start = DateTime(today.year, today.month, today.day + daysAhead);
+  final repo = _LoadedRepository()
+    ..stopsById['1150'] = const StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 0, stopLon: 0)
+    ..routesById['20'] = const RouteInfo(routeId: '20', routeShortName: '20', routeLongName: '20')
+    ..calendarsById['later'] = ServiceCalendar(
+      serviceId: 'later',
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: true,
+      sunday: true,
+      startDate: start,
+      endDate: DateTime(2100),
+    );
+  for (final (trip, time) in [('am', '06:30:00'), ('pm', '17:00:00')]) {
+    repo.tripsById[trip] =
+        TripInfo(tripId: trip, routeId: '20', serviceId: 'later', tripHeadsign: 'Downtown', directionId: 0);
+    repo.stopTimesByStopId['1150'] = [
+      ...?repo.stopTimesByStopId['1150'],
+      StopTimeRow(tripId: trip, arrivalTime: time, departureTime: time, stopId: '1150', stopSequence: 1),
+    ];
+  }
+  return repo;
+}
+
 GtfsRepository _repo() =>
     GtfsRepository()..stopsById['1150'] = const StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 0, stopLon: 0);
 
-Future<void> _pump(
+Future<ProviderContainer> _pump(
   WidgetTester tester, {
   GtfsRepository? repo,
+  Future<GtfsRepository> Function(int load)? schedule,
   List<ServiceAlert> alerts = const [],
   http.Client? timeTrackClient,
   double textScale = 1.0,
@@ -155,9 +202,11 @@ Future<void> _pump(
     GoRoute(path: '/alerts', builder: (_, _) => const Text('ALERTS')),
     GoRoute(path: '/map', builder: (_, _) => const Text('MAP')),
   ]);
+  var loads = 0;
   final container = ProviderContainer(overrides: [
       ...fakeAlertOverrides,
       gtfsRepositoryProvider.overrideWith((ref) async {
+        if (schedule != null) return schedule(++loads);
         if (repo == null) throw Exception('not loaded');
         return repo;
       }),
@@ -186,6 +235,7 @@ Future<void> _pump(
     ),
   ));
   if (settle) await tester.pumpAndSettle();
+  return container;
 }
 
 Future<void> _unmount(WidgetTester tester) async {
@@ -246,10 +296,107 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('with service over, the empty board names the first bus', (tester) async {
+    await _pump(tester, repo: _repoStartingIn(1));
+    expect(find.text('No upcoming departures'), findsOneWidget);
+    expect(find.text('First bus 06:30'), findsOneWidget);
+    expect(find.textContaining('no scheduled departures'), findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets("the first bus follows the device's 12-hour setting", (tester) async {
+    await _pump(tester, repo: _repoStartingIn(1), use24h: false);
+    expect(find.text('First bus 6:30 AM'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('a first bus days away names its weekday, spoken in full', (tester) async {
+    final handle = tester.ensureSemantics();
+    final day = DateTime.now().add(const Duration(days: 3));
+    final short = DateFormat('EEE').format(day), full = DateFormat('EEEE').format(day);
+    await _pump(tester, repo: _repoStartingIn(3));
+    expect(find.text('First bus $short 06:30'), findsOneWidget);
+    expect(find.bySemanticsLabel('No upcoming departures. First bus $full 06:30'), findsOneWidget);
+    handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets('with no service in the next 7 days, the empty board keeps its own words', (tester) async {
+    await _pump(tester, repo: _repoStartingIn(9));
+    expect(find.text('No upcoming departures'), findsOneWidget);
+    expect(find.text('There are no scheduled departures\nfrom this stop right now.'), findsOneWidget);
+    expect(find.textContaining('First bus'), findsNothing);
+    await _unmount(tester);
+  });
+
   testWidgets('schedule not loaded shows the error state', (tester) async {
     await _pump(tester);
     expect(find.text('Schedule data not loaded'), findsOneWidget);
     await _unmount(tester);
+  });
+
+  testWidgets('while the schedule loads at a cold start the board is loading, not an error; then its rows come in',
+      (tester) async {
+    final handle = tester.ensureSemantics();
+    final schedule = Completer<GtfsRepository>();
+    await _pump(tester, schedule: (_) => schedule.future, settle: false);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Schedule data not loaded'), findsNothing);
+    expect(find.byType(BBSkeleton), findsOneWidget);
+    expect(find.text('Checking live data…'), findsOneWidget);
+    expect(find.textContaining('showing schedule'), findsNothing, reason: 'no provisional state announced');
+    schedule.complete(_repoWithDepartures());
+    await tester.pump(const Duration(minutes: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Schedule data not loaded'), findsNothing);
+    expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets('a schedule that fails its first load after a wait shows the error state', (tester) async {
+    final schedule = Completer<GtfsRepository>();
+    await _pump(tester, schedule: (_) => schedule.future, settle: false);
+    await tester.pump(const Duration(milliseconds: 100));
+    schedule.completeError(Exception('offline'));
+    await tester.pumpAndSettle();
+    expect(find.text('Schedule data not loaded'), findsOneWidget);
+    expect(find.byType(BBSkeleton), findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('a schedule that fails to reload keeps the departures on the old one, refresh after refresh',
+      (tester) async {
+    // Settings, Refresh schedule, while offline: the second load fails, and the old schedule is kept.
+    final first = _repoWithDepartures();
+    final container = await _pump(
+      tester,
+      schedule: (load) async => load > 1 ? throw Exception('offline') : first,
+    );
+    expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    expect(find.text('MUN Centre'), findsOneWidget);
+    container.invalidate(gtfsRepositoryProvider);
+    await tester.pump();
+    await tester.pump();
+    expect(container.read(gtfsRepositoryProvider).hasError, isTrue, reason: 'the reload failed');
+    await tester.pump(const Duration(minutes: 1)); // the next refreshes
+    await tester.pumpAndSettle();
+    expect(find.text('Schedule data not loaded'), findsNothing);
+    expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    expect(find.text('MUN Centre'), findsOneWidget, reason: 'the header keeps the stop name, not "Stop 1150"');
+    expect(find.text('Stop 1150'), findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('a quick double tap on the alert card, or on "more", opens one Alerts page', (tester) async {
+    for (final link in ['Water Street Detour', '1 more relevant alert']) {
+      await _pump(tester, repo: _repo(), alerts: [_alert('Water Street Detour'), _alert('Second')]);
+      await tester.tap(find.text(link));
+      await tester.tap(find.text(link));
+      await tester.pumpAndSettle();
+      expect(find.text('ALERTS', skipOffstage: false), findsOneWidget, reason: link);
+      await _unmount(tester);
+    }
   });
 
   testWidgets('relevant alerts: compact card + "more" link go to Alerts', (tester) async {
@@ -307,15 +454,27 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('a scheduled-only row is not tappable', (tester) async {
+  testWidgets('the Follow pill does what tapping the row does: follows that bus and opens the map', (tester) async {
+    await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
+    expect(find.textContaining('Follow 2573'), findsOneWidget);
+    await tester.tap(find.byKey(ArrivalRowTile.followKey));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(tester.element(find.text('MAP')));
+    expect(container.read(followProvider), const FollowTarget('2573'));
+    expect(find.text('MAP'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('a scheduled-only row follows nothing and says when it can be followed', (tester) async {
     await _pump(tester, repo: _repoWithDepartures(), timeTrackClient: _liveFeed2573);
     expect(find.text('Schedule Terminal'), findsOneWidget);
     await tester.tap(find.text('Schedule Terminal'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text(ArrivalRowTile.notLiveYet), findsOneWidget);
     expect(find.text('MAP'), findsNothing);
-    expect(find.text('Schedule Terminal'), findsOneWidget);
     final container = ProviderScope.containerOf(tester.element(find.text('Schedule Terminal')));
     expect(container.read(followProvider), isNull);
+    await tester.pump(const Duration(seconds: 4));
     await _unmount(tester);
   });
 
@@ -347,6 +506,73 @@ void main() {
       isSemantics(isLiveRegion: true, label: 'Live feed error · showing schedule'),
     );
     handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets('the Board stops polling behind the other tab, and refreshes once on coming back', (tester) async {
+    final mobile = _CountingMobile();
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: DateTime(testDay.year, testDay.month, testDay.day, 7, 50),
+      initial: '/board/A',
+      overrides: [metrobusMobileApiProvider.overrideWithValue(mobile)],
+    );
+    expect(find.byType(ArrivalBoardScreen), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+    expect(mobile.asked.length, greaterThan(1), reason: 'polls every 5 s while shown');
+    final bar = find.byType(BBNavBar);
+    await tester.tap(find.descendant(of: bar, matching: find.text('Map')));
+    await tester.pumpAndSettle();
+    final hidden = mobile.asked.length;
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 5));
+    }
+    expect(mobile.asked.length, hidden, reason: 'no polling behind another tab');
+    // Back from the background behind another tab: still no polling.
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pump(const Duration(seconds: 11));
+    expect(mobile.asked.length, hidden, reason: 'a return to the app does not wake the hidden Board');
+    await tester.tap(find.descendant(of: bar, matching: find.text('Board')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(mobile.asked.length, hidden + 1, reason: 'one refresh on coming back');
+    await tester.pump(const Duration(seconds: 6));
+    expect(mobile.asked.length, greaterThan(hidden + 1), reason: 'and polling again');
+    await _unmount(tester);
+  });
+
+  testWidgets('the Board stops polling behind a page opened over it (the service alerts), and refreshes on return',
+      (tester) async {
+    final mobile = _CountingMobile();
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: DateTime(testDay.year, testDay.month, testDay.day, 7, 50),
+      initial: '/board/A',
+      overrides: [metrobusMobileApiProvider.overrideWithValue(mobile)],
+    );
+    await tester.pump(const Duration(seconds: 6));
+    await tester.tap(find.byKey(TopActions.alertsKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertsScreen), findsOneWidget);
+    final hidden = mobile.asked.length;
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 5));
+    }
+    expect(mobile.asked.length, hidden, reason: 'no polling behind the page');
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await tester.pumpAndSettle();
+    expect(mobile.asked.length, greaterThan(hidden), reason: 'a refresh on coming back');
     await _unmount(tester);
   });
 }

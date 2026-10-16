@@ -31,6 +31,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show CircleLayerProperties, LatLng, LineLayerProperties, SymbolLayerProperties;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -69,6 +71,9 @@ final _tickerMode = ValueNotifier<bool>(true);
 /// Taps that reached the "map" (a tap on empty map is forwarded to onTap).
 var _mapTaps = 0;
 
+/// The My location button (its one-item control pill).
+final _myLocation = find.byType(BBControlPill);
+
 Widget _stubMap(MapViewConfig config) {
   _config = config;
   scheduleMicrotask(() => config.onReady(_surface, _surface));
@@ -78,7 +83,7 @@ Widget _stubMap(MapViewConfig config) {
       _mapTaps++;
       config.onTap(const LatLng(47.0, -52.0));
     },
-    child: const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF1F4)),
+    child: const ColoredBox(key: ValueKey('stub-map'), color: Color(0xFFEEF0F2)),
   );
 }
 
@@ -113,9 +118,15 @@ class _RecordingSurface extends FakeMapSurface {
     _held.clear();
   }
 
+  /// How many images were refused because [failImages] was set.
+  int rejectedImages = 0;
+
   @override
   Future<void> addImage(String name, Uint8List bytes) async {
-    if (failImages) throw StateError('addImage failed');
+    if (failImages) {
+      rejectedImages++;
+      throw StateError('addImage failed');
+    }
     return super.addImage(name, bytes);
   }
 
@@ -160,6 +171,16 @@ Future<void> _frames(WidgetTester tester, int n) async {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump();
   }
+}
+
+/// Frames until [done] holds, for at most 30 s of real time. Installs and image rasterising run in real time, outside
+/// the test clock, so a fixed sleep is a race that a loaded machine loses.
+Future<void> _framesUntil(WidgetTester tester, bool Function() done, String what) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while (!done() && DateTime.now().isBefore(deadline)) {
+    await _frames(tester, 1);
+  }
+  expect(done(), isTrue, reason: 'gave up waiting: $what');
 }
 
 Future<void> _pump(
@@ -298,11 +319,60 @@ void main() {
     expect((await tester.runAsync(styleLoaded))!, first);
   });
 
-  testWidgets('My location is a labelled control', (tester) async {
+  testWidgets('My location is a labelled 44 pt control', (tester) async {
     final semantics = tester.ensureSemantics();
     await _pump(tester);
     expect(find.bySemanticsLabel('My location'), findsOneWidget);
+    expect(tester.getSize(_myLocation), const Size(44, 44));
     semantics.dispose();
+  });
+
+  group('My location button', () {
+    const credit = '© OpenStreetMap · OpenFreeMap';
+
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('at 360 wide text x$scale sits bottom right on the credit line, just above the peeking card',
+          (tester) async {
+        await _pump(tester, size: const Size(360, 780), textScale: scale);
+        final button = tester.getRect(_myLocation);
+        final hit = tester.getRect(find.ancestor(of: find.text(credit), matching: find.byType(BBPressable)));
+        final card = tester.getRect(find.byKey(BBSheet.cardKey));
+        expect(button.right, closeTo(360 - BBSpace.s, 0.5), reason: 'at the right screen margin');
+        expect(button.bottom, closeTo(hit.bottom, 0.5), reason: "on the credit link's baseline");
+        expect(button.bottom, lessThanOrEqualTo(card.top), reason: 'above the peeking card');
+        expect(card.top - button.bottom, lessThanOrEqualTo(12), reason: 'just above it');
+        expect(button.top, greaterThan(tester.getRect(find.text('All routes')).bottom), reason: 'no longer up with the chips');
+        expect(hit.overlaps(button), isFalse, reason: 'clear of the credit link');
+        expect(tester.getRect(find.text(credit)).right, lessThanOrEqualTo(button.left));
+        // MapLibre's own info button (about 20 pt) sits right after the link.
+        expect(_config!.attributionMargin.x + 24, lessThanOrEqualTo(button.left), reason: "clear of the map's info button");
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('in landscape it keeps clear of the sensor housing, like the top controls', (tester) async {
+      tester.view.padding = const FakeViewPadding(left: 47, right: 47, bottom: 21);
+      tester.view.viewPadding = const FakeViewPadding(left: 47, right: 47, bottom: 21);
+      await _pump(tester, size: const Size(844, 390));
+      final button = tester.getRect(_myLocation);
+      expect(button.right, closeTo(844 - 47 - BBSpace.s, 0.5));
+      expect(button.bottom, lessThanOrEqualTo(tester.getRect(find.byKey(BBSheet.cardKey)).top));
+      expect(button.overlaps(tester.getRect(find.text('All routes'))), isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a sheet pulled up covers it', (tester) async {
+      await _pump(tester, size: const Size(390, 844));
+      expect(_myLocation.hitTestable(), findsOneWidget);
+      _config!.onTap(const LatLng(47.5701, -52.7300)); // a stop's card opens at half
+      for (var i = 0; i < 8; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Open board'), findsOneWidget);
+      expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, lessThan(tester.getRect(_myLocation).top));
+      expect(_myLocation, findsOneWidget);
+      expect(_myLocation.hitTestable(), findsNothing, reason: 'the sheet is in front of it');
+    });
   });
 
 
@@ -342,7 +412,7 @@ void main() {
 
     testWidgets('a tap beside the text, in the same band, reaches the map', (tester) async {
       await _pump(tester, size: const Size(390, 844));
-      final text = tester.getRect(find.text(credit)); // test fonts are wide: it ends at x=360
+      final text = tester.getRect(find.text(credit)); // test fonts are wide: it stops short of My location
       await tester.tapAt(Offset(text.right + 16, text.center.dy));
       await tester.pump(const Duration(milliseconds: 400));
       expect(_mapTaps, 1);
@@ -403,7 +473,7 @@ void main() {
       final surface = _SequencedLocationSurface([null, const LatLng(47.55, -52.70)]);
       _surface = surface;
       await _pump(tester);
-      await tester.tap(find.byType(BBControlPill));
+      await tester.tap(_myLocation);
       for (var i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 300));
       }
@@ -417,7 +487,7 @@ void main() {
       final surface = _SequencedLocationSurface([null, null, null, null]);
       _surface = surface;
       await _pump(tester);
-      await tester.tap(find.byType(BBControlPill));
+      await tester.tap(_myLocation);
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 300));
       }
@@ -523,21 +593,26 @@ void main() {
     testWidgets('a failed style reload leaves the stale layers undrawn', (tester) async {
       final printed = debugPrint;
       debugPrint = (message, {wrapWidth}) {}; // the expected install failure is logged
-      final old = _RecordingSurface();
-      _surface = old;
-      await _pump(tester, buses: {'2573': _bus()});
-      await tester.runAsync(() => _styleLoaded(old));
-      await _frames(tester, 3);
-      expect(old.busSets, isNotEmpty, reason: 'the first install draws buses');
+      try {
+        // A slow device: every layer call takes real time, so an install outlasts any fixed sleep. The test waits on
+        // what it needs to have happened instead of on the clock.
+        final old = _RecordingSurface()..layerDelay = const Duration(milliseconds: 200);
+        _surface = old;
+        await _pump(tester, buses: {'2573': _bus()});
+        _config!.onStyleLoaded();
+        await _framesUntil(tester, () => old.busSets.isNotEmpty, 'the first install draws buses');
 
-      final broken = _RecordingSurface()..failImages = true;
-      _config!.onReady(broken, broken);
-      await tester.runAsync(() => _styleLoaded(broken));
-      old.busSets.clear();
-      await _frames(tester, 4);
-      expect(old.busSets, isEmpty, reason: 'nothing may draw on the surface the old style left behind');
-      expect(broken.busSets, isEmpty);
-      debugPrint = printed;
+        final broken = _RecordingSurface()..failImages = true;
+        _config!.onReady(broken, broken);
+        _config!.onStyleLoaded();
+        await _framesUntil(tester, () => broken.rejectedImages > 0, 'the reloaded style\'s install fails');
+        old.busSets.clear();
+        await _frames(tester, 4);
+        expect(old.busSets, isEmpty, reason: 'nothing may draw on the surface the old style left behind');
+        expect(broken.busSets, isEmpty);
+      } finally {
+        debugPrint = printed;
+      }
     });
 
     testWidgets('draws one bus update at a time, with the bus, and honours the route filter', (tester) async {
@@ -662,8 +737,11 @@ void main() {
       double textScale = 1,
       List<ArrivalRow> arrivals = const [],
       Map<String, Object> prefs = const {'selectedStopId': 's2'},
+      bool broadcast = false,
     }) async {
-      feed = StreamController<Map<String, BusTrackingState>>();
+      feed = broadcast
+          ? StreamController<Map<String, BusTrackingState>>.broadcast()
+          : StreamController<Map<String, BusTrackingState>>();
       addTearDown(feed.close);
       surface = surfaceOverride ?? _RecordingSurface();
       _surface = surface;
@@ -760,6 +838,25 @@ void main() {
       expect(surface.fits, hasLength(2), reason: 'the camera moves at once on resume');
     });
 
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('at 360 wide text x$scale Back to bus and My location do not overlap', (tester) async {
+        await pumpFollow(tester, size: const Size(360, 780), textScale: scale);
+        await startFollowing(tester);
+        // At 2x the peeking card is tall: pan on the map between the chips and the card.
+        final mapBand = (tester.getRect(find.text('All routes')).bottom + tester.getRect(find.byKey(BBSheet.cardKey)).top) / 2;
+        await tester.dragFrom(Offset(180, mapBand), const Offset(0, -30));
+        await tester.pump(const Duration(milliseconds: 100));
+        final chip =tester.getRect(find.ancestor(of: find.text('Back to bus 2573'), matching: find.byType(BBChip)));
+        final button = tester.getRect(_myLocation);
+        final hit = tester.getRect(find.ancestor(of: find.textContaining('OpenStreetMap'), matching: find.byType(BBPressable)));
+        expect(chip.overlaps(button), isFalse, reason: 'Back to bus is one row above');
+        expect(chip.bottom, lessThanOrEqualTo(button.top));
+        expect(hit.overlaps(button), isFalse);
+        expect(_myLocation.hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
     testWidgets('a plain tap on the map does not pause', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
@@ -800,6 +897,8 @@ void main() {
       final screenHeight = tester.getBottomLeft(find.byType(MapScreen)).dy;
       final creditTop = tester.getTopLeft(find.textContaining('OpenStreetMap')).dy;
       expect(padding.bottom, greaterThanOrEqualTo(screenHeight - creditTop + 16), reason: 'above the credit and the peeking sheet');
+      final buttonTop = tester.getTopLeft(_myLocation).dy;
+      expect(padding.bottom, greaterThanOrEqualTo(screenHeight - buttonTop + 16), reason: 'above the My location button');
     });
 
     testWidgets('while following, the route is drawn as a driven and an ahead part', (tester) async {
@@ -952,6 +1051,20 @@ void main() {
       expect(await sheetTop(tester), peek);
     });
 
+    testWidgets('with the sheet pulled up, Back to bus resumes the follow and brings the sheet to peek', (tester) async {
+      await pumpFollow(tester);
+      await startFollowing(tester);
+      final peek = await sheetTop(tester);
+      await pan(tester);
+      await expandSheet(tester);
+      expect(await sheetTop(tester), lessThan(peek - 100));
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+      await tester.tap(find.text('Back to bus 2573'));
+      await settle(tester);
+      expect(await sheetTop(tester), peek);
+      expect(find.text('Back to bus 2573'), findsNothing);
+    });
+
     testWidgets('the followed bus is still drawn when the route filter excludes its route', (tester) async {
       await pumpFollow(tester);
       await startFollowing(tester);
@@ -1037,6 +1150,37 @@ void main() {
 
         await lockFor(tester, const Duration(minutes: 6), (d) => skew = d);
         expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the pre-lock fix is not judged');
+        expect(find.byKey(BBToast.cardKey), findsNothing);
+        expect(find.text('Following bus 2573'), findsOneWidget);
+
+        feed.add({'2573': followed(gps: now())});
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        feed.add(const {});
+        await _frames(tester, 3);
+        expect(find.text('Lost contact with bus 2573'), findsOneWidget);
+        expect(containerOf(tester).read(followProvider), isNull);
+        await tester.pump(const Duration(seconds: 5));
+      });
+
+      testWidgets('6 min on another tab: the follow waits for a fresh poll on coming back, then endings work again',
+          (tester) async {
+        var skew = Duration.zero;
+        DateTime now() => DateTime.now().add(skew);
+        // A broadcast feed: coming back re-subscribes (the poll is restarted at once), as the real one does.
+        await pumpFollow(tester, broadcast: true, overrides: [mapClockProvider.overrideWithValue(now)]);
+        await startFollowing(tester);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        // The Map goes behind another tab, as the shell does: its tickers off, its feed closed.
+        _tickerMode.value = false;
+        await _frames(tester, 3);
+        skew = const Duration(minutes: 6);
+        _tickerMode.value = true;
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the fix from before is not judged');
         expect(find.byKey(BBToast.cardKey), findsNothing);
         expect(find.text('Following bus 2573'), findsOneWidget);
 
@@ -1257,13 +1401,40 @@ void main() {
     setUpAll(loadAppFonts);
     final eight = DateTime(testDay.year, testDay.month, testDay.day, 8, 1);
     ProviderContainer container(WidgetTester tester) =>
-        ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
-    String location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+        ProviderScope.containerOf(tester.element(find.byType(BBNavBar, skipOffstage: false)));
+    String location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).state.uri.toString();
     // The real map tab started its own refresh timers; let them run out after it goes.
     Future<void> unmount(WidgetTester tester) async {
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(minutes: 1));
     }
+
+    testWidgets('the live vehicle feed is not polled behind the other tab, and polls at once on coming back',
+        (tester) async {
+      var fetches = 0;
+      final live = MockClient((_) async {
+        fetches++;
+        return http.Response('', 503);
+      });
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', liveClient: live);
+      await tester.pump(const Duration(seconds: 6));
+      expect(fetches, greaterThan(0), reason: 'polled while the Map shows');
+      final bar = find.byType(BBNavBar);
+      await tester.tap(find.descendant(of: bar, matching: find.text('Board')));
+      await tester.pumpAndSettle();
+      // The feed is paused at its next update: a poll under way as the tab goes may still finish.
+      await tester.pump(const Duration(seconds: 6));
+      final hidden = fetches;
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(seconds: 5));
+      }
+      expect(fetches, hidden, reason: 'no polling behind another tab');
+      await tester.tap(find.descendant(of: bar, matching: find.text('Map')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fetches, greaterThan(hidden), reason: 'at once on coming back, not after the refresh interval');
+      await unmount(tester);
+    });
 
     testWidgets('a long-press on a stop opens a sheet named for it; Plan to here sets the destination', (tester) async {
       final map = StubMap();
@@ -1276,7 +1447,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(container(tester).read(planQueryProvider).to, StopPlace(stopId: 'C', name: 'Stop C'));
       expect(find.text('Plan a trip'), findsOneWidget);
-      expect(location(tester), '/plan');
+      // The planner opens over the map, and back returns to it.
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byType(MapScreen), findsOneWidget);
+      expect(location(tester), '/map');
       await unmount(tester);
     });
 
@@ -1311,10 +1486,11 @@ void main() {
       map.tap(47.5600, -52.7500);
       await tester.pumpAndSettle();
       expect(container(tester).read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
-      expect(location(tester), '/plan');
-      // Back on the map later, the pick is over.
-      await tester.tap(find.descendant(of: find.byType(BBNavBar), matching: find.text('Map')));
+      expect(find.text('Plan a trip'), findsOneWidget);
+      // Back on the map, the pick is over.
+      expect(await tester.binding.handlePopRoute(), isTrue);
       await tester.pumpAndSettle();
+      expect(find.byType(MapScreen), findsOneWidget);
       expect(find.text('Tap the map to choose your starting point'), findsNothing);
       await unmount(tester);
     });
@@ -1325,7 +1501,7 @@ void main() {
       expect(find.text('Tap the map to choose your destination'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(location(tester), '/plan');
+      expect(find.text('Plan a trip'), findsOneWidget);
       expect(container(tester).read(planQueryProvider).to, isNull);
       await unmount(tester);
     });
@@ -1373,7 +1549,7 @@ void main() {
       });
     }
 
-    testWidgets('a new destination picked on the map never shows the old results on the Plan tab', (tester) async {
+    testWidgets('a new destination picked on the map never shows the old results on the plan', (tester) async {
       final map = StubMap();
       await pumpPlannerApp(tester, net: TestNetwork(), now: eight, mapView: map.build);
       container(tester).read(planQueryProvider.notifier)
@@ -1399,7 +1575,7 @@ void main() {
       await tester.pump();
       onlyNewResults();
       await tester.pumpAndSettle();
-      expect(location(tester), '/plan');
+      expect(find.text('Plan a trip'), findsOneWidget);
       expect(find.byType(JourneyCard), findsWidgets);
       onlyNewResults();
       await unmount(tester);

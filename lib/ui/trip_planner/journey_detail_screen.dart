@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -86,14 +87,35 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
   /// An add is in flight: a second tap must not fire another.
   bool _saving = false;
 
+  /// The live feed, for re-timing the alert. Paused while the steps are hidden (another page over them): unlike a watch, a manual listen is
+  /// not paused with the tickers, and it would keep the feed refreshing every 30 s behind the other tabs.
+  late final ProviderSubscription<TimeTrackFetchResult?> _feedSub;
+  bool _feedPaused = false;
+
   @override
   void initState() {
     super.initState();
     // As the Board does on each refresh: a newer live time for the first ride re-times its alert (iPhone).
-    ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
+    _feedSub = ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _retimeAlert(ref.read(plannerLiveFeedProvider).value);
+      if (!mounted) return;
+      _retimeAlert(ref.read(plannerLiveFeedProvider).value);
+      // Kept when the rider leaves for a tab without going back (Show on map, Follow bus, a notification).
+      ref.read(openJourneyProvider.notifier).open(widget.journey);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final paused = !TickerMode.valuesOf(context).enabled;
+    if (paused == _feedPaused) return;
+    _feedPaused = paused;
+    if (paused) {
+      _feedSub.pause();
+    } else {
+      _feedSub.resume();
+    }
   }
 
   void _retimeAlert(TimeTrackFetchResult? feed) {
@@ -169,7 +191,15 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
         firstRide == null || repo == null ? null : boardArrivalFor(widget.journey, firstRide, repo, feed, now);
     final onSave = from == null || to == null || _saving ? null : () => _save(from, to);
 
-    return BBScaffold(
+    // Back from the steps closes the trip: the Plan button then opens the planner alone. The rider's back (the
+    // button, the system back, the edge swipe) pops between frames; Show on map, Follow bus or a notification (a `go`)
+    // removes the page while the navigator rebuilds, and leaves the trip open.
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop || SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) return;
+        ref.read(openJourneyProvider.notifier).close(widget.journey);
+      },
+      child: BBScaffold(
       body: ListView(
         children: [
           BBTopBar(
@@ -241,8 +271,9 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
               ],
             ),
           ),
-          SizedBox(height: BBNavBar.reservedHeight(context) + BBSpace.l),
+          SizedBox(height: MediaQuery.paddingOf(context).bottom + BBSpace.l),
         ],
+      ),
       ),
     );
   }

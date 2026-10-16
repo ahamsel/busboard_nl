@@ -10,15 +10,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STORE = os.path.dirname(HERE)
 CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-# Order: the strongest feature first. Eight slides, Google Play's limit for phone screenshots.
+# Order: the Board and the Map first (1.5.0's two tabs), then the features riders use most.
+# Eight slides, Google Play's limit for phone screenshots.
 SLIDES = [
-    ('01-plan', '07-plan-a-trip', 'blue', 'Plan a trip,<br>any minute', 'Leave now, leave by or arrive by,<br>with live bus times'),
-    ('02-follow', '03-follow-a-bus', 'blue', 'Follow your bus<br>to your stop', 'See the stops left, the minutes away,<br>and when it arrives'),
-    ('03-arrival-alert', '09-arrival-alert', 'blue', 'Know when<br>to head out', 'Get a heads-up when your bus is<br>3, 5 or 10 minutes away'),
-    ('04-arrivals', '01-mun-centre-1150', 'blue', 'Live arrivals<br>at your stop', 'Metrobus predictions next to the schedule,<br>early or late at a glance'),
-    ('05-trip-detail', '08-trip-detail', 'blue', 'Save the trips<br>you take often', 'Your next buses, one tap away,<br>worked out on your phone'),
-    ('06-map', '02-live-map', 'blue', 'Every bus,<br>live on the map', 'Route colours and smooth movement<br>between position updates'),
-    ('07-nearby', '05-nearby-stops', 'blue', 'Stops near you,<br>in a tap', 'See where each route goes,<br>or enter any stop number'),
+    ('01-arrivals', '01-mun-centre-1150', 'blue', 'Live arrivals<br>at your stop', 'Metrobus predictions next to the schedule,<br>and Follow on every live bus'),
+    ('02-map', '02-live-map', 'blue', 'Every bus,<br>live on the map', 'Route colours and smooth movement<br>between position updates'),
+    ('03-follow', '03-follow-a-bus', 'blue', 'Follow your bus<br>to your stop', 'See the stops left, the minutes away,<br>and when it arrives'),
+    ('04-plan', '07-plan-a-trip', 'blue', 'Plan a trip,<br>any minute', 'Leave now, leave by or arrive by,<br>with live bus times'),
+    ('05-arrival-alert', '09-arrival-alert', 'blue', 'Know when<br>to head out', 'Get a heads-up when your bus is<br>3, 5 or 10 minutes away'),
+    ('06-trip-detail', '08-trip-detail', 'blue', 'Save the trips<br>you take often', 'Your next buses, one tap away,<br>worked out on your phone'),
+    ('07-nearby', '05-nearby-stops', 'blue', 'Stops near you,<br>in a tap', 'Your saved trips up top, and where<br>each nearby route goes'),
     ('08-service-alerts', '04-service-alerts', 'blue', 'Detours and alerts<br>for your routes', 'Official Metrobus service alerts,<br>matched to your stop'),
 ]
 

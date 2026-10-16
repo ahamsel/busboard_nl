@@ -214,6 +214,18 @@ final timetrackApiProvider = Provider<TimeTrackApi>((ref) {
   return api;
 });
 
+/// The live feed the map polled last, and when: the iPhone alert re-timer reads it instead of fetching the feed a
+/// second time while the Map tab shows.
+final recentLiveFeedProvider =
+    NotifierProvider<RecentLiveFeed, ({DateTime at, TimeTrackFetchResult result})?>(RecentLiveFeed.new);
+
+class RecentLiveFeed extends Notifier<({DateTime at, TimeTrackFetchResult result})?> {
+  @override
+  ({DateTime at, TimeTrackFetchResult result})? build() => null;
+
+  void record(DateTime at, TimeTrackFetchResult result) => state = (at: at, result: result);
+}
+
 final timetrackVehiclesProvider = FutureProvider<List<TimeTrackVehicle>>((
   ref,
 ) async {
@@ -232,8 +244,9 @@ final nearestStopServiceProvider = Provider<NearestStopService>((ref) {
 final nearestStopsProvider = FutureProvider.autoDispose<List<NearbyStop>>((
   ref,
 ) async {
-  final repoAsync = ref.watch(gtfsRepositoryProvider);
-  final repo = repoAsync.asData?.value;
+  // The schedule loaded once is kept when a reload fails (Refresh schedule, offline), and only a new one asks again:
+  // its loading and failed retries in between do not.
+  final repo = ref.watch(gtfsRepositoryProvider.select((s) => s.value));
   if (repo == null) return [];
 
   final service = ref.read(nearestStopServiceProvider);
@@ -303,6 +316,7 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
       final fetchedAt = DateTime.now();
       if (result.succeeded) {
         store.ingest(result.vehicles, fetchedAt);
+        ref.read(recentLiveFeedProvider.notifier).record(fetchedAt, result);
       } else if (kDebugMode) {
         debugPrint('[Map] Live-data poll failed: ${result.error}');
       }
@@ -322,8 +336,7 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
 
 // ─── Stop Info helper ──────────────────────────────────────
 
+/// The stop from the schedule loaded once, also after a reload fails (the Board header keeps its name).
 final stopInfoProvider = Provider.family<StopInfo?, String>((ref, stopId) {
-  final repoAsync = ref.watch(gtfsRepositoryProvider);
-  final repo = repoAsync.asData?.value;
-  return repo?.stopsById[stopId];
+  return ref.watch(gtfsRepositoryProvider.select((s) => s.value?.stopsById[stopId]));
 });

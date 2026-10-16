@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/location/nearest_stop_service.dart';
+import '../../routing/push_once.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
 
@@ -83,13 +83,14 @@ class _NearbyStopTile extends ConsumerWidget {
     final bb = context.bb;
     final stop = nearby.stop;
     final routes =
-        ref.watch(gtfsRepositoryProvider).asData?.value.routeDirectionsForStop(stop.stopId) ?? const <RouteDirections>[];
+        ref.watch(gtfsRepositoryProvider).value?.routeDirectionsForStop(stop.stopId) ?? const <RouteDirections>[];
     final routesText = routes.isEmpty ? '' : ', routes ${routes.map(_spokenDirections).join(', ')}';
-    return BBPressable(
+    // Once for a quick double tap: two taps before the Board shows would push two.
+    return PushOnce(builder: (context, push) => BBPressable(
       semanticLabel: '${stop.stopName}, stop ${stop.stopId}, ${nearby.distanceDisplay} away$routesText',
       onTap: () {
         ref.read(settingsProvider.notifier).setSelectedStop(stop.stopId);
-        context.push('/board/${stop.stopId}');
+        push('/board/${stop.stopId}');
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: BBSpace.m),
@@ -111,7 +112,7 @@ class _NearbyStopTile extends ConsumerWidget {
           Icon(BBIcons.chevronRight, color: bb.colors.muted),
         ]),
       ),
-    );
+    ));
   }
 }
 

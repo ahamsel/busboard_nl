@@ -1,8 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../data/gtfs/headsign.dart';
 import '../../domain/map/bus_tracking_state.dart';
+import '../../routing/push_once.dart';
 import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
@@ -43,9 +44,9 @@ class BusCardHeader extends ConsumerWidget {
     }
     // The live feed carries no headsign: take the destination from the trip.
     final tripId = bus.currentTripId;
-    final headsign = bus.headsign.isNotEmpty
+    final headsign = readableHeadsign(bus.headsign.isNotEmpty
         ? bus.headsign
-        : (tripId == null ? '' : ref.watch(gtfsRepositoryProvider).value?.tripsById[tripId]?.tripHeadsign ?? '');
+        : (tripId == null ? '' : ref.watch(gtfsRepositoryProvider).value?.tripsById[tripId]?.tripHeadsign ?? ''));
     final delay = delayText(bus.schedDiffMins);
     final (pill, tone) = switch (bus.status) {
       BusStatus.active => ('Live', BBPillTone.live),
@@ -113,7 +114,11 @@ class _BusCardBodyState extends ConsumerState<BusCardBody> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (alerts.isNotEmpty) ...[
-            ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => context.go('/alerts')),
+            // Once for a quick double tap.
+            PushOnce(
+              builder: (context, push) =>
+                  ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => push('/alerts')),
+            ),
             const SizedBox(height: BBSpace.m),
           ],
           BBButton(

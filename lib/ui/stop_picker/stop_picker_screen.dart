@@ -1,10 +1,12 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../routing/push_once.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
+import '../shell/top_actions.dart';
 import 'near_me_list.dart';
+import 'plan_trip_card.dart';
 import 'stop_id_entry.dart';
 
 class StopPickerScreen extends ConsumerWidget {
@@ -23,24 +25,40 @@ class StopPickerScreen extends ConsumerWidget {
         child: CustomScrollView(
           slivers: [
             SliverToBoxAdapter(
-              child: BBTopBar(
-                title: 'Choose a stop',
-                subtitle: "Metrobus · St. John's",
-                large: true,
-                actions: [
-                  BBIconButton(icon: BBIcons.settings, semanticLabel: 'Settings', onPressed: () => context.push('/settings')),
-                ],
-              ),
+              child: LayoutBuilder(builder: (context, box) {
+                const title = 'Choose a stop';
+                const subtitle = "Metrobus · St. John's";
+                // The title beside Plan, Alerts and Settings (BBTopBar's xs padding and m gap), unless large text on
+                // a small phone would break its words: then the buttons take a row of their own above it.
+                final room = box.maxWidth - 2 * BBSpace.xs - BBSpace.m - TopActions.headerWidth;
+                if (TopActions.fits(context, title, bb.text.display, room, maxLines: 2)) {
+                  return const BBTopBar(title: title, subtitle: subtitle, large: true, actions: [TopActions()]);
+                }
+                return const Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(BBSpace.xs, BBSpace.s, BBSpace.xs, 0),
+                      child: Align(alignment: Alignment.centerRight, child: TopActions()),
+                    ),
+                    BBTopBar(title: title, subtitle: subtitle, large: true),
+                  ],
+                );
+              }),
             ),
+            // A reload that fails (Refresh schedule, offline) keeps the schedule loaded once: Settings says so.
             ...gtfsAsync.when(
+              skipError: true,
               data: (_) => [
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: BBSpace.screen),
                   sliver: SliverList.list(children: [
                     if (settings.selectedStopId != null) ...[
                       _LastStopCard(stopId: settings.selectedStopId!),
-                      const SizedBox(height: BBSpace.xl),
+                      const SizedBox(height: BBSpace.m),
                     ],
+                    const PlanTripCard(),
+                    const SizedBox(height: BBSpace.xl),
                     const StopIdEntry(),
                     const SizedBox(height: BBSpace.xl),
                     Row(children: [
@@ -104,8 +122,9 @@ class _LastStopCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bb = context.bb;
     final name = ref.watch(stopInfoProvider(stopId))?.stopName ?? 'Stop $stopId';
-    return BBCard(
-      onTap: () => context.push('/board/$stopId'),
+    // Once for a quick double tap: two taps before the Board shows would push two.
+    return PushOnce(builder: (context, push) => BBCard(
+      onTap: () => push('/board/$stopId'),
       semanticLabel: 'Last stop, $name, stop $stopId',
       child: Row(children: [
         const BBIconTile(icon: BBIcons.history, tone: BBPillTone.live),
@@ -119,6 +138,6 @@ class _LastStopCard extends ConsumerWidget {
         Text('#$stopId', style: bb.text.label.copyWith(color: bb.colors.brandInk, fontSize: 15)),
         Icon(BBIcons.chevronRight, color: bb.colors.muted),
       ]),
-    );
+    ));
   }
 }

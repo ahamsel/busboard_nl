@@ -8,12 +8,18 @@ import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
 import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
+import 'package:busboard_nl/routing/notification_route.dart';
 import 'package:busboard_nl/state/arrival_alert_providers.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/journey_on_map_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/alerts/alerts_screen.dart';
+import 'package:busboard_nl/ui/board/arrival_board_screen.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_screen.dart';
+import 'package:busboard_nl/ui/map/map_view.dart';
+import 'package:busboard_nl/ui/shell/app_shell.dart';
+import 'package:busboard_nl/ui/shell/top_actions.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_detail_screen.dart';
 import 'package:flutter/rendering.dart';
@@ -22,6 +28,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import '../helpers/feed_fixtures.dart';
 import '../helpers/planner_app.dart';
@@ -31,9 +39,9 @@ import '../trip_planner/test_network.dart';
 
 DateTime _at(int h, int m) => DateTime(testDay.year, testDay.month, testDay.day, h, m);
 
-ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
+ProviderContainer _container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(BBNavBar, skipOffstage: false)));
 
-String _location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+String _location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).state.uri.toString();
 
 Finder _badge(String route) => find.byWidgetPredicate((w) => w is RouteBadge && w.label == route);
 
@@ -41,10 +49,18 @@ Finder _badge(String route) => find.byWidgetPredicate((w) => w is RouteBadge && 
 Future<void> _openAtoE(
   WidgetTester tester, {
   DateTime? now,
+  DateTime Function()? clock,
   double textScale = 1,
+  MapViewBuilder? mapView,
   List<Override> overrides = const [],
 }) async {
-  await pumpPlannerApp(tester, net: TestNetwork(), now: now ?? _at(8, 0), textScale: textScale, overrides: overrides);
+  await pumpPlannerApp(tester,
+      net: TestNetwork(),
+      now: now ?? _at(8, 0),
+      clock: clock,
+      textScale: textScale,
+      mapView: mapView,
+      overrides: overrides);
   _container(tester).read(planQueryProvider.notifier)
     ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
     ..setTo(StopPlace(stopId: 'E', name: 'Stop E'));
@@ -301,7 +317,7 @@ void main() {
       await pumpPlannerApp(tester, net: TestNetwork(), now: now, overrides: [live.override]);
       final j = planned();
       expect(j.legs.whereType<RideLeg>().map((r) => r.tripId), ['1-0', '2-1']);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyDetailScreen), findsOneWidget);
     }
@@ -350,7 +366,7 @@ void main() {
       final j = planned();
       expect((j.legs.first as WalkLeg).seconds, 60);
       expect(j.departs, 8 * 3600 + 19 * 60);
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyDetailScreen), findsOneWidget);
     }
@@ -402,7 +418,7 @@ void main() {
         PlanQuery(from: y, to: z, mode: PlanMode.leaveBy, time: DateTime(testDay.year, testDay.month, testDay.day, 23, 55)),
       ) as PlanFound).journeys.first;
       expect((j.serviceDate, j.legs.whereType<RideLeg>().single.tripId), (testDay, '9-1'));
-      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar))).push('/plan/journey', extra: j));
+      unawaited(GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false))).push('/plan/journey', extra: j));
       await tester.pumpAndSettle();
       expectLiveFollowAndBell();
     });
@@ -460,4 +476,153 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  // The plan's live times refresh every 30 s (the planner's live feed). Behind another page (the service alerts, opened
+  // over it) that stops, and it comes back with the plan: the steps' manual listen is paused with the tickers, as the
+  // screens' watches are.
+  for (final steps in [false, true]) {
+    testWidgets("the trip's ${steps ? 'steps' : 'options'} stop refreshing their live times behind another page, and "
+        'refresh on return', (tester) async {
+      var fetches = 0;
+      final live = MockClient((_) async {
+        fetches++;
+        return http.Response('', 503);
+      });
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _at(7, 50), liveClient: live);
+      _container(tester).read(planQueryProvider.notifier)
+        ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
+        ..setTo(StopPlace(stopId: 'C', name: 'Stop C'));
+      await tester.pumpAndSettle();
+      if (steps) {
+        await tester.tap(find.byType(JourneyCard).first);
+        await tester.pumpAndSettle();
+        expect(find.byType(JourneyDetailScreen), findsOneWidget);
+      }
+      final first = fetches;
+      await tester.pump(const Duration(seconds: 31));
+      expect(fetches, greaterThan(first), reason: 'refreshed every 30 s on the plan');
+      final router = GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false)));
+      unawaited(router.push('/alerts'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(AlertsScreen), findsOneWidget);
+      final hidden = fetches;
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(seconds: 31));
+      }
+      expect(fetches, hidden, reason: 'no refresh behind another page');
+      router.pop();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fetches, greaterThan(hidden), reason: 'refreshed on coming back to the plan');
+      expect(find.byType(JourneyDetailScreen), steps ? findsOneWidget : findsNothing);
+      await tester.pumpAndSettle();
+    });
+  }
+
+  // 1.4.1's Plan tab kept a trip's steps while the rider looked at the map or a Board; the Plan button brings them back
+  // the same way, so the rider can still read the transfer after boarding (the planner, replanned from now, may no
+  // longer list a trip whose first bus has left).
+  group('the open trip comes back from the Plan button', () {
+    Future<void> expectStepsBack(WidgetTester tester) async {
+      await tester.tap(find.byKey(TopActions.planKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(JourneyDetailScreen), findsOneWidget);
+      expect(find.text('Get off at Stop C (C)'), findsOneWidget);
+      expect(find.textContaining(RegExp(r'^8:20 AM → 8:28 AM\b')), findsOneWidget, reason: 'the transfer step');
+      // Back goes to the planner under it, then to the tab.
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byType(JourneyDetailScreen), findsNothing);
+      expect(find.text('Plan a trip'), findsOneWidget);
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byType(AppShell), findsOneWidget);
+      expect(find.text('Plan a trip'), findsNothing);
+    }
+
+    testWidgets('after Show on map', (tester) async {
+      await _openAtoE(tester);
+      await tester.ensureVisible(find.text('Show on map'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Show on map'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MapScreen), findsOneWidget);
+      await expectStepsBack(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('after Follow bus', (tester) async {
+      final now = _at(7, 50);
+      await _openAtoE(tester, now: now, overrides: [
+        plannerLiveFeedProvider.overrideWith((ref) async => fakeFeed([fakeVehicle(trip: '1-0', id: '1415', diff: 0, fix: now)])),
+      ]);
+      await tester.ensureVisible(find.text('Follow bus'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Follow bus'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MapScreen), findsOneWidget);
+      await expectStepsBack(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets("after an arrival alert's notification opens the Board", (tester) async {
+      await _openAtoE(tester);
+      final router = GoRouter.of(tester.element(find.byType(BBNavBar, skipOffstage: false)));
+      expect(openNotificationRoute('/board/A', router.go), isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byType(ArrivalBoardScreen), findsOneWidget);
+      await expectStepsBack(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('not once the rider went back from the steps: the Plan button opens the planner alone', (tester) async {
+      await _openAtoE(tester);
+      expect(await tester.binding.handlePopRoute(), isTrue); // to the planner
+      await tester.pumpAndSettle();
+      expect(await tester.binding.handlePopRoute(), isTrue); // to the Board
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(TopActions.planKey));
+      await tester.pumpAndSettle();
+      expect(find.text('Plan a trip'), findsOneWidget);
+      expect(find.byType(JourneyDetailScreen), findsNothing);
+    });
+
+    testWidgets('not once the rider plans afresh from the map (Plan to here)', (tester) async {
+      final map = StubMap();
+      await _openAtoE(tester, mapView: map.build);
+      await tester.ensureVisible(find.text('Show on map'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Show on map'));
+      await tester.pumpAndSettle();
+      map.longPress(47.5700, -52.7500); // Stop C
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Plan to here'));
+      await tester.pumpAndSettle();
+      expect(find.text('Plan a trip'), findsOneWidget);
+      expect(find.byType(JourneyDetailScreen), findsNothing);
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(TopActions.planKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(JourneyDetailScreen), findsNothing, reason: 'the old trip is closed');
+      await _unmount(tester);
+    });
+
+    testWidgets('not once the trip is over', (tester) async {
+      var clock = _at(8, 0);
+      await _openAtoE(tester, clock: () => clock);
+      await tester.ensureVisible(find.text('Show on map'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Show on map'));
+      await tester.pumpAndSettle();
+      clock = _at(8, 29); // it arrived at 8:28
+      await tester.tap(find.byKey(TopActions.planKey));
+      await tester.pumpAndSettle();
+      expect(find.text('Plan a trip'), findsOneWidget);
+      expect(find.byType(JourneyDetailScreen), findsNothing);
+      await _unmount(tester);
+    });
+  });
 }

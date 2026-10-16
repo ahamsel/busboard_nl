@@ -199,6 +199,7 @@ GoRouter _router(Widget screen) => GoRouter(routes: [
       GoRoute(path: '/', builder: (_, _) => screen),
       GoRoute(path: '/settings', builder: (_, _) => const SizedBox()),
       GoRoute(path: '/alerts', builder: (_, _) => const SizedBox()),
+      GoRoute(path: '/plan', builder: (_, _) => const SizedBox()),
     ]);
 
 final _screens = <_Screen>[
@@ -210,6 +211,8 @@ final _screens = <_Screen>[
             NearbyStop(stop: _stop, distanceMeters: 80),
             NearbyStop(stop: _stop, distanceMeters: 640),
           ]),
+      // The bell at the top right counts them.
+      serviceUpdatesProvider.overrideWith((ref) => Stream.value(_updates([_alert('Water Street detour')]))),
     ]);
   }),
   _Screen('picker (schedule failed to load)', (t) {
@@ -217,6 +220,7 @@ final _screens = <_Screen>[
     return _app(const StopPickerScreen(), [
       gtfsRepositoryProvider.overrideWith((ref) async =>
           throw const SocketException('Failed host lookup: busboard.example.com (OS Error: nodename nor servname provided, errno = 8)')),
+      serviceUpdatesProvider.overrideWith((ref) => Stream.value(_updates([]))),
     ]);
   }),
   _Screen('board (alert + failing live feed)', (t) {

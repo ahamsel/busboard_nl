@@ -10,7 +10,6 @@ import 'kit_test_helpers.dart';
 const _items = [
   BBNavItem(label: 'Board', icon: BBIcons.board),
   BBNavItem(label: 'Map', icon: BBIcons.map),
-  BBNavItem(label: 'Alerts', icon: BBIcons.alerts, badgeCount: 2),
 ];
 
 void main() {
@@ -21,15 +20,14 @@ void main() {
     final picked = <int>[];
     await tester.pumpWidget(kitHost(BBNavBar(items: _items, currentIndex: 0, onSelect: picked.add)));
     await tester.tap(find.text('Map'));
-    await tester.tap(find.text('Alerts'));
-    expect(picked, [1, 2]);
+    await tester.tap(find.text('Board'));
+    expect(picked, [1, 0]);
   });
 
-  testWidgets('badge shows the count and accessibility includes it', (tester) async {
+  testWidgets('each tab is a button named for it, and the current one says so', (tester) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(kitHost(BBNavBar(items: _items, currentIndex: 0, onSelect: (_) {})));
-    expect(find.text('2'), findsOneWidget);
-    expect(find.bySemanticsLabel('Alerts, 2 active'), findsOneWidget);
+    expect(find.bySemanticsLabel('Map'), findsOneWidget);
     expect(tester.getSemantics(find.bySemanticsLabel('Board')), isSemantics(
       label: 'Board', isSelected: true, isButton: true, hasTapAction: true,
     ));
@@ -46,7 +44,7 @@ void main() {
 
   testWidgets('no overflow at text scale 2.0 on a 320pt phone', (tester) async {
     await tester.pumpWidget(kitHost(
-      BBNavBar(items: _items, currentIndex: 2, onSelect: (_) {}),
+      BBNavBar(items: _items, currentIndex: 1, onSelect: (_) {}),
       textScale: 2.0,
       width: 320,
     ));
@@ -68,9 +66,8 @@ void main() {
         return (tester.getBottomLeft(f) - tester.getTopLeft(f)).dy;
       }
 
-      expect(rendered('Alerts'), closeTo(rendered('Board'), 0.5), reason: '${brightness.name}: Alerts vs Board');
       expect(rendered('Map'), closeTo(rendered('Board'), 0.5), reason: '${brightness.name}: Map vs Board');
-      for (final label in ['Board', 'Map', 'Alerts']) {
+      for (final label in ['Board', 'Map']) {
         final tab = find.ancestor(of: find.text(label), matching: find.byType(AnimatedContainer));
         expect(tester.getSize(tab).height, greaterThanOrEqualTo(44), reason: '${brightness.name}: $label tab');
       }

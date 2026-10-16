@@ -144,6 +144,10 @@ void main() {
     await _pump(tester, gtfs: _repoWithDirections, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)],
         textScale: 2.0);
     expect(tester.takeException(), isNull);
+    // Below the fold at this size, under the Plan a trip card.
+    await tester.scrollUntilVisible(find.text('Downtown · Kelsey Drive'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(tester.takeException(), isNull);
     expect(find.text('Downtown · Kelsey Drive'), findsOneWidget);
   });
 
@@ -166,6 +170,17 @@ void main() {
     expect(prefs.getString('selectedStopId'), '1150');
   });
 
+  testWidgets('the stop number field keeps its name for screen readers once a number is typed', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester, gtfs: _repo);
+    await tester.enterText(find.byType(TextField), '1150');
+    await tester.pumpAndSettle(); // the hint has faded out
+    final field = tester.getSemantics(find.byType(EditableText));
+    expect(field.label, 'Stop number on the pole', reason: 'a stable name, read with the typed value');
+    expect(field.value, '1150');
+    handle.dispose();
+  });
+
   testWidgets('tapping a near-me stop saves it and opens its board', (tester) async {
     await _pump(tester, gtfs: _repo, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)]);
     await tester.tap(find.text('MUN Centre'));
@@ -179,6 +194,48 @@ void main() {
     await tester.tap(find.text('Last stop'));
     await tester.pumpAndSettle();
     expect(find.text('BOARD 1150'), findsOneWidget);
+  });
+
+  group('a quick double tap opens one Board (the second tap lands before the Board shows)', () {
+    Future<void> doubleTap(WidgetTester tester, Finder target) async {
+      await tester.tap(target);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> expectOneBoardThenAgain(WidgetTester tester, Finder target) async {
+      expect(find.text('BOARD 1150', skipOffstage: false), findsOneWidget);
+      // One back returns to the picker, and the same tap opens the Board again.
+      GoRouter.of(tester.element(find.text('BOARD 1150'))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(StopPickerScreen), findsOneWidget);
+      expect(find.text('BOARD 1150', skipOffstage: false), findsNothing);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(find.text('BOARD 1150'), findsOneWidget);
+    }
+
+    testWidgets('a near-me stop', (tester) async {
+      await _pump(tester, gtfs: _repo, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)]);
+      // Once visited, the stop is also the last stop card above Near me.
+      final nearMe = find.text('MUN Centre').last;
+      await doubleTap(tester, nearMe);
+      await expectOneBoardThenAgain(tester, nearMe);
+    });
+
+    testWidgets('the last stop card', (tester) async {
+      await _pump(tester, gtfs: _repo, prefs: {'selectedStopId': '1150'});
+      await doubleTap(tester, find.text('Last stop'));
+      await expectOneBoardThenAgain(tester, find.text('Last stop'));
+    });
+
+    testWidgets('Go', (tester) async {
+      // A stop already saved, so its card is there before and after (a new card would rebuild the field empty).
+      await _pump(tester, gtfs: _repo, prefs: {'selectedStopId': '1150'});
+      await tester.enterText(find.byType(TextField), '1150');
+      await doubleTap(tester, find.text('Go'));
+      await expectOneBoardThenAgain(tester, find.text('Go'));
+    });
   });
 
   testWidgets('settings is reachable while GTFS is loading', (tester) async {
@@ -205,6 +262,26 @@ void main() {
     await _pump(tester, gtfs: () => Future<GtfsRepository>.error(Exception('offline')));
     expect(find.text('Failed to load schedule'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('a schedule that fails to reload keeps the picker, Near me and its route pills on the one loaded',
+      (tester) async {
+    // Settings, Refresh schedule, while offline: the second load fails (Settings says so in a toast).
+    var loads = 0;
+    await _pump(
+      tester,
+      gtfs: () => ++loads > 1 ? Future<GtfsRepository>.error(Exception('offline')) : _repo(),
+      nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)],
+    );
+    expect(find.text('MUN Centre'), findsOneWidget);
+    expect(find.text('10'), findsOneWidget);
+    ProviderScope.containerOf(tester.element(find.byType(StopPickerScreen))).invalidate(gtfsRepositoryProvider);
+    await tester.pumpAndSettle();
+    expect(loads, greaterThanOrEqualTo(2), reason: 'the reload ran (and failed, as do its retries)');
+    expect(find.text('Failed to load schedule'), findsNothing, reason: 'not an error until a relaunch');
+    expect(find.text('MUN Centre'), findsOneWidget);
+    expect(find.text('10'), findsOneWidget, reason: 'the route pills stay too');
+    expect(find.text('Stop number'), findsOneWidget);
   });
 
   testWidgets('near-me empty and error states', (tester) async {
