@@ -14,6 +14,17 @@ import '../domain/trip_planner/journey.dart';
 /// The app's router.
 final appRouter = buildAppRouter();
 
+/// [child] as a page of Flutter's own [MaterialApp], so the theme's page transition (with its iOS edge swipe back)
+/// runs. go_router 18 looks for `material_ui`'s MaterialApp, a different class from the one the app uses, and
+/// without a page builder falls back to a page with no transition and no swipe back.
+Page<void> _page(GoRouterState state, Widget child) => MaterialPage<void>(
+      key: state.pageKey,
+      name: state.name ?? state.path,
+      arguments: <String, String>{...state.pathParameters, ...state.uri.queryParameters},
+      restorationId: state.pageKey.value,
+      child: child,
+    );
+
 /// A fresh router over the app's route tree (tests build their own so no state carries between them).
 GoRouter buildAppRouter({String initialLocation = '/'}) {
   final rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -31,13 +42,13 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
             routes: [
               GoRoute(
                 path: '/',
-                builder: (context, state) => const StopPickerScreen(),
+                pageBuilder: (context, state) => _page(state, const StopPickerScreen()),
                 routes: [
                   GoRoute(
                     path: 'board/:stopId',
-                    builder: (context, state) {
+                    pageBuilder: (context, state) {
                       final stopId = state.pathParameters['stopId']!;
-                      return ArrivalBoardScreen(stopId: stopId);
+                      return _page(state, ArrivalBoardScreen(stopId: stopId));
                     },
                   ),
                 ],
@@ -46,24 +57,29 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
           ),
           // Branch 1: Map
           StatefulShellBranch(
-            routes: [GoRoute(path: '/map', builder: (context, state) => MapScreen(pick: state.uri.queryParameters['pick']))],
+            routes: [
+              GoRoute(
+                path: '/map',
+                pageBuilder: (context, state) => _page(state, MapScreen(pick: state.uri.queryParameters['pick'])),
+              ),
+            ],
           ),
           // Branch 2: Service alerts
           StatefulShellBranch(
-            routes: [GoRoute(path: '/alerts', builder: (context, state) => const AlertsScreen())],
+            routes: [GoRoute(path: '/alerts', pageBuilder: (context, state) => _page(state, const AlertsScreen()))],
           ),
           // Branch 3: Trip planner
           StatefulShellBranch(
             routes: [
               GoRoute(
                 path: '/plan',
-                builder: (context, state) => const PlanScreen(),
+                pageBuilder: (context, state) => _page(state, const PlanScreen()),
                 routes: [
                   GoRoute(
                     path: 'journey',
                     // A deep link or a restored route carries no journey: back to the planner.
                     redirect: (context, state) => state.extra is Journey ? null : '/plan',
-                    builder: (context, state) => JourneyDetailScreen(journey: state.extra! as Journey),
+                    pageBuilder: (context, state) => _page(state, JourneyDetailScreen(journey: state.extra! as Journey)),
                   ),
                 ],
               ),
@@ -75,7 +91,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
         path: '/settings',
-        builder: (context, state) => const SettingsScreen(),
+        pageBuilder: (context, state) => _page(state, const SettingsScreen()),
       ),
     ],
   );
