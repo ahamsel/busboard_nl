@@ -7,7 +7,7 @@ import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../tool/src/harbour_style.dart';
-import '../kit/route_palette_test.dart' show oklab;
+import '../kit/route_palette_test.dart' show deltaE, oklab;
 
 /// A cut-down Positron: one layer of each kind the transform handles.
 Map<String, dynamic> _upstream() => {
@@ -55,7 +55,7 @@ void main() {
       expect(_layer(light, 'landcover_wood')['paint']['fill-color'], '#DCE8DD');
       expect((_layer(light, 'landcover_wood')['paint'] as Map).containsKey('fill-pattern'), isFalse);
       expect(_layer(dark, 'background')['paint']['background-color'], '#17181B');
-      expect(_layer(dark, 'water')['paint']['fill-color'], '#0F1820');
+      expect(_layer(dark, 'water')['paint']['fill-color'], '#0E1F2E');
       expect(_layer(dark, 'park')['paint']['fill-color'], '#172019');
     });
 
@@ -156,6 +156,14 @@ void main() {
       }
       expect(chroma(p.water), greaterThan(0.015), reason: '${p.name} water is still blue-grey');
       expect(chroma(p.park), greaterThan(0.015), reason: '${p.name} parks are still green');
+    }
+  });
+
+  test('water stands clear of the land on both maps, so the coastline shows (ΔE OKLab 0.03 or more)', () {
+    Color hex(String h) => Color(int.parse('FF${h.substring(1)}', radix: 16));
+    for (final p in [HarbourPalette.light, HarbourPalette.dark]) {
+      final d = deltaE(hex(p.water), hex(p.land));
+      expect(d, greaterThanOrEqualTo(0.03), reason: '${p.name} water ${p.water} is only ${d.toStringAsFixed(3)} from land ${p.land}');
     }
   });
 
