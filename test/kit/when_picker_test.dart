@@ -2,6 +2,7 @@ import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/cupertino.dart' show CupertinoDatePicker, CupertinoPicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'contrast_test.dart' show contrast;
@@ -92,7 +93,7 @@ void main() {
   testWidgets('beyond a week, chips name the date too', (tester) async {
     await _open(tester, last: DateTime(2026, 10, 20));
     await tester.scrollUntilVisible(find.byKey(BBWhenPicker.dayKey(8)), 200,
-        scrollable: find.descendant(of: find.byKey(BBWhenPicker.sheetKey), matching: find.byType(Scrollable)).at(1));
+        scrollable: find.descendant(of: find.byKey(BBWhenPicker.dayScrollerKey), matching: find.byType(Scrollable)));
     expect(find.descendant(of: find.byKey(BBWhenPicker.dayKey(8)), matching: find.text('Thu 15')), findsOneWidget);
   });
 
@@ -356,6 +357,113 @@ void main() {
     expect(_confirmLabel(tester), 'Use now instead');
     await _confirm(tester);
     expect(opened.result, _now);
+  });
+
+  testWidgets('an initial day after the last day with service is clamped to the last day, the time kept', (tester) async {
+    final opened = await _open(tester, initial: DateTime(2026, 10, 15, 9, 5), last: DateTime(2026, 10, 10));
+    expect(_confirmLabel(tester), 'Set 09:05 Saturday');
+    expect(tester.getSemantics(find.byKey(BBWhenPicker.dayKey(3))), isSemantics(isSelected: true));
+    await _confirm(tester);
+    expect(opened.result, DateTime(2026, 10, 10, 9, 5));
+  });
+
+  testWidgets('a tap on the barrier closes the picker and returns nothing', (tester) async {
+    final opened = await _open(tester);
+    expect(find.byKey(BBWhenPicker.sheetKey), findsOneWidget);
+    // Well above the sheet, on the dimmed backdrop.
+    await tester.tapAt(const Offset(195, 40));
+    await tester.pumpAndSettle();
+    expect(opened.closed, isTrue);
+    expect(opened.result, isNull);
+    expect(find.byKey(BBWhenPicker.sheetKey), findsNothing);
+  });
+
+  testWidgets('spring-forward: the hour that does not exist cannot trap a screen reader\'s decrease', (tester) async {
+    // The first day of 2026 on which the local clock skips an hour (none in a zone without DST).
+    DateTime? gap;
+    for (var d = DateTime(2026, 1, 1); d.year == 2026 && gap == null; d = DateTime(d.year, d.month, d.day + 1)) {
+      for (var h = 0; h < 24; h++) {
+        if (DateTime(d.year, d.month, d.day, h, 30).hour != h) {
+          gap = DateTime(d.year, d.month, d.day, h);
+          break;
+        }
+      }
+    }
+    if (gap == null) {
+      markTestSkipped('the machine\'s time zone has no spring-forward gap');
+      return;
+    }
+    final missing = gap.hour;
+    final handle = tester.ensureSemantics();
+    await _open(
+      tester,
+      first: DateTime(gap.year, gap.month, gap.day - 1, 12),
+      initial: DateTime(gap.year, gap.month, gap.day, missing + 1, 30),
+      last: DateTime(gap.year, gap.month, gap.day + 1),
+    );
+    int item() => (tester.widget<ListWheelScrollView>(find.byKey(BBWhenPicker.hourWheelKey)).controller!
+            as FixedExtentScrollController)
+        .selectedItem;
+    expect(item(), missing + 1);
+    Future<void> act(SemanticsAction a) async {
+      tester.semantics.performAction(find.semantics.byLabel('Hour'), a);
+      await tester.pumpAndSettle();
+    }
+
+    // Down through the missing hour and on to 00 …
+    for (var want = missing; want >= 0; want--) {
+      await act(SemanticsAction.decrease);
+      expect(item(), want, reason: 'decrease steps onto hour $want');
+    }
+    // … and back up through it.
+    for (var want = 1; want <= missing + 1; want++) {
+      await act(SemanticsAction.increase);
+      expect(item(), want, reason: 'increase steps onto hour $want');
+    }
+    handle.dispose();
+  });
+
+  testWidgets('quick picks in quick succession: only the wheels turned by code stay silent until the last one lands',
+      (tester) async {
+    var ticks = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') ticks++;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await _open(tester, initial: DateTime(2026, 10, 7, 9, 45));
+    await tester.ensureVisible(find.text('In 15 min'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('In 15 min'));
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tap(find.text('In 30 min'));
+    final afterTaps = ticks; // the two chips' own feedback
+    await tester.pumpAndSettle();
+    expect(ticks, afterTaps, reason: 'the second pick interrupts the first; the wheels stay silent to the end');
+    expect(_confirmLabel(tester), 'Set 08:31 today');
+  });
+
+  testWidgets('the wheels fade out at their top and bottom edges, so no neighbour glyph is cut off', (tester) async {
+    for (final scale in [1.0, 2.0]) {
+      await tester.pumpWidget(const SizedBox());
+      await _open(tester, textScale: scale, use24h: false);
+      for (final wheel in [BBWhenPicker.hourWheelKey, BBWhenPicker.minuteWheelKey, BBWhenPicker.periodWheelKey]) {
+        final masks = find.ancestor(of: find.byKey(wheel), matching: find.byType(ShaderMask));
+        expect(masks, findsOneWidget, reason: '$wheel at ${scale}x');
+        expect(tester.widget<ShaderMask>(masks).blendMode, BlendMode.dstIn);
+      }
+      final visible = scale > 1.3 ? 3 : 5;
+      final fade = BBWhenPicker.edgeFade(visible);
+      expect(fade.colors.first.a, 0);
+      expect(fade.colors.last.a, 0);
+      expect(fade.colors[2].a, 1);
+      expect(fade.colors[3].a, 1);
+      // The sliver at the very edge is clear, the rest of a short fade ramps up, and the middle is opaque.
+      expect(fade.stops![1] * visible, greaterThanOrEqualTo(0.1));
+      expect(fade.stops![2] * visible, inInclusiveRange(0.2, 0.5));
+      expect(fade.stops![3], closeTo(1 - fade.stops![2], 1e-9));
+      expect(fade.stops![4], closeTo(1 - fade.stops![1], 1e-9));
+    }
   });
 
   testWidgets('Close returns nothing', (tester) async {

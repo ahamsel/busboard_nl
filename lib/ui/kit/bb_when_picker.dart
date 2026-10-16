@@ -109,7 +109,25 @@ class BBWhenPicker extends StatefulWidget {
   static const minuteWheelKey = ValueKey('bb-when-minute');
   static const periodWheelKey = ValueKey('bb-when-period');
   static const confirmKey = ValueKey('bb-when-confirm');
+  static const dayScrollerKey = ValueKey('bb-when-days');
   static const pastKey = ValueKey('bb-when-past');
+  /// The mask that fades a wheel out at its top and bottom edge: clear for the outer [clearRows] of a row, then
+  /// fading in over the rest of [fadeRows]. The cylinder squeezes the row beyond the last whole one into a sliver
+  /// at the edge, and without the fade its glyphs show cut off.
+  static LinearGradient edgeFade(int visible) {
+    final clear = clearRows / visible, end = fadeRows / visible;
+    const none = Color(0x00000000), opaque = Color(0xFF000000);
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: const [none, none, opaque, opaque, none, none],
+      stops: [0, clear, end, 1 - end, 1 - clear, 1],
+    );
+  }
+
+  /// How much of a row, at each end of a wheel, fades away, and how much of that is fully clear.
+  static const double fadeRows = 0.4;
+  static const double clearRows = 0.15;
   static Key dayKey(int index) => ValueKey('bb-when-day-$index');
 
   @override
@@ -125,8 +143,12 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
   late final FixedExtentScrollController _minuteWheel;
   late final FixedExtentScrollController _periodWheel;
 
-  /// The wheels are being turned by code (a quick pick): no haptic ticks.
-  bool _moving = false;
+  /// How many turns by code (a quick pick, a screen reader's step) are under way: while any is, no haptic
+  /// ticks. A count, not a flag, so one turn finishing never silences another that is still going.
+  int _moving = 0;
+
+  /// The latest turn by code; an earlier one that finishes late leaves the final snap to it.
+  int _latestMove = 0;
 
   @override
   void initState() {
@@ -212,7 +234,7 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
       unawaited(SemanticsService.sendAnnouncement(View.of(context), message, Directionality.of(context)));
 
   void _tick() {
-    if (!_moving) HapticFeedback.selectionClick();
+    if (_moving == 0) HapticFeedback.selectionClick();
   }
 
   void _onHour(int item) {
@@ -231,12 +253,19 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
   }
 
   /// Sets the day and time at once and turns the wheels to it.
-  Future<void> _set(DateTime t) async {
+  Future<void> _set(DateTime t) {
     final target = _clamp(_minuteOf(t));
+    return _goTo(day: _daysBetween(_days.first, target), hour: target.hour, minute: target.minute);
+  }
+
+  /// Turns the wheels to [hour] and [minute] (on [day], this one by default). The wheels' own numbers, not a
+  /// moment: on the day the clocks spring forward the wheel still has a 2 AM, though no such time exists, and
+  /// stepping through it by the clock would land on 3 AM again and never get past it.
+  Future<void> _goTo({int? day, required int hour, required int minute}) async {
     setState(() {
-      _day = _daysBetween(_days.first, target);
-      _hour = target.hour;
-      _minute = target.minute;
+      if (day != null) _day = day;
+      _hour = hour;
+      _minute = minute;
     });
     final d = BBMotion.of(context, BBMotion.standard);
     Future<void> turn(FixedExtentScrollController c, int item) async {
@@ -248,18 +277,22 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
       }
     }
 
-    _moving = true;
-    await Future.wait([
-      turn(_hourWheel, _hourItem(target.hour)),
-      turn(_minuteWheel, target.minute),
-      if (!widget.use24h) turn(_periodWheel, target.hour < 12 ? 0 : 1),
-    ]);
-    _moving = false;
-    // The wheels report every item they pass; end exactly on the target.
-    if (mounted) {
+    final move = ++_latestMove;
+    _moving++;
+    try {
+      await Future.wait([
+        turn(_hourWheel, _hourItem(hour)),
+        turn(_minuteWheel, minute),
+        if (!widget.use24h) turn(_periodWheel, hour < 12 ? 0 : 1),
+      ]);
+    } finally {
+      _moving--;
+    }
+    // The wheels report every item they pass; end exactly on the target, unless a later turn has taken over.
+    if (mounted && move == _latestMove) {
       setState(() {
-        _hour = target.hour;
-        _minute = target.minute;
+        _hour = hour;
+        _minute = minute;
       });
     }
   }
@@ -316,23 +349,27 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
       child: ExcludeSemantics(
         child: SizedBox(
           height: itemExtent * visible,
-          child: ListWheelScrollView.useDelegate(
-            key: key,
-            controller: controller,
-            itemExtent: itemExtent,
-            physics: const FixedExtentScrollPhysics(),
-            diameterRatio: 1.6,
-            overAndUnderCenterOpacity: BBWhenPicker.neighbourOpacity,
-            onSelectedItemChanged: onChanged,
-            childDelegate: ListWheelChildBuilderDelegate(
-              childCount: count,
-              builder: (context, i) => Center(
-                child: Text(
-                  label(i),
-                  maxLines: 1,
-                  style: bb.text.title.copyWith(
-                    color: bb.colors.ink,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (bounds) => BBWhenPicker.edgeFade(visible).createShader(bounds),
+            child: ListWheelScrollView.useDelegate(
+              key: key,
+              controller: controller,
+              itemExtent: itemExtent,
+              physics: const FixedExtentScrollPhysics(),
+              diameterRatio: 1.6,
+              overAndUnderCenterOpacity: BBWhenPicker.neighbourOpacity,
+              onSelectedItemChanged: onChanged,
+              childDelegate: ListWheelChildBuilderDelegate(
+                childCount: count,
+                builder: (context, i) => Center(
+                  child: Text(
+                    label(i),
+                    maxLines: 1,
+                    style: bb.text.title.copyWith(
+                      color: bb.colors.ink,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ),
@@ -345,8 +382,6 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
 
   Widget _wheels(double itemExtent, int visible) {
     final bb = context.bb;
-    final d = _days[_day];
-    DateTime at(int hour, int minute) => DateTime(d.year, d.month, d.day, hour, minute);
     // 24-hour: "8 hours". 12-hour names the period too ("11 AM", "12 PM"), since the wheel shows 12, 1 … 11.
     String hours(int h) => widget.use24h
         ? '$h ${h == 1 ? 'hour' : 'hours'}'
@@ -376,8 +411,8 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                 value: hours(_hour),
                 increased: _hasNextHour(_hour) ? hours(_hour + 1) : null,
                 decreased: _hasPrevHour(_hour) ? hours(_hour - 1) : null,
-                onIncrease: _hasNextHour(_hour) ? () => _set(at(_hour + 1, _minute)) : null,
-                onDecrease: _hasPrevHour(_hour) ? () => _set(at(_hour - 1, _minute)) : null,
+                onIncrease: _hasNextHour(_hour) ? () => _goTo(hour: _hour + 1, minute: _minute) : null,
+                onDecrease: _hasPrevHour(_hour) ? () => _goTo(hour: _hour - 1, minute: _minute) : null,
                 itemExtent: itemExtent,
                 visible: visible,
               ),
@@ -394,8 +429,8 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                 value: minutes(_minute),
                 increased: _minute < 59 ? minutes(_minute + 1) : null,
                 decreased: _minute > 0 ? minutes(_minute - 1) : null,
-                onIncrease: _minute < 59 ? () => _set(at(_hour, _minute + 1)) : null,
-                onDecrease: _minute > 0 ? () => _set(at(_hour, _minute - 1)) : null,
+                onIncrease: _minute < 59 ? () => _goTo(hour: _hour, minute: _minute + 1) : null,
+                onDecrease: _minute > 0 ? () => _goTo(hour: _hour, minute: _minute - 1) : null,
                 itemExtent: itemExtent,
                 visible: visible,
               ),
@@ -412,8 +447,8 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                   value: pm ? 'PM' : 'AM',
                   increased: pm ? null : 'PM',
                   decreased: pm ? 'AM' : null,
-                  onIncrease: pm ? null : () => _set(at(_hour + 12, _minute)),
-                  onDecrease: pm ? () => _set(at(_hour - 12, _minute)) : null,
+                  onIncrease: pm ? null : () => _goTo(hour: _hour + 12, minute: _minute),
+                  onDecrease: pm ? () => _goTo(hour: _hour - 12, minute: _minute) : null,
                   itemExtent: itemExtent,
                   visible: visible,
                 ),
@@ -513,6 +548,7 @@ class _BBWhenPickerState extends State<BBWhenPicker> {
                 ),
                 const SizedBox(height: BBSpace.s),
                 SingleChildScrollView(
+                  key: BBWhenPicker.dayScrollerKey,
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
