@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/trip_planner/place.dart';
+import '../../routing/push_once.dart';
 import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
@@ -68,11 +69,14 @@ class StopCardBody extends ConsumerWidget {
           ArrivalsPreview(stopId: stop.stopId, max: 3),
           if (alerts.isNotEmpty) ...[
             const SizedBox(height: BBSpace.m),
-            ServiceAlertCard(
-              alert: alerts.first,
-              stopNames: {stop.stopId: stop.stopName},
-              compact: true,
-              onTap: () => context.push('/alerts'),
+            // Once for a quick double tap, as for Plan below.
+            PushOnce(
+              builder: (context, push) => ServiceAlertCard(
+                alert: alerts.first,
+                stopNames: {stop.stopId: stop.stopName},
+                compact: true,
+                onTap: () => push('/alerts'),
+              ),
             ),
           ],
           const SizedBox(height: BBSpace.l),
@@ -83,18 +87,20 @@ class StopCardBody extends ConsumerWidget {
             onPressed: () => context.go('/board/${stop.stopId}'),
           ),
           const SizedBox(height: BBSpace.s),
-          BBButton(
-            label: 'Plan a trip from here',
-            icon: BBIcons.plan,
-            kind: BBButtonKind.quiet,
-            expand: true,
-            wrap: true,
-            onPressed: () {
-              ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stop.stopId, name: stop.stopName));
-              // A new plan: a trip left open no longer comes back from the Plan button.
-              ref.read(openJourneyProvider.notifier).close();
-              context.push('/plan');
-            },
+          PushOnce(
+            builder: (context, push) => BBButton(
+              label: 'Plan a trip from here',
+              icon: BBIcons.plan,
+              kind: BBButtonKind.quiet,
+              expand: true,
+              wrap: true,
+              onPressed: () {
+                ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stop.stopId, name: stop.stopName));
+                // A new plan: a trip left open no longer comes back from the Plan button.
+                ref.read(openJourneyProvider.notifier).close();
+                push('/plan');
+              },
+            ),
           ),
           const SizedBox(height: BBSpace.s),
           BBButton(

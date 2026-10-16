@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../data/gtfs/headsign.dart';
 import '../../domain/map/bus_tracking_state.dart';
+import '../../routing/push_once.dart';
 import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
@@ -114,7 +114,11 @@ class _BusCardBodyState extends ConsumerState<BusCardBody> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (alerts.isNotEmpty) ...[
-            ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => context.push('/alerts')),
+            // Once for a quick double tap.
+            PushOnce(
+              builder: (context, push) =>
+                  ServiceAlertCard(alert: alerts.first, compact: true, onTap: () => push('/alerts')),
+            ),
             const SizedBox(height: BBSpace.m),
           ],
           BBButton(
