@@ -72,15 +72,21 @@ final boardChipsProvider = Provider<List<BoardChip>>((ref) {
   );
 });
 
-/// The stop the Board shows: the one picked, else your stop, else the first saved place that is a stop. Null when
-/// there is none: the Board asks you to choose your stop.
+/// The stop the Board shows: the one picked, else your stop, else the first saved place that is a stop. Your stop and
+/// the saved ones count only if the loaded schedule has them, as with the chips (a stop a later schedule removed would
+/// show as "Stop 1234" and an empty board); while the schedule is still loading there is nothing to check against, and
+/// they are taken as they are, so the Board does not flash its empty state. Null when there is none: the Board asks
+/// you to choose your stop.
 final boardShownStopProvider = Provider<BoardStop?>((ref) {
   final picked = ref.watch(boardStopProvider);
   if (picked != null) return picked;
+  final stops = ref.watch(gtfsRepositoryProvider).asData?.value.stopsById;
+  final loading = ref.watch(gtfsRepositoryProvider).isLoading;
+  bool known(String id) => stops != null ? stops.containsKey(id) : loading;
   final mine = ref.watch(settingsProvider.select((s) => s.selectedStopId));
-  if (mine != null) return BoardStop(mine);
+  if (mine != null && known(mine)) return BoardStop(mine);
   for (final p in ref.watch(savedPlacesProvider).value ?? const <SavedPlace>[]) {
-    if (p.place case StopPlace(:final stopId)) return BoardStop(stopId);
+    if (p.place case StopPlace(:final stopId) when known(stopId)) return BoardStop(stopId);
   }
   return null;
 });

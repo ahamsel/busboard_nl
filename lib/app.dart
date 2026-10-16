@@ -8,7 +8,6 @@ import 'ui/kit/bb_theme.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'state/arrival_alert_providers.dart';
-import 'state/board_open_store.dart';
 import 'state/providers.dart';
 
 class BusboardApp extends ConsumerStatefulWidget {
@@ -36,14 +35,10 @@ class _BusboardAppState extends ConsumerState<BusboardApp> {
   /// alert notification that launched the app (spec §2.2).
   Future<void> _startArrivalAlerts() async {
     ref.read(arrivalAlertProvider);
-    var opened = false;
     try {
-      opened = openAlertRoute(await ref.read(alertNotificationsProvider).launchRoute());
+      openAlertRoute(await ref.read(alertNotificationsProvider).launchRoute());
     } catch (_) {
-    } finally {
-      // The home screen reopens the Board left open only now, and not at all after a launch link.
-      final checked = ref.read(launchLinkCheckedProvider);
-      if (!checked.isCompleted) checked.complete(opened);
+      // No launch notification to open.
     }
   }
 

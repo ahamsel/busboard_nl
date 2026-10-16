@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../state/home_sheet_provider.dart';
 import '../state/map_pick_provider.dart';
 import '../ui/alerts/alerts_screen.dart';
-import '../ui/home/home_screen.dart';
+import '../ui/home/home_shell.dart';
 import '../ui/kit/kit.dart';
 import '../ui/search/search_screen.dart';
 import '../ui/settings/settings_screen.dart';
@@ -41,7 +41,7 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
     routes: [
       GoRoute(
         path: '/',
-        pageBuilder: (context, state) => _page(state, const HomeScreen()),
+        pageBuilder: (context, state) => _page(state, const HomeShell()),
       ),
       GoRoute(path: '/stop/:stopId', redirect: _toStopSheet),
       GoRoute(path: '/board/:stopId', redirect: _toStopSheet),

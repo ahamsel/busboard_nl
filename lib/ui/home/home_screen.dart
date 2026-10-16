@@ -20,7 +20,6 @@ import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
 import '../../state/arrival_alert_providers.dart';
-import '../../state/board_open_store.dart';
 import '../../state/follow_providers.dart';
 import '../../state/home_sheet_provider.dart';
 import '../../state/journey_on_map_provider.dart';
@@ -87,7 +86,11 @@ class _Follow {
 /// follows the selection. A long-press plans from or to that point; while [mapPickProvider] is set the next
 /// tap chooses that end of the trip; a journey from the trip options is drawn on top.
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.active = true});
+
+  /// The Map tab is the one showing (spec 2026-10-15 §2). The home shell keeps this screen mounted behind the Board,
+  /// where it plays no one-time hint. Always true where the screen stands alone.
+  final bool active;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -240,7 +243,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_enableMyLocation(request: false));
-    unawaited(_restoreBoard());
     _journeyFitPending = ref.read(journeyOnMapProvider) != null;
     // A follow set before the map existed (the Board's live row): its card
     // replaces any selection.
@@ -281,6 +283,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       },
       fireImmediately: true,
     );
+  }
+
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The Map tab has just come into view: the bar's one-time lift, if it has not played yet.
+    if (widget.active && !oldWidget.active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_hintBar()));
+    }
   }
 
   @override
@@ -327,7 +338,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _appResumed = true;
       _resumeTicker();
     }
-    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) _rememberBoard();
     if (state == AppLifecycleState.paused) {
       _appResumed = false;
       _ticker?.stop();
@@ -880,8 +890,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _sheetExtent = n.extent;
     final wasAtFull = _sheetAtFull;
     _sheetAtFull = n.extent >= n.maxExtent - 0.004;
-    // Collapsed below full: the Board is no longer open.
-    if (wasAtFull && !_sheetAtFull) _forgetBoard();
     final abovePeek = n.extent > n.minExtent + 0.02;
     if (wasAtFull != _sheetAtFull || abovePeek != _sheetAbovePeek) {
       // The notification can come mid-layout: what it changes is built on the next frame.
@@ -905,11 +913,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// The first time the bar shows with the map ready, the sheet lifts [_barHintLift] and settles back, once ever
   /// (spec 2026-10-14 §3.6). Not under Reduce Motion (nothing is stored then, so it can play once motion is back), on
-  /// the tablet panel, while following or choosing on the map, with a card open, or while the Board left open may
-  /// still be restored over the bar (final review M11: it is tried again once the restore is done).
+  /// the tablet panel, while following or choosing on the map, with a card open, or while the Map tab is not the one
+  /// showing (it is tried again when it is).
   Future<void> _hintBar() async {
     if (_barHintTried || !mounted || _camera == null || BBMotion.reduced(context)) return;
-    if (_wide || _follow != null || ref.read(mapPickProvider) != null || _restoringBoard) return;
+    if (!widget.active || _wide || _follow != null || ref.read(mapPickProvider) != null) return;
     if (ref.read(homeSheetProvider) is! HomeSheetHome) return;
     final sheet = _sheet;
     if (!sheet.isAttached) return;
@@ -922,95 +930,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       return;
     }
     if (seen || !mounted) return;
-    // Something took the bar's place while the flag was read (a card, a follow, a map pick): try again once it is back.
+    // Something took the bar's place while the flag was read (a card, a follow, a map pick, the Board tab): try again
+    // once it is back.
     if (!identical(sheet, _sheet) ||
         !sheet.isAttached ||
+        !widget.active ||
         _follow != null ||
-        ref.read(mapPickProvider) != null ||
-        _restoringBoard) {
+        ref.read(mapPickProvider) != null) {
       _barHintTried = false;
       return;
     }
     unawaited(ref.read(barHintSeenProvider.notifier).markSeen().catchError((Object e) => _log('Bar hint not saved: $e')));
     await sheet.nudge(_barHintLift);
-  }
-
-  // ─── Reopen the way the rider left it ─────────────────────
-
-  /// The stop id saved as the open Board ([BoardOpenStore]), as far as this screen knows.
-  String? _savedBoard;
-
-  /// A cold start's restore of the Board left open has not finished: it may still open the Board over the bar.
-  bool _restoringBoard = true;
-
-  /// The stop whose Board is showing: its sheet at full height, or in the side panel (which has no detents).
-  String? get _boardShowing {
-    final sheet = ref.read(homeSheetProvider);
-    return sheet is StopSheet && (_wide || _sheetAtFull) ? sheet.stopId : null;
-  }
-
-  /// The app is going to the background: remember the Board if one is open, else forget any. With none open the
-  /// store is cleared whatever this screen thinks it holds: a restore that failed may have left an id there.
-  void _rememberBoard() {
-    final id = _boardShowing;
-    if (id == null) {
-      _savedBoard = null;
-      unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
-      return;
-    }
-    if (id == _savedBoard) return;
-    _savedBoard = id;
-    unawaited(ref.read(boardOpenStoreProvider).save(id).catchError((Object e) => _log('Board not saved: $e')));
-  }
-
-  /// The rider collapsed, closed or left the Board.
-  void _forgetBoard() {
-    if (_savedBoard == null) return;
-    _savedBoard = null;
-    unawaited(ref.read(boardOpenStoreProvider).clear().catchError((Object e) => _log('Board not cleared: $e')));
-  }
-
-  /// A cold start: the Board left open is opened again, at full height, once the app has checked for a notification
-  /// that launched it and the schedule says the stop still exists. A link or a notification opened at launch wins,
-  /// and the Board is forgotten.
-  Future<void> _restoreBoard() async {
-    try {
-      await _restoreBoardIfLeftOpen();
-    } finally {
-      _restoringBoard = false;
-      // The bar's one-time lift waited for this; with the bar still showing (no Board opened) it plays now.
-      if (mounted) unawaited(_hintBar());
-    }
-  }
-
-  Future<void> _restoreBoardIfLeftOpen() async {
-    final store = ref.read(boardOpenStoreProvider);
-    final launchChecked = ref.read(launchLinkCheckedProvider).future;
-    String? id;
-    try {
-      id = await store.read();
-      if (id == null || !mounted) return;
-      // A notification plugin that never answers must not hold the Board back: after 3 s, no launch link.
-      final launchLink = await launchChecked.timeout(const Duration(seconds: 3), onTimeout: () => false);
-      final repo = await ref.read(gtfsRepositoryProvider.future);
-      if (!mounted) return;
-      final stillThere = repo.stopsById[id] != null;
-      if (launchLink ||
-          !stillThere ||
-          ref.read(homeSheetProvider) is! HomeSheetHome ||
-          ref.read(followProvider) != null) {
-        await store.clear();
-        return;
-      }
-      ref.read(homeSheetProvider.notifier).openBoard(id);
-      // Written back: a background while this waited (no Board showing then) cleared the store.
-      _savedBoard = id;
-      await store.save(id);
-    } catch (e) {
-      // The id is still stored: the next background, or a collapse, must clear it.
-      if (mounted) _savedBoard ??= id;
-      _log('Board not restored: $e');
-    }
   }
 
   /// Whether system back may leave the app: only from the resting home, at the bar with nothing followed, no card
@@ -1196,8 +1127,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     // Every card opens at half, however it was reached; a stop's brings the map to it (spec §3.2, §3.4).
     ref.listen<HomeSheet>(homeSheetProvider, (prev, next) {
       if (prev == next) return;
-      // Closed, back, or another card: the Board left open is no longer the one showing.
-      _forgetBoard();
       _onSheetOpened(next);
       // Back at the bar (a card opened at launch has closed): the one-time lift, if it has not played yet.
       if (next is HomeSheetHome) WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_hintBar()));

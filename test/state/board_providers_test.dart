@@ -156,8 +156,16 @@ void main() {
   });
 
   group('the stop the Board shows', () {
-    ProviderContainer container({String? mine, List<SavedPlace> saved = const []}) {
+    // The network has stops A..H, X, Y, Z. Your stop and saved stops count only when they are in it.
+    final homeD = _saved('Home', StopPlace(stopId: 'D', name: 'Stop D'), icon: SavedPlaceIcon.home);
+    final workE = _saved('Work', StopPlace(stopId: 'E', name: 'Stop E'), icon: SavedPlaceIcon.work);
+    ProviderContainer container({String? mine, List<SavedPlace> saved = const [], Future<void>? repoGate}) {
+      final net = TestNetwork();
       final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async {
+          if (repoGate != null) await repoGate;
+          return net.repo;
+        }),
         settingsProvider.overrideWith(() => _Mine(mine)),
         savedPlacesProvider.overrideWith(() => _Saved(saved)),
       ]);
@@ -165,23 +173,48 @@ void main() {
       return c;
     }
 
-    test('the stop picked, over your stop', () async {
-      final c = container(mine: 'Y', saved: [_home]);
+    Future<void> loaded(ProviderContainer c) async {
+      await c.read(gtfsRepositoryProvider.future);
       await c.read(savedPlacesProvider.future);
+    }
+
+    test('the stop picked, over your stop', () async {
+      final c = container(mine: 'Y', saved: [homeD]);
+      await loaded(c);
       expect(c.read(boardShownStopProvider), const BoardStop('Y'));
       c.read(boardStopProvider.notifier).select('R', nearMe: true);
       expect(c.read(boardShownStopProvider), const BoardStop('R', nearMe: true));
     });
 
     test('with no stop chosen, the first saved place that is a stop', () async {
-      final c = container(saved: [_pin, _work, _home]);
+      final c = container(saved: [_pin, workE, homeD]);
+      await loaded(c);
+      expect(c.read(boardShownStopProvider), const BoardStop('E'));
+    });
+
+    test('your stop or a saved stop that the loaded schedule lacks is skipped, as the chips skip it', () async {
+      final c = container(mine: 'GONE', saved: [_saved('Old', StopPlace(stopId: 'GONE2', name: 'Old')), workE]);
+      await loaded(c);
+      expect(c.read(boardShownStopProvider), const BoardStop('E'), reason: 'not "Stop GONE" with an empty board');
+      final none = container(mine: 'GONE', saved: [_saved('Old', StopPlace(stopId: 'GONE2', name: 'Old'))]);
+      await loaded(none);
+      expect(none.read(boardShownStopProvider), isNull);
+    });
+
+    test('while the schedule loads there is nothing to check against: your stop shows (no empty-state flash)',
+        () async {
+      final gate = Completer<void>();
+      final c = container(mine: 'GONE', saved: [homeD], repoGate: gate.future);
       await c.read(savedPlacesProvider.future);
-      expect(c.read(boardShownStopProvider), const BoardStop('W'));
+      expect(c.read(boardShownStopProvider), const BoardStop('GONE'));
+      gate.complete();
+      await c.read(gtfsRepositoryProvider.future);
+      expect(c.read(boardShownStopProvider), const BoardStop('D'), reason: 'and is skipped once the schedule says no');
     });
 
     test('none at all: null, and the Board asks you to choose', () async {
       final c = container(saved: [_pin]);
-      await c.read(savedPlacesProvider.future);
+      await loaded(c);
       expect(c.read(boardShownStopProvider), isNull);
     });
 

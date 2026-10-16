@@ -259,7 +259,7 @@ void main() {
     await tester.tap(find.byKey(BBSheet.handleKey));
     await tester.pumpAndSettle();
     final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * (844 - 2 * BBSpace.s), 1));
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * homeSheetArea(tester), 1));
     expect(tester.getSemantics(find.byKey(BBSheet.handleKey)), isSemantics(label: 'Show less', isButton: true));
     tester.semantics.tap(find.semantics.byLabel('Show less'));
     await tester.pumpAndSettle();
@@ -469,7 +469,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(_c(tester).read(homeSheetProvider), const StopSheet('C'));
     final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.fullFraction * (844 - 2 * BBSpace.s), 1));
+    expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.fullFraction * homeSheetArea(tester), 1));
   });
 
   testWidgets('pulled up, Your stop opens its sheet', (tester) async {
@@ -506,7 +506,7 @@ void main() {
     await tester.tap(find.text('Stop C · 80m'));
     await tester.pumpAndSettle();
     final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-    final area = 844 - 2 * BBSpace.s;
+    final area = homeSheetArea(tester);
     expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * area, 1));
   });
 
@@ -556,7 +556,7 @@ void main() {
       _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
       await tester.pumpAndSettle();
       final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-      final area = 844 - 2 * BBSpace.s;
+      final area = homeSheetArea(tester);
       final half = tester.getRect(find.byKey(BBSheet.cardKey)).height;
       // A short, slow drag: from half to a little above peek, where it snaps to peek and stays open.
       await tester.timedDrag(find.text('STOP C'), Offset(0, half - (sheet.peekFraction + 0.02) * area),
@@ -573,7 +573,7 @@ void main() {
       _c(tester).read(homeSheetProvider.notifier).open(const StopSheet('C'));
       await tester.pumpAndSettle();
       final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-      final area = 844 - 2 * BBSpace.s;
+      final area = homeSheetArea(tester);
       final half = tester.getRect(find.byKey(BBSheet.cardKey)).height;
       await tester.timedDrag(find.text('STOP C'), Offset(0, half - (sheet.peekFraction + 0.02) * area),
           const Duration(seconds: 2));

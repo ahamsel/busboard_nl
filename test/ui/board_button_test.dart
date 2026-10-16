@@ -48,7 +48,7 @@ final _openBoard = find.bySemanticsLabel('Open board, Stop C');
 /// The sheet card's height against its full detent.
 void _expectAtFull(WidgetTester tester) {
   final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-  final area = tester.view.physicalSize.height / tester.view.devicePixelRatio - 2 * BBSpace.s;
+  final area = homeSheetArea(tester);
   expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.fullFraction * area, 1),
       reason: 'the sheet is at full height');
 }
@@ -95,7 +95,7 @@ void main() {
   testWidgets("a stop sheet's header has Open board, which pulls the sheet from half to full", (tester) async {
     await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/board/C', overrides: _overrides);
     final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-    final area = 844 - 2 * BBSpace.s;
+    final area = homeSheetArea(tester);
     expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * area, 1));
     expect(_openBoard, findsOneWidget);
     await tester.tap(_openBoard);
@@ -120,7 +120,7 @@ void main() {
     await tester.tap(showMap);
     await tester.pumpAndSettle();
     final sheet = tester.widget<BBSheet>(find.byType(BBSheet));
-    final area = tester.view.physicalSize.height / tester.view.devicePixelRatio - 2 * BBSpace.s;
+    final area = homeSheetArea(tester);
     expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(sheet.halfFraction * area, 1),
         reason: 'the sheet is back at half, the map above it');
     expect(_openBoard, findsOneWidget, reason: 'and the button is Open board again');

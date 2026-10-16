@@ -8,10 +8,11 @@ import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/domain/trip_planner/timetable_index.dart';
 import 'package:busboard_nl/platform/alert_runner.dart';
 import 'package:busboard_nl/routing/router.dart';
-import 'package:busboard_nl/state/board_open_store.dart';
+import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/seen_flags.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
@@ -104,16 +105,20 @@ class StubMap {
   void longPress(double lat, double lon) => config!.onLongPress!(LatLng(lat, lon));
 }
 
+/// The height the map's pull-up sheet moves in: the map tab's (the screen above the tab bar) less the sheet's gaps.
+double homeSheetArea(WidgetTester tester) => tester.getSize(find.byType(HomeScreen)).height - 2 * BBSpace.s;
+
 /// An element under the router and the providers, for `GoRouter.of` and `ProviderScope.containerOf`.
 Element routerElement(WidgetTester tester) => tester.element(find.byType(Navigator).first);
 
 /// Pumps the app's route tree on [net] at [now] ([clock], when given, tells the time instead), starting at [initial].
 /// [use24h], when given, sets the device's clock format. [alertRunner], when given, takes the arrival alerts (a quiet one otherwise).
-/// [asyncPrefs] is what SharedPreferencesAsync holds at launch. [launchLinkChecked], when given, is the app's check for
-/// a notification that launched it (already done, with no link, otherwise). [reduceMotion] turns on the OS Reduce Motion setting.
+/// [asyncPrefs] is what SharedPreferencesAsync holds at launch. [reduceMotion] turns on the OS Reduce Motion setting.
 /// The one-time home tip is already seen unless [homeTipSeen] is false (it sits above "Where to?" and moves the peek),
 /// and so are the bar's one-time lift unless [barHintSeen] is false and the stop sheet's follow tip unless
 /// [followTipSeen] is false.
+/// The home opens on [tab] (the Map, where most of these tests live); null reads the tab used last from the phone, as
+/// a real launch does (the Board on a first launch).
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -137,8 +142,8 @@ Future<void> pumpPlannerApp(
   bool barHintSeen = true,
   bool followTipSeen = true,
   Map<String, Object> asyncPrefs = const {},
-  Completer<bool>? launchLinkChecked,
   bool reduceMotion = false,
+  HomeTab? tab = HomeTab.map,
 }) async {
   // flutter_test's own 800x600 is a tablet to the home screen (its side panel starts at 700): a test that has not
   // picked a size gets a phone, so the sheet is a pull-up sheet. A test that sets its own size keeps it.
@@ -177,7 +182,7 @@ Future<void> pumpPlannerApp(
         mapViewBuilderProvider.overrideWithValue(mapView ?? StubMap().build),
         // No live buses unless a test overrides this: the real poll's timer would outlive the test.
         busTrackingStreamProvider.overrideWith((ref) => Stream.value(const <String, BusTrackingState>{})),
-        launchLinkCheckedProvider.overrideWithValue(launchLinkChecked ?? (Completer<bool>()..complete(false))),
+        if (tab != null) homeTabProvider.overrideWith(() => HomeTabNotifier.fixed(tab)),
         if (homeTipSeen) homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen()),
         if (barHintSeen) barHintSeenProvider.overrideWith(() => SeenFlagNotifier.seen(barHintSeenKey)),
         if (followTipSeen) followTipSeenProvider.overrideWith(() => SeenFlagNotifier.seen(followTipSeenKey)),
