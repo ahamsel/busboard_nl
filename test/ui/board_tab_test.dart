@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/data/realtime/service_alert_models.dart';
 import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
@@ -8,6 +9,7 @@ import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/location/nearest_stop_service.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
+import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/recent_stops_provider.dart';
@@ -30,6 +32,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_alerts.dart';
+import '../helpers/planner_app.dart';
 import '../kit/kit_test_helpers.dart';
 import '../trip_planner/test_network.dart';
 
@@ -398,4 +401,27 @@ void main() {
       expect(p.size.width, greaterThanOrEqualTo(p.getMaxIntrinsicWidth(double.infinity) - 0.5));
     });
   }
+
+  group('the whole app, with the real departures', () {
+    testWidgets('at a cold start, while the schedule loads, the Board is loading, not "No upcoming departures" (I1)',
+        (tester) async {
+      await pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: DateTime(2026, 10, 7, 13, 0),
+        tab: HomeTab.board,
+        repoFuture: Completer<GtfsRepository>().future,
+        settle: false,
+        overrides: [settingsProvider.overrideWith(() => _Settings('C'))],
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('STOP C'), findsOneWidget, reason: 'your stop shows at once');
+      expect(find.text('No upcoming departures'), findsNothing);
+      expect(find.text('Showing schedule'), findsNothing, reason: 'nor is that announced');
+      expect(find.text('Checking live data…'), findsOneWidget);
+      expect(find.descendant(of: find.byType(BoardTab), matching: find.byType(BBSkeleton)), findsOneWidget);
+    });
+  });
 }

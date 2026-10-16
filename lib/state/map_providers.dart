@@ -51,9 +51,12 @@ final appForegroundProvider = NotifierProvider<AppForegroundNotifier, bool>(AppF
 /// the schedule, the live vehicle feed and the stop-prediction feed. Re-fetches
 /// every refresh interval while something watches it and the app is in the
 /// foreground; coming back to the foreground fetches once and resumes polling.
+///
+/// Loading until the schedule is (each launch parses it, and a first install downloads it first), and an error if it
+/// fails: never an empty list then, which would read as "No upcoming departures" (final review I1).
 final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>, String>((ref, stopId) async {
-  final repo = ref.watch(gtfsRepositoryProvider).value;
-  if (repo == null) return const [];
+  // Watched here with the other dependencies, and awaited with the fetch below (so a failed one still arms the poll).
+  final schedule = ref.watch(gtfsRepositoryProvider.future);
   final seconds = ref.watch(settingsProvider.select((s) => s.refreshIntervalSeconds));
   // Your stop's arrivals outlive their last listener (a bus card replaces the
   // your-stop card for a while): coming back shows them at once, no skeleton.
@@ -94,6 +97,7 @@ final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>,
   }
 
   try {
+    final repo = await schedule;
     List<TimeTrackVehicle>? liveVehicles;
     try {
       final result = await ref.read(timetrackApiProvider).fetchVehiclesResult();
