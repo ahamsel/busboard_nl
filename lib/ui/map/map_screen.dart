@@ -113,6 +113,33 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   int _styleGeneration = 0;
   Future<void>? _installing;
   bool _tickersEnabled = true;
+
+  /// The subscription that keeps the live vehicle feed polling, held only while the Map tab shows. (Riverpod pauses a
+  /// provider with no active listener, but a `ref.listen` is never paused with the widget, so this is closed and
+  /// reopened by hand.)
+  ProviderSubscription<AsyncValue<Map<String, BusTrackingState>>>? _feedSub;
+  bool _feedOpenedBefore = false;
+
+  void _syncFeed() {
+    if (_tickersEnabled && _feedSub == null) {
+      _feedSub = ref.listenManual(busTrackingStreamProvider, (_, _) {});
+      final resumed = _feedOpenedBefore;
+      _feedOpenedBefore = true;
+      // Back from another tab: the buses are as old as the time away, so poll at once, not after the refresh interval.
+      // Until that poll lands the snapshot is stale, and a follow is not judged on it (it would be lost for contact
+      // after 5 min away): the app-resume gate, [_feedIsFresh], holds the follow's endings and restarts its clocks.
+      if (resumed) {
+        _awaitingFreshFeed = true;
+        _feedAtResume = ref.read(busTrackingStreamProvider).value;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _feedSub != null) ref.invalidate(busTrackingStreamProvider);
+        });
+      }
+    } else if (!_tickersEnabled && _feedSub != null) {
+      _feedSub!.close();
+      _feedSub = null;
+    }
+  }
   bool _appResumed = true;
   // After a pause the feed is as old as the pause (iOS stops polling): the
   // follow is not judged until a poll newer than this snapshot arrives.
@@ -180,8 +207,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   void didChangeDependencies() {
     super.didChangeDependencies();
     final enabled = TickerMode.valuesOf(context).enabled;
-    if (enabled == _tickersEnabled) return;
+    final changed = enabled != _tickersEnabled;
     _tickersEnabled = enabled;
+    _syncFeed();
+    if (!changed) return;
     // An offstage map tab asks for no frames at all.
     if (!enabled) {
       _ticker?.stop();
@@ -721,9 +750,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       // While following, the follow camera frames the new stop itself.
       if (next != null && _follow == null) unawaited(_recentreOn(next));
     });
-    // Keep the live feed subscribed (it drives the track store and the taps)
-    // without rebuilding the screen on every poll.
-    ref.listen(busTrackingStreamProvider, (_, _) {});
+    // The live feed is kept subscribed (it drives the track store and the taps) without rebuilding the screen on every
+    // poll, while the Map tab shows: see [_syncFeed].
     ref.listen<FollowTarget?>(followProvider, (prev, next) {
       if (prev != next) _onFollowChanged(next);
       // A planned trip's boarding stop is marked for the follow, the saved one after it.
