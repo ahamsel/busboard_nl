@@ -28,6 +28,7 @@ import 'package:busboard_nl/ui/board/board_tab.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
 import 'package:busboard_nl/ui/home/home_sheet.dart';
 import 'package:busboard_nl/ui/home/home_stop_line.dart';
+import 'package:busboard_nl/ui/home/home_tip.dart';
 import 'package:busboard_nl/ui/home/options_sheet.dart';
 import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
@@ -594,7 +595,7 @@ void main() {
 
     await pumpHomeAtPeek(tester, size: size, textScale: 1.0, dark: false, tip: true);
     expect(tester.takeException(), isNull, reason: 'initial layout');
-    expect(find.textContaining("Everything's on the map now"), findsOneWidget);
+    expect(find.text(homeTipText), findsOneWidget);
     expectVisibleAtPeek(tester, find.byKey(HomeSheetContent.whereToKey), 'Where to?', size);
     expectVisibleAtPeek(tester, find.text('Got it'), 'Got it', size);
     expect(find.text('Got it').hitTestable(), findsOneWidget, reason: 'Got it can be tapped at peek');
@@ -613,7 +614,7 @@ void main() {
 
       await pumpHomeAtPeek(tester, size: size, textScale: 2.0, dark: dark, tip: true);
       expect(tester.takeException(), isNull, reason: 'initial layout');
-      final tip = find.textContaining('Your Board is one tap away');
+      final tip = find.text(homeTipText);
       expect(tip, findsOneWidget);
       expect(tester.renderObject<RenderParagraph>(tip).didExceedMaxLines, isFalse, reason: 'the tip is cut short');
       // Pulled up by the tip itself (at peek it may hide everything under it).

@@ -5,10 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../kit/kit.dart';
 
 const _key = 'home_tip_seen.v1';
-// Shared by the phone's bar (your stop's line, below the tip, opens the Board) and the tablet panel (your stop's row
-// and Open board, below it): so it names your stop, not a button only one of them has.
-const homeTipText = 'Everything\'s on the map now: tap "Where to?" to plan, a stop for its buses, the bell for '
-    'alerts. Your Board is one tap away: tap your stop below.';
+// For riders upgrading from 1.4 (and new ones), on their first visit to the Map tab: where things are now that home
+// has two tabs (spec 2026-10-15 §2). Shared by the phone's bar and the tablet panel, so it names no button only one
+// of them has.
+const homeTipText = 'Your buses are on the Board tab. Use the Map tab to see the map, plan a trip or follow a bus.';
 
 class HomeTipSeenNotifier extends AsyncNotifier<bool> {
   HomeTipSeenNotifier();
@@ -35,7 +35,7 @@ final homeTipSeenProvider = AsyncNotifierProvider<HomeTipSeenNotifier, bool>(
   HomeTipSeenNotifier.new,
 );
 
-/// The one-time "everything moved" tip (spec 2026-10-12 §3.7).
+/// The one-time tip on where things are (spec 2026-10-12 §3.7, reworded for the two tabs of spec 2026-10-15).
 class HomeTip extends ConsumerWidget {
   const HomeTip({super.key});
 

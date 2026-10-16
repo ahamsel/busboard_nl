@@ -167,29 +167,30 @@ void main() {
   group('the one-time tip', () {
     testWidgets('shows once and stays dismissed', (tester) async {
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: false);
-      expect(find.textContaining("Everything's on the map now"), findsOneWidget);
+      expect(find.text(homeTipText), findsOneWidget);
       await tester.tap(find.text('Got it'));
       await tester.pumpAndSettle();
-      expect(find.textContaining("Everything's on the map now"), findsNothing);
+      expect(find.text(homeTipText), findsNothing);
       expect(await SharedPreferencesAsync().getBool('home_tip_seen.v1'), isTrue);
     });
 
-    testWidgets('tells riders used to the Board tab where it went, without naming a button the bar lacks', (tester) async {
+    testWidgets('tells riders from 1.4 about the two tabs, without naming a button the bar lacks', (tester) async {
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: false);
-      expect(find.textContaining('Your Board is one tap away: tap your stop below.'), findsOneWidget);
+      expect(find.text(homeTipText), findsOneWidget);
       // The bar has no Open board button: the stop line opens the Board (final review I5, WCAG 3.3.2).
       expect(homeTipText, isNot(contains('Open board')));
+      // Written for the tabs (final review I3): the Board has not moved onto the map.
+      expect(homeTipText, isNot(contains("Everything's on the map")));
       expect(
         homeTipText,
-        'Everything\'s on the map now: tap "Where to?" to plan, a stop for its buses, the bell for alerts. '
-        'Your Board is one tap away: tap your stop below.',
+        'Your buses are on the Board tab. Use the Map tab to see the map, plan a trip or follow a bus.',
       );
     });
 
     testWidgets('a seen tip never shows', (tester) async {
       // pumpPlannerApp's homeTipSeen is the HomeTipSeenNotifier.seen() override.
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: true);
-      expect(find.textContaining("Everything's on the map now"), findsNothing);
+      expect(find.text(homeTipText), findsNothing);
     });
 
     test('a tip stored as seen stays gone on the next start', () async {
