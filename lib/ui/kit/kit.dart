@@ -28,6 +28,7 @@ export 'bb_sheet.dart';
 export 'bb_skeleton.dart';
 export 'bb_stepper.dart';
 export 'bb_switch.dart';
+export 'bb_tab_bar.dart';
 export 'bb_text_field.dart';
 export 'bb_time.dart';
 export 'bb_theme.dart';
