@@ -16,6 +16,7 @@ import 'package:busboard_nl/ui/map/map_view.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/planner_app.dart';
@@ -86,6 +87,18 @@ class _CountingFeed {
     ref.onDispose(c.close);
     return c.stream;
   }
+}
+
+/// A phone where the app has not been granted the location yet, until [granted] (the Board's Near me asked).
+class _LaterGeolocator extends GeolocatorPlatform {
+  var granted = false;
+  @override
+  Future<bool> isLocationServiceEnabled() async => true;
+  @override
+  Future<LocationPermission> checkPermission() async =>
+      granted ? LocationPermission.whileInUse : LocationPermission.denied;
+  @override
+  Future<LocationPermission> requestPermission() async => checkPermission();
 }
 
 void main() {
@@ -291,4 +304,15 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 4));
     });
   }
+
+  testWidgets('the location granted on the Board shows the location dot when the Map is shown (M3)',
+      (tester) async {
+    final geo = _LaterGeolocator();
+    final map = StubMap();
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, tab: HomeTab.board, geolocator: geo, mapView: map.build);
+    geo.granted = true; // Near me, or Choose your stop, asked on the Board
+    await tester.tap(find.byKey(HomeShell.mapTabKey));
+    await tester.pumpAndSettle();
+    expect(map.config!.myLocationEnabled, isTrue, reason: 'no need to tap My location for the dot');
+  });
 }

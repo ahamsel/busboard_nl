@@ -322,9 +322,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     super.didUpdateWidget(oldWidget);
     if (widget.active) _mapEverShown = true;
     _syncFeed();
-    // The Map tab has just come into view: the bar's one-time lift, if it has not played yet.
+    // The Map tab has just come into view: the bar's one-time lift, if it has not played yet; and the location dot,
+    // if the location was granted meanwhile (the Board's Near me or Choose your stop asks for it; final review M3).
     if (widget.active && !oldWidget.active) {
       WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_hintBar()));
+      unawaited(_enableMyLocation(request: false));
     }
   }
 
