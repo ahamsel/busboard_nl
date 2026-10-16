@@ -147,6 +147,12 @@ class _RecordingSurface extends FakeMapSurface {
   }
 }
 
+/// A follow surface that knows where the rider is.
+class _LocatedRecordingSurface extends _RecordingSurface {
+  @override
+  Future<LatLng?> myLocation() async => const LatLng(47.55, -52.70);
+}
+
 /// `myLocation()` answers from a script, one entry per call.
 class _SequencedLocationSurface extends FakeMapSurface {
   _SequencedLocationSurface(this._script);
@@ -817,6 +823,30 @@ void main() {
       await _frames(tester, 2);
       expect(containerOf(tester).read(mapSelectionProvider), isNull);
       expect(find.text('Following bus 2573'), findsOneWidget);
+    });
+
+    testWidgets('My location while following pauses the follow, as a pan does, and stays on the rider', (tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('flutter.baseflow.com/geolocator'),
+        (call) async => switch (call.method) { 'checkPermission' => 2, 'requestPermission' => 2, _ => null },
+      );
+      final located = _LocatedRecordingSurface();
+      await pumpFollow(tester, surfaceOverride: located);
+      await startFollowing(tester);
+      expect(find.text('Back to bus 2573'), findsNothing);
+      final fitsBefore = located.fits.length;
+
+      await tester.tap(_myLocation);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(located.moves.last.$1, const LatLng(47.55, -52.70));
+      expect(find.text('Back to bus 2573'), findsOneWidget);
+
+      await realSecond(tester); // longer than the camera's one-second interval
+      await _frames(tester, 3);
+      expect(located.fits.length, fitsBefore, reason: 'the camera no longer pulls back to the bus');
+      expect(located.moves.last.$1, const LatLng(47.55, -52.70));
     });
 
     testWidgets('panning pauses the camera and shows Back to bus; the chip resumes it', (tester) async {
