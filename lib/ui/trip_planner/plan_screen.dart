@@ -194,14 +194,19 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
               ],
             ),
           ),
-          ..._results(context, results, now),
+          ..._results(context, results, now, missingTo: draft.to == null),
           SliverToBoxAdapter(child: SizedBox(height: BBNavBar.reservedHeight(context) + BBSpace.l)),
         ],
       ),
     );
   }
 
-  List<Widget> _results(BuildContext context, AsyncValue<PlanOutcome?> results, DateTime now) {
+  List<Widget> _results(
+    BuildContext context,
+    AsyncValue<PlanOutcome?> results,
+    DateTime now, {
+    required bool missingTo,
+  }) {
     final bb = context.bb;
     Widget box(Widget child) => SliverToBoxAdapter(child: child);
     // A new form loads afresh; a live refresh (or Riverpod's retry after a failure) keeps what is shown.
@@ -234,7 +239,8 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
           Padding(
             padding: const EdgeInsets.all(BBSpace.xxl),
             child: Text(
-              "Choose where you're going",
+              // Whichever end is missing: the destination first, else the start.
+              missingTo ? "Choose where you're going" : "Choose where you're starting",
               textAlign: TextAlign.center,
               style: bb.text.body.copyWith(color: bb.colors.muted),
             ),
