@@ -1091,10 +1091,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
         },
       );
 
+  /// Floats over a sheet pulled up; a tap brings the sheet back to peek too, so the map shows.
   Widget _backChip(_Follow f) => BBChip(
         label: 'Back to bus ${f.vehicleId}',
         icon: BBIcons.bus,
-        onTap: () => _resumeFollow(f),
+        onTap: () {
+          _resumeFollow(f);
+          unawaited(_sheet.collapse());
+        },
       );
 
   /// The follow card at peek. Its destination, route and delay come from the
