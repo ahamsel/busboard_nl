@@ -48,6 +48,21 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  // TalkBack would read an announced toast twice: once for the announcement and again for a live region.
+  testWidgets('an announced toast is not also a live region; a plain one is', (tester) async {
+    for (final (announce, live) in [(false, true), (true, false)]) {
+      await tester.pumpWidget(_launcher((c) => BBToast.show(c, 'toast $announce', announce: announce)));
+      await tester.tap(find.text('go'));
+      await tester.pump(const Duration(milliseconds: 250));
+      final semantics = tester.widget<Semantics>(
+        find.ancestor(of: find.byKey(BBToast.cardKey), matching: find.byType(Semantics)).first,
+      );
+      expect(semantics.properties.liveRegion ?? false, live, reason: 'announce: $announce');
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    }
+  });
+
   testWidgets('toast stays above the on-screen keyboard', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;
