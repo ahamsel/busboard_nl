@@ -28,6 +28,17 @@ class TopActions extends ConsumerWidget {
   /// The alerts button's screen-reader label: "Service alerts, 2 active".
   static String alertsLabel(int active) => active > 0 ? 'Service alerts, $active active' : 'Service alerts';
 
+  /// Opens the trip planner with [push] (a [PushOnce]'s, so a quick double tap opens one). A trip whose steps the
+  /// rider left open (Show on map, Follow bus, a notification) comes back over the planner, as on 1.4.1's Plan tab.
+  /// The Plan button does this, and so does the stop picker's Plan a trip card.
+  static void openPlanner(BuildContext context, WidgetRef ref, PushOnceCallback push) => push(
+        '/plan',
+        then: () {
+          final open = ref.read(openJourneyProvider.notifier).stillUnderWay(ref.read(plannerClockProvider)());
+          if (open != null) unawaited(GoRouter.of(context).push('/plan/journey', extra: open));
+        },
+      );
+
   /// The width of the three header buttons (44 pt each).
   static const double headerWidth = 3 * 44;
 
@@ -69,21 +80,15 @@ class TopActions extends ConsumerWidget {
           buttonKey: planKey,
           icon: BBIcons.plan,
           label: 'Plan a trip',
-          location: '/plan',
           floating: floating,
-          // A trip whose steps the rider left open (Show on map, Follow bus, a notification) comes back over the
-          // planner, as on 1.4.1's Plan tab.
-          then: () {
-            final open = ref.read(openJourneyProvider.notifier).stillUnderWay(ref.read(plannerClockProvider)());
-            if (open != null) unawaited(GoRouter.of(context).push('/plan/journey', extra: open));
-          },
+          onTap: (push) => openPlanner(context, ref, push),
         ),
         SizedBox(width: gap),
         _TopButton(
           buttonKey: alertsKey,
           icon: BBIcons.alerts,
           label: alertsLabel(active),
-          location: '/alerts',
+          onTap: (push) => push('/alerts'),
           floating: floating,
           badgeCount: active,
         ),
@@ -92,7 +97,7 @@ class TopActions extends ConsumerWidget {
           buttonKey: settingsKey,
           icon: BBIcons.settings,
           label: 'Settings',
-          location: '/settings',
+          onTap: (push) => push('/settings'),
           floating: floating,
         ),
       ],
@@ -105,21 +110,19 @@ class _TopButton extends StatelessWidget {
     required this.buttonKey,
     required this.icon,
     required this.label,
-    required this.location,
     required this.floating,
+    required this.onTap,
     this.badgeCount = 0,
-    this.then,
   });
 
   final Key buttonKey;
   final IconData icon;
   final String label;
-  final String location;
   final bool floating;
   final int badgeCount;
 
-  /// Runs after the page is pushed.
-  final VoidCallback? then;
+  /// Opens the button's page with a [PushOnce]'s push.
+  final void Function(PushOnceCallback push) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -161,7 +164,7 @@ class _TopButton extends StatelessWidget {
     // Once for a quick double tap: two taps before the page shows would open two.
     return PushOnce(
       builder: (context, push) =>
-          BBPressable(key: buttonKey, semanticLabel: label, onTap: () => push(location, then: then), child: face),
+          BBPressable(key: buttonKey, semanticLabel: label, onTap: () => onTap(push), child: face),
     );
   }
 }
