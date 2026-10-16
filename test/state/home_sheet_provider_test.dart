@@ -74,4 +74,21 @@ void main() {
     n().home();
     expect(n().stack, hasLength(1));
   });
+
+  test('every sheet has its own id, so the sheet at full is never mistaken for another', () {
+    final j1 = Journey(serviceDate: DateTime(2026, 10, 7), legs: const []);
+    final j2 = Journey(serviceDate: DateTime(2026, 10, 7), legs: const []);
+    final ids = [
+      sheetIdOf(const HomeSheetHome()),
+      sheetIdOf(const StopSheet('1150')),
+      sheetIdOf(const StopSheet('1151')),
+      sheetIdOf(const BusSheet('1150')),
+      sheetIdOf(const OptionsSheet()),
+      sheetIdOf(JourneySheet(j1)),
+      sheetIdOf(JourneySheet(j2)),
+      sheetIdOf('follow:2573'),
+    ];
+    expect(ids.toSet(), hasLength(ids.length));
+    expect(sheetIdOf(const StopSheet('1150')), sheetIdOf(const StopSheet('1150')));
+  });
 }

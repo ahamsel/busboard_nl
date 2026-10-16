@@ -869,6 +869,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// The pull-up sheet is at its full height.
   bool _sheetAtFull = false;
 
+  /// The id of the sheet now showing, for [sheetAtFullProvider].
+  String get _sheetId => sheetIdOf(_sheetKey ?? const HomeSheetHome());
+
   bool _onSheetExtent(DraggableScrollableNotification n) {
     _sheetExtent = n.extent;
     final wasAtFull = _sheetAtFull;
@@ -880,7 +883,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       // The notification can come mid-layout: what it changes is built on the next frame.
       void apply() {
         if (!mounted) return;
-        ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull);
+        ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull ? _sheetId : null);
         if (abovePeek != _sheetAbovePeek) setState(() => _sheetAbovePeek = abovePeek);
       }
       if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
@@ -1077,11 +1080,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       _sheetExtent = 0;
       _headerKey = GlobalKey();
       _headerHeight = null;
-      // Its header is measured once laid out (a first layout sends no size-changed notification), and the stop card's
-      // Open board / Show map follows this sheet's height, not the last one's (provider changes wait for the frame).
+      // Its header is measured once laid out (a first layout sends no size-changed notification). The last sheet's
+      // "at full" names that sheet, so this one never reads it as its own; it is cleared once the frame is done
+      // (provider changes wait for the frame).
       _scheduleHeaderMeasure();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull);
+        if (mounted) ref.read(sheetAtFullProvider.notifier).set(_sheetAtFull ? _sheetId : null);
       });
       _actionsKey = GlobalKey();
       _actionsBottom = null;

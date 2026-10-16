@@ -115,7 +115,7 @@ class _StopHeader extends ConsumerWidget {
             // The header is padded l on the left but s on the right (for the icon buttons' own hit area): this evens
             // the filled button's sides.
             padding: const EdgeInsets.only(right: BBSpace.l - BBSpace.s),
-            child: ref.watch(sheetAtFullProvider)
+            child: ref.watch(sheetAtFullProvider) == sheetIdOf(StopSheet(stopId))
                 ? BBButton(
                     key: StopSheetContent.showMapKey,
                     label: 'Show map',

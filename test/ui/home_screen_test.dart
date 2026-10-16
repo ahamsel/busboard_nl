@@ -996,13 +996,13 @@ void main() {
       final full = top(tester);
       final board = tester.widget<BBSheet>(find.byType(BBSheet));
       expect(tester.getRect(find.byKey(BBSheet.cardKey)).height, closeTo(board.fullFraction * (844 - 2 * BBSpace.s), 1));
-      expect(container(tester).read(sheetAtFullProvider), isTrue);
+      expect(container(tester).read(sheetAtFullProvider), sheetIdOf(const StopSheet('1150')));
       // Bare map above the card's top (about 91 pt) and below the chips.
       expect(full, greaterThan(86));
       await tester.dragFrom(const Offset(60, 58), const Offset(0, 26));
       await frames(tester);
       expect(top(tester), full, reason: 'the Board stays open');
-      expect(container(tester).read(sheetAtFullProvider), isTrue);
+      expect(container(tester).read(sheetAtFullProvider), sheetIdOf(const StopSheet('1150')));
       expect(find.byKey(StopSheetContent.showMapKey), findsOneWidget);
     });
   });
@@ -1070,12 +1070,17 @@ void main() {
       await frames(tester);
       await tester.drag(find.byKey(HomeSheetContent.whereToKey), const Offset(0, -400));
       await frames(tester);
-      expect(container(tester).read(sheetAtFullProvider), isTrue, reason: 'home is at full');
+      expect(container(tester).read(sheetAtFullProvider), sheetIdOf(const HomeSheetHome()), reason: 'home is at full');
       container(tester).read(homeSheetProvider.notifier).open(const StopSheet('1150'));
+      // Not even for the card's first frame: the home sheet's "at full" is not the card's.
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(i == 0 ? Duration.zero : const Duration(milliseconds: 16));
+        expect(find.byKey(StopSheetContent.showMapKey), findsNothing, reason: 'frame $i says Show map');
+      }
       await frames(tester);
       final card = tester.widget<BBSheet>(find.byType(BBSheet));
       expect(height(tester), closeTo(card.halfFraction * area, 1), reason: 'the card opens at half');
-      expect(container(tester).read(sheetAtFullProvider), isFalse);
+      expect(container(tester).read(sheetAtFullProvider), isNull);
       expect(find.byKey(StopSheetContent.openBoardKey), findsOneWidget);
       expect(find.byKey(StopSheetContent.showMapKey), findsNothing);
     });

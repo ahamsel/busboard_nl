@@ -150,15 +150,29 @@ class BoardRequestNotifier extends Notifier<BoardRequest?> {
   void _request(String stopId) => state = BoardRequest(stopId);
 }
 
-/// The phone's pull-up sheet is at its full height: a stop's sheet there is its Board, and its header button turns
-/// from "Open board" into "Show map". Always false on the tablet panel, which has no detents.
-final sheetAtFullProvider = NotifierProvider<SheetAtFullNotifier, bool>(SheetAtFullNotifier.new);
+/// Which sheet the phone's pull-up sheet is showing at its full height, by [sheetIdOf], or null when none is: a stop's
+/// sheet there is its Board, and its header button turns from "Open board" into "Show map". A sheet compares the id
+/// with its own, so a value left by the sheet it replaced never matches. Always null on the tablet panel, which has no
+/// detents.
+final sheetAtFullProvider = NotifierProvider<SheetAtFullNotifier, String?>(SheetAtFullNotifier.new);
 
-class SheetAtFullNotifier extends Notifier<bool> {
+class SheetAtFullNotifier extends Notifier<String?> {
   @override
-  bool build() => false;
+  String? build() => null;
 
-  void set(bool atFull) {
-    if (state != atFull) state = atFull;
+  /// [sheetId] is at full height; null when no sheet is.
+  void set(String? sheetId) {
+    if (state != sheetId) state = sheetId;
   }
 }
+
+/// The id [sheetAtFullProvider] holds for the pull-up sheet showing [sheetKey]: a [HomeSheet], or the follow card's
+/// own key (`follow:2573`).
+String sheetIdOf(Object sheetKey) => switch (sheetKey) {
+      HomeSheetHome() => 'home',
+      StopSheet(:final stopId) => 'stop:$stopId',
+      BusSheet(:final vehicleId) => 'bus:$vehicleId',
+      OptionsSheet() => 'options',
+      JourneySheet(:final journey) => 'journey:${identityHashCode(journey)}',
+      _ => '$sheetKey',
+    };
