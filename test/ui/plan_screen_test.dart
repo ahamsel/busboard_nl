@@ -83,6 +83,19 @@ void main() {
     expect(find.text("Choose where you're going"), findsOneWidget, reason: 'only the destination is missing');
   });
 
+  testWidgets("the place picker's search field keeps its name for screen readers once text is typed", (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now);
+    await tester.tap(find.text('Choose a destination'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText), 'C');
+    await tester.pumpAndSettle();
+    final field = tester.getSemantics(find.byType(EditableText));
+    expect(field.label, 'Stop number or name', reason: 'a stable name, read with the typed value');
+    expect(field.value, 'C');
+    handle.dispose();
+  });
+
   testWidgets('the 30 s live refresh keeps the results up instead of flashing the loading dots', (tester) async {
     // A feed that takes 2 s to answer, as a phone network can.
     final slow = MockClient((_) => Future.delayed(const Duration(seconds: 2), () => http.Response('', 503)));

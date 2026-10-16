@@ -179,6 +179,9 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
                         const SizedBox(height: BBSpace.s),
                         BBTextField(
                           hint: 'Stop number or name',
+                          // The same words name the field for screen readers, so it is not announced by its typed
+                          // value alone.
+                          semanticLabel: 'Stop number or name',
                           leadingIcon: BBIcons.search,
                           autofocus: true,
                           textInputAction: TextInputAction.search,
