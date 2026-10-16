@@ -691,6 +691,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     }
     final here = await _locate(camera, attempts: wasEnabled ? 1 : 3);
     if (here == null || !mounted) return;
+    // As a pan does: a follow's camera pauses, so it doesn't pull the view
+    // straight back to the bus, and Back to bus returns to it.
+    final f = _follow;
+    if (f != null && !f.paused) setState(() => f.paused = true);
     await camera.moveTo(here, 15, animate: !MediaQuery.disableAnimationsOf(context));
   }
 
