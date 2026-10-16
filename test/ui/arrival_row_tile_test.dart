@@ -91,6 +91,23 @@ void main() {
     expect(sched.style!.decoration, TextDecoration.lineThrough);
   });
 
+  testWidgets('the scheduled time is struck through with one line, not the app fallback\'s double line',
+      (tester) async {
+    // In the app no Material sits above the rows, so the inherited text style is Flutter's debug fallback, whose
+    // decoration is a double line: a strike-through that kept that style drew a second line under the text.
+    await tester.pumpWidget(MaterialApp(
+      theme: BBTheme.light(),
+      home: Center(
+        child: ArrivalRowTile(
+          arrival: _row(isLive: true, status: LiveStatus.behind, predicted: GtfsTime.parse('09:55:00')),
+        ),
+      ),
+    ));
+    final sched = tester.renderObject<RenderParagraph>(find.textContaining('sched'));
+    expect(sched.text.style?.decoration, TextDecoration.lineThrough);
+    expect(sched.text.style?.decorationStyle, TextDecorationStyle.solid);
+  });
+
   testWidgets("times follow the device's 12-hour setting", (tester) async {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(kitHost(
