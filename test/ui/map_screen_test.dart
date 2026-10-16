@@ -31,6 +31,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show CircleLayerProperties, LatLng, LineLayerProperties, SymbolLayerProperties;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -662,8 +664,11 @@ void main() {
       double textScale = 1,
       List<ArrivalRow> arrivals = const [],
       Map<String, Object> prefs = const {'selectedStopId': 's2'},
+      bool broadcast = false,
     }) async {
-      feed = StreamController<Map<String, BusTrackingState>>();
+      feed = broadcast
+          ? StreamController<Map<String, BusTrackingState>>.broadcast()
+          : StreamController<Map<String, BusTrackingState>>();
       addTearDown(feed.close);
       surface = surfaceOverride ?? _RecordingSurface();
       _surface = surface;
@@ -1052,6 +1057,37 @@ void main() {
         await tester.pump(const Duration(seconds: 5));
       });
 
+      testWidgets('6 min on another tab: the follow waits for a fresh poll on coming back, then endings work again',
+          (tester) async {
+        var skew = Duration.zero;
+        DateTime now() => DateTime.now().add(skew);
+        // A broadcast feed: coming back re-subscribes (the poll is restarted at once), as the real one does.
+        await pumpFollow(tester, broadcast: true, overrides: [mapClockProvider.overrideWithValue(now)]);
+        await startFollowing(tester);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        // The Map goes behind another tab, as the shell does: its tickers off, its feed closed.
+        _tickerMode.value = false;
+        await _frames(tester, 3);
+        skew = const Duration(minutes: 6);
+        _tickerMode.value = true;
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull, reason: 'the fix from before is not judged');
+        expect(find.byKey(BBToast.cardKey), findsNothing);
+        expect(find.text('Following bus 2573'), findsOneWidget);
+
+        feed.add({'2573': followed(gps: now())});
+        await _frames(tester, 3);
+        expect(containerOf(tester).read(followProvider), isNotNull);
+        expect(find.textContaining('stops to'), findsOneWidget);
+
+        feed.add(const {});
+        await _frames(tester, 3);
+        expect(find.text('Lost contact with bus 2573'), findsOneWidget);
+        expect(containerOf(tester).read(followProvider), isNull);
+        await tester.pump(const Duration(seconds: 5));
+      });
+
       testWidgets('Follow, then lock before the first poll: still finding the bus after', (tester) async {
         var skew = Duration.zero;
         DateTime now() => DateTime.now().add(skew);
@@ -1264,6 +1300,33 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(minutes: 1));
     }
+
+    testWidgets('the live vehicle feed is not polled behind another tab, and polls at once on coming back',
+        (tester) async {
+      var fetches = 0;
+      final live = MockClient((_) async {
+        fetches++;
+        return http.Response('', 503);
+      });
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', liveClient: live);
+      await tester.pump(const Duration(seconds: 6));
+      expect(fetches, greaterThan(0), reason: 'polled while the Map shows');
+      final bar = find.byType(BBNavBar);
+      await tester.tap(find.descendant(of: bar, matching: find.text('Alerts')));
+      await tester.pumpAndSettle();
+      // The feed is paused at its next update: a poll under way as the tab goes may still finish.
+      await tester.pump(const Duration(seconds: 6));
+      final hidden = fetches;
+      for (var i = 0; i < 6; i++) {
+        await tester.pump(const Duration(seconds: 5));
+      }
+      expect(fetches, hidden, reason: 'no polling behind another tab');
+      await tester.tap(find.descendant(of: bar, matching: find.text('Map')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fetches, greaterThan(hidden), reason: 'at once on coming back, not after the refresh interval');
+      await unmount(tester);
+    });
 
     testWidgets('a long-press on a stop opens a sheet named for it; Plan to here sets the destination', (tester) async {
       final map = StubMap();
