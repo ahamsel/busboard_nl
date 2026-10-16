@@ -55,9 +55,7 @@ class _BBPressableState extends State<BBPressable> {
     final duration = BBMotion.of(context, BBMotion.press);
     final gesture = GestureDetector(
       behavior: HitTestBehavior.opaque,
-      // The tap reaches screen readers through the Semantics below (or a descendant's own): a second tap action
-      // here would split the button into a bare "button" node around a separate labelled one.
-      excludeFromSemantics: true,
+      excludeFromSemantics: !widget.exposeSemantics,
       onTapDown: enabled ? (_) => _setDown(true) : null,
       onTapUp: enabled ? (_) => _setDown(false) : null,
       onTapCancel: enabled ? () => _setDown(false) : null,
