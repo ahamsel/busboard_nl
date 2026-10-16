@@ -3,6 +3,7 @@ import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/shell/app_shell.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -90,6 +91,32 @@ void main() {
     await tester.tap(find.text('Plan'));
     await tester.pumpAndSettle();
     expect(find.text('PLAN'), findsOneWidget);
+  });
+
+  testWidgets('a switch of tab made by an action (Follow on the Board) is said to screen readers; a tab tap is not',
+      (tester) async {
+    final said = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, (m) async {
+      final event = m as Map<Object?, Object?>;
+      if (event['type'] == 'announce') said.add((event['data']! as Map<Object?, Object?>)['message']! as String);
+      return null;
+    });
+    addTearDown(() =>
+        tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null));
+    final router = await _pump(tester);
+    router.go('/map'); // as Follow on the Board does
+    await tester.pumpAndSettle();
+    expect(find.text('MAP'), findsOneWidget);
+    expect(said, ['Map tab'], reason: 'the Board was taken away: say where the rider is now');
+    await tester.tap(find.text('Alerts'));
+    await tester.pumpAndSettle();
+    expect(said, ['Map tab'], reason: 'a tab the rider tapped needs no announcement');
+    router.go('/plan'); // as Plan to here on the map does
+    await tester.pumpAndSettle();
+    expect(said, ['Map tab', 'Plan tab']);
+    router.go('/plan'); // already there
+    await tester.pumpAndSettle();
+    expect(said, ['Map tab', 'Plan tab']);
   });
 
   testWidgets('re-tapping the current tab resets the branch to its root', (tester) async {
