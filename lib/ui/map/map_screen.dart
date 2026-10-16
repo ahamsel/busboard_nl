@@ -72,8 +72,9 @@ class _Follow {
 }
 
 /// The Map tab (spec §3.3): full-screen Harbour map with your-stop and route
-/// chips, a my-location control and one floating sheet whose card follows the
-/// selection (your stop / a stop / a bus). A long-press plans from or to that
+/// chips, a my-location control at the bottom right over the card, and one
+/// floating sheet whose card follows the selection (your stop / a stop / a
+/// bus). A long-press plans from or to that
 /// point; [pick] ('from' or 'to', from `/map?pick=`) makes the next tap choose
 /// that end of the trip; a journey shown from the planner is drawn on top.
 class MapScreen extends ConsumerStatefulWidget {
@@ -93,6 +94,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   static const _creditText = '© OpenStreetMap · OpenFreeMap';
   static const _creditMaxTextScale = 1.3;
   static const _creditLeft = BBSpace.s + BBSpace.xs;
+
+  /// The My location button's 44 pt target: it sits at the bottom right, on the
+  /// credit link's line.
+  static const double _controlSize = 44;
+
+  /// Room for MapLibre's own info button (about 20 pt), drawn right after the
+  /// credit link: the link stops short so it never reaches the My location button.
+  static const double _attributionButtonRoom = 24;
 
   /// Follow-camera air at the screen edges: 16 plus half a followed (1.35×)
   /// marker, so a fitted bus or stop badge is never cut by an edge.
@@ -157,6 +166,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   var _actionsKey = GlobalKey();
   double? _actionsBottom;
   bool _headerMeasureScheduled = false;
+  // The top controls: your-stop chip and the top buttons, then the route filter.
   double _controlsHeight = 44 + BBSpace.m + 44;
   bool _measureScheduled = false;
   bool _frameInFlight = false;
@@ -833,24 +843,32 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       final actionsPx = follow == null || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
       final peek = math.max((peekPx / sheetArea).clamp(0.12, _maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
-      // Just above the card, but below the chips and the my-location pill. With
-      // no room, stay on screen and overlap the card's top edge instead.
+      // The credit link and, on its line at the right, the My location button:
+      // just above the card, but below the chips. With no room, stay on screen
+      // and overlap the card's top edge instead.
+      final creditLineHeight = math.max(creditTextHeight, _controlSize);
       final belowControls =
-          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + BBSpace.s) - creditTextHeight;
+          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + BBSpace.s) - creditLineHeight;
       final creditBottom = math.min(
         math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
-        constraints.maxHeight - creditTextHeight,
+        constraints.maxHeight - creditLineHeight,
       );
       _mapSize = constraints.biggest;
       // The follow camera keeps the bus and your stop clear of the chips, the
-      // credit and the card, with room for half a followed marker on each side.
+      // credit line (and My location on it) and the card, with room for half a
+      // followed marker on each side.
       _fitPadding = EdgeInsets.fromLTRB(
         _fitMargin,
         media.padding.top + BBSpace.s + _controlsHeight + _fitMargin / 2,
         _fitMargin,
-        math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
+        math.max(peekTop, creditBottom + creditLineHeight) + _fitMargin / 2,
       );
-      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - BBSpace.s));
+      // My location at the right margin, clear of the sensor housing in
+      // landscape like the top controls; the link and MapLibre's info button
+      // after it stop a margin short of it.
+      final myLocationRight = media.padding.right + BBSpace.s;
+      final creditRight = myLocationRight + _controlSize + BBSpace.s + _attributionButtonRoom + BBSpace.s;
+      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - creditRight));
       final creditEnd = _creditLeft + creditWidth + BBSpace.s;
       // iOS (MLNMapView) measures the attribution margin from the safe area, so
       // the bottom inset is already in it; Android measures from the view edge.
@@ -920,27 +938,16 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                     ],
                   ),
                   const SizedBox(height: BBSpace.m),
-                  // The route filter, then my location at the right, as before under the top buttons.
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: BBChip(
-                            label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
-                            icon: BBIcons.filter,
-                            chevron: true,
-                            selected: filter.isNotEmpty,
-                            onTap: _openRouteFilter,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: BBSpace.s),
-                      BBControlPill(items: [
-                        BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
-                      ]),
-                    ],
+                  // The route filter (My location is at the bottom right, over the card).
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: BBChip(
+                      label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
+                      icon: BBIcons.filter,
+                      chevron: true,
+                      selected: filter.isNotEmpty,
+                      onTap: _openRouteFilter,
+                    ),
                   ),
                   if (journey != null) ...[
                     const SizedBox(height: BBSpace.m),
@@ -959,7 +966,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
             ),
             Positioned(
               left: _creditLeft,
-              right: BBSpace.s,
+              right: creditRight,
               bottom: creditBottom,
               // The Align keeps the opaque tap target as wide as the text only: the
               // rest of the band belongs to the map.
@@ -988,6 +995,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                   ),
                 ),
               ),
+            ),
+            // Before the sheet: a sheet pulled up covers it.
+            Positioned(
+              right: myLocationRight,
+              bottom: creditBottom,
+              child: BBControlPill(items: [
+                BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
+              ]),
             ),
             Positioned.fill(
               child: BBSheet(
@@ -1022,8 +1037,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 left: 0,
                 right: 0,
                 // Last in the stack, so it comes and goes without disturbing the sheet.
-                // Above the credit link, which sits just over the peeking card.
-                bottom: creditBottom + 44 + BBSpace.xs,
+                // Above the credit line (the link and My location), just over the peeking card.
+                bottom: creditBottom + _controlSize + BBSpace.xs,
                 child: Center(child: _backChip(follow)),
               ),
           ],
@@ -1144,8 +1159,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     });
   }
 
-  /// The chips and the my-location pill are taller at large text sizes: measure
-  /// them after layout so the credit link can stay clear of them.
+  /// The chips are taller at large text sizes: measure them after layout so the
+  /// credit line and the follow camera can stay clear of them.
   void _scheduleControlsMeasure() {
     if (_measureScheduled) return;
     _measureScheduled = true;
