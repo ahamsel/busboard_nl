@@ -13,6 +13,21 @@ enum BBSheetDetent { peek, half, full }
 class BBSheetController extends DraggableScrollableController {
   _BBSheetState? _sheet;
 
+  /// Where the last move asked by code ([animateTo], [jumpTo]) takes the sheet; null once the rider drags it.
+  double? _target;
+
+  @override
+  Future<void> animateTo(double size, {required Duration duration, required Curve curve}) {
+    _target = size;
+    return super.animateTo(size, duration: duration, curve: curve);
+  }
+
+  @override
+  void jumpTo(double size) {
+    _target = size;
+    super.jumpTo(size);
+  }
+
   /// Animates to [detent] (in 1 ms with reduce motion). No-op when detached.
   ///
   /// Don't await this from tests or from code that can unmount the sheet: the
@@ -51,11 +66,11 @@ class BBSheet extends StatefulWidget {
     this.dismissible = false,
     this.onDismiss,
     this.semanticLabel = 'Sheet',
-  })  : assert(
-          peekFraction > 0 && peekFraction < halfFraction && halfFraction < fullFraction && fullFraction <= 1,
-          'BBSheet fractions must satisfy 0 < peek < half < full <= 1',
-        ),
-        assert(!dismissible || onDismiss != null, 'A dismissible BBSheet needs onDismiss');
+  }) : assert(
+         peekFraction > 0 && peekFraction < halfFraction && halfFraction < fullFraction && fullFraction <= 1,
+         'BBSheet fractions must satisfy 0 < peek < half < full <= 1',
+       ),
+       assert(!dismissible || onDismiss != null, 'A dismissible BBSheet needs onDismiss');
 
   final List<Widget> slivers;
   final Widget? header;
@@ -65,6 +80,7 @@ class BBSheet extends StatefulWidget {
   final double? initialFraction;
   final BBSheetController? controller;
   final double bottomInset;
+
   /// Whether the sheet can be swiped (or closed by screen reader) down to
   /// nothing. A dismissible sheet needs [onDismiss].
   final bool dismissible;
@@ -120,6 +136,30 @@ class _BBSheetState extends State<BBSheet> {
         widget.halfFraction != oldWidget.halfFraction) {
       _snapSizes = _computeSnapSizes();
     }
+    if (widget.peekFraction != oldWidget.peekFraction) _followPeek(oldWidget.peekFraction);
+  }
+
+  /// The peek moved (the header grew or shrank). A sheet resting at the old peek moves to the new one. Flutter's
+  /// sheet does that by itself only until it is first moved by code: after that it keeps its size, clamped, so a
+  /// smaller peek would leave it resting taller than its content. Not a sheet on its way somewhere else (a card
+  /// opening to half), nor one the rider has moved off its peek.
+  void _followPeek(double oldPeek) {
+    final newPeek = widget.peekFraction;
+    if (_lastDetent == oldPeek) _lastDetent = newPeek; // the same rest, moved: no tick
+    // After the frame: the inner sheet takes its new bounds in this build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.isAttached || widget.peekFraction != newPeek) return;
+      final size = _controller.size;
+      final target = _controller._target;
+      final resting = (size - oldPeek).abs() < _tolerance && (target == null || (target - oldPeek).abs() < _tolerance);
+      if (resting && (size - newPeek).abs() >= _tolerance) _controller.jumpTo(newPeek);
+    });
+  }
+
+  /// The rider took hold of the sheet (or its list): what code last asked of it no longer says where it rests.
+  bool _onScrollStart(ScrollStartNotification n) {
+    if (n.depth == 0 && n.dragDetails != null) _controller._target = null;
+    return false;
   }
 
   @override
@@ -131,10 +171,10 @@ class _BBSheetState extends State<BBSheet> {
   }
 
   double _fractionOf(BBSheetDetent detent) => switch (detent) {
-        BBSheetDetent.peek => widget.peekFraction,
-        BBSheetDetent.half => widget.halfFraction,
-        BBSheetDetent.full => widget.fullFraction,
-      };
+    BBSheetDetent.peek => widget.peekFraction,
+    BBSheetDetent.half => widget.halfFraction,
+    BBSheetDetent.full => widget.fullFraction,
+  };
 
   BBSheetDetent get _nearest {
     var best = BBSheetDetent.peek;
@@ -201,10 +241,10 @@ class _BBSheetState extends State<BBSheet> {
   }
 
   static String _valueOf(BBSheetDetent d) => switch (d) {
-        BBSheetDetent.peek => 'Collapsed',
-        BBSheetDetent.half => 'Half open',
-        BBSheetDetent.full => 'Expanded',
-      };
+    BBSheetDetent.peek => 'Collapsed',
+    BBSheetDetent.half => 'Half open',
+    BBSheetDetent.full => 'Expanded',
+  };
 
   Widget _handle(BuildContext context) {
     final bb = context.bb;
@@ -240,7 +280,7 @@ class _BBSheetState extends State<BBSheet> {
           margin: const EdgeInsets.only(top: BBSpace.s, bottom: BBSpace.s),
           width: 34,
           height: 4,
-          decoration: BoxDecoration(color: bb.colors.line, borderRadius: BorderRadius.circular(2)),
+          decoration: BoxDecoration(color: bb.colors.handle, borderRadius: BorderRadius.circular(2)),
         ),
       ),
     );
@@ -260,50 +300,57 @@ class _BBSheetState extends State<BBSheet> {
       ),
       child: NotificationListener<DraggableScrollableNotification>(
         onNotification: _onExtent,
-        child: DraggableScrollableSheet(
-          controller: _controller,
-          initialChildSize: widget.initialFraction ?? peek,
-          minChildSize: widget.dismissible ? 0 : peek,
-          maxChildSize: widget.fullFraction,
-          snap: true,
-          snapSizes: _snapSizes,
-          snapAnimationDuration: _snapDuration,
-          builder: (context, scrollController) {
-            final card = bb.floating(radius: BBRadius.sheet);
-            // In dark mode the hairline is the card's edge; paint it in front
-            // of the clipped content so the pinned header can't cover it.
-            final content = ClipRRect(
-              borderRadius: BorderRadius.circular(BBRadius.sheet),
-              child: CustomScrollView(
-                controller: scrollController,
-                slivers: [
-                  PinnedHeaderSliver(
-                    child: ColoredBox(
-                      color: bb.colors.surface,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [_handle(context), ?widget.header],
+        child: NotificationListener<ScrollStartNotification>(
+          onNotification: _onScrollStart,
+          child: DraggableScrollableSheet(
+            controller: _controller,
+            initialChildSize: widget.initialFraction ?? peek,
+            minChildSize: widget.dismissible ? 0 : peek,
+            maxChildSize: widget.fullFraction,
+            snap: true,
+            snapSizes: _snapSizes,
+            snapAnimationDuration: _snapDuration,
+            builder: (context, scrollController) {
+              final card = bb.floating(radius: BBRadius.sheet);
+              // In dark mode the hairline is the card's edge; paint it in front
+              // of the clipped content so the pinned header can't cover it.
+              final content = ClipRRect(
+                borderRadius: BorderRadius.circular(BBRadius.sheet),
+                child: CustomScrollView(
+                  controller: scrollController,
+                  slivers: [
+                    PinnedHeaderSliver(
+                      child: ColoredBox(
+                        color: bb.colors.surface,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [_handle(context), ?widget.header],
+                        ),
                       ),
                     ),
-                  ),
-                  ...widget.slivers,
-                ],
-              ),
-            );
-            return DecoratedBox(
-              key: BBSheet.cardKey,
-              // Explicit: BoxDecoration.copyWith(border: null) keeps the old border.
-              decoration: BoxDecoration(color: card.color, borderRadius: card.borderRadius, boxShadow: card.boxShadow),
-              child: card.border == null
-                  ? content
-                  : DecoratedBox(
-                      position: DecorationPosition.foreground,
-                      decoration: BoxDecoration(border: card.border, borderRadius: card.borderRadius),
-                      child: content,
-                    ),
-            );
-          },
+                    ...widget.slivers,
+                  ],
+                ),
+              );
+              return DecoratedBox(
+                key: BBSheet.cardKey,
+                // Explicit: BoxDecoration.copyWith(border: null) keeps the old border.
+                decoration: BoxDecoration(
+                  color: card.color,
+                  borderRadius: card.borderRadius,
+                  boxShadow: card.boxShadow,
+                ),
+                child: card.border == null
+                    ? content
+                    : DecoratedBox(
+                        position: DecorationPosition.foreground,
+                        decoration: BoxDecoration(border: card.border, borderRadius: card.borderRadius),
+                        child: content,
+                      ),
+              );
+            },
+          ),
         ),
       ),
     );

@@ -4,7 +4,7 @@ See what is happening now
 
 • View current bus locations on an interactive map.
 • Track each physical bus separately, with smooth movement between Metrobus position updates.
-• Follow a bus to your stop: see its route, the stops left, and when it arrives.
+• Follow a bus to your stop: tap a live bus in a stop's list, then see its route, the stops left, and when it arrives.
 • Filter the map by route, then tap a bus for its vehicle and trip details.
 
 Check any stop
@@ -19,7 +19,7 @@ Plan a trip
 
 • Plan from one place to another, leaving now, leaving by or arriving by any minute you pick.
 • Start or end at a stop, your location, or any spot on the map.
-• Save the trips you take often and see their next buses at a glance.
+• Save the trips you take often and see their next buses right on the first screen.
 • Plans use live bus times for the next hour, all worked out on your phone.
 
 Stay informed

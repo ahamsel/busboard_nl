@@ -3,6 +3,7 @@ import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/shell/app_shell.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -20,8 +21,6 @@ const _alert = ServiceAlert(
 
 const _boardKey = ValueKey('board-content');
 const _mapKey = ValueKey('map-content');
-const _alertsKey = ValueKey('alerts-content');
-const _planKey = ValueKey('plan-content');
 
 GoRouter _router() => GoRouter(
       initialLocation: '/',
@@ -35,8 +34,6 @@ GoRouter _router() => GoRouter(
               ]),
             ]),
             StatefulShellBranch(routes: [GoRoute(path: '/map', builder: (_, _) => const SizedBox.expand(key: _mapKey, child: Text('MAP')))]),
-            StatefulShellBranch(routes: [GoRoute(path: '/alerts', builder: (_, _) => const SizedBox.expand(key: _alertsKey, child: Text('ALERTS')))]),
-            StatefulShellBranch(routes: [GoRoute(path: '/plan', builder: (_, _) => const SizedBox.expand(key: _planKey, child: Text('PLAN')))]),
           ],
         ),
       ],
@@ -67,15 +64,15 @@ Future<GoRouter> _pump(WidgetTester tester, {EdgeInsets padding = EdgeInsets.zer
 }
 
 void main() {
-  testWidgets('shows the floating nav bar with Board / Map / Alerts / Plan and the alert count', (tester) async {
+  testWidgets('shows the floating nav bar with two tabs, Board and Map', (tester) async {
     final handle = tester.ensureSemantics();
     await _pump(tester);
     expect(find.byType(BBNavBar), findsOneWidget);
-    expect(tester.widget<BBNavBar>(find.byType(BBNavBar)).items.map((i) => i.label), ['Board', 'Map', 'Alerts', 'Plan']);
+    expect(tester.widget<BBNavBar>(find.byType(BBNavBar)).items.map((i) => i.label), ['Board', 'Map']);
     expect(find.text('Board'), findsOneWidget);
     expect(find.text('Map'), findsOneWidget);
-    expect(find.bySemanticsLabel('Alerts, 1 active'), findsOneWidget);
-    expect(find.bySemanticsLabel('Plan'), findsOneWidget);
+    expect(find.text('Alerts'), findsNothing, reason: 'Alerts and Plan are pages now, opened from the top buttons');
+    expect(find.text('Plan'), findsNothing);
     handle.dispose();
   });
 
@@ -84,12 +81,37 @@ void main() {
     await tester.tap(find.text('Map'));
     await tester.pumpAndSettle();
     expect(find.text('MAP'), findsOneWidget);
-    await tester.tap(find.text('Alerts'));
+    await tester.tap(find.text('Board'));
     await tester.pumpAndSettle();
-    expect(find.text('ALERTS'), findsOneWidget);
-    await tester.tap(find.text('Plan'));
+    expect(find.text('PICKER'), findsOneWidget);
+  });
+
+  testWidgets('a switch of tab made by an action (Follow on the Board) is said to screen readers; a tab tap is not',
+      (tester) async {
+    final said = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, (m) async {
+      final event = m as Map<Object?, Object?>;
+      if (event['type'] == 'announce') said.add((event['data']! as Map<Object?, Object?>)['message']! as String);
+      return null;
+    });
+    addTearDown(() =>
+        tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null));
+    final router = await _pump(tester);
+    router.go('/map'); // as Follow on the Board does
     await tester.pumpAndSettle();
-    expect(find.text('PLAN'), findsOneWidget);
+    expect(find.text('MAP'), findsOneWidget);
+    expect(said, ['Map tab'], reason: 'the Board was taken away: say where the rider is now');
+    await tester.tap(find.text('Board'));
+    await tester.pumpAndSettle();
+    expect(said, ['Map tab'], reason: 'a tab the rider tapped needs no announcement');
+    router.go('/board/1150'); // as Open board on the map does
+    await tester.pumpAndSettle();
+    expect(said, ['Map tab'], reason: 'already on the Board tab');
+    await tester.tap(find.text('Map'));
+    await tester.pumpAndSettle();
+    router.go('/board/1150');
+    await tester.pumpAndSettle();
+    expect(said, ['Map tab', 'Board tab']);
   });
 
   testWidgets('re-tapping the current tab resets the branch to its root', (tester) async {
@@ -121,14 +143,6 @@ void main() {
     await tester.tap(find.text('Map'));
     await tester.pumpAndSettle();
     expect(tester.getRect(find.byKey(_mapKey)).bottom, height);
-
-    await tester.tap(find.text('Alerts'));
-    await tester.pumpAndSettle();
-    expect(tester.getRect(find.byKey(_alertsKey)).bottom, height);
-
-    await tester.tap(find.text('Plan'));
-    await tester.pumpAndSettle();
-    expect(tester.getRect(find.byKey(_planKey)).bottom, height);
   });
 
   testWidgets(

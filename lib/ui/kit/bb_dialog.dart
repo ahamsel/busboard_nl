@@ -24,7 +24,7 @@ abstract final class BBDialog {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
-      barrierColor: const Color(0x661C2A3A),
+      barrierColor: const Color(0x66000000),
       transitionDuration: BBMotion.of(context, BBMotion.standard),
       pageBuilder: (dialogContext, _, _) => _DialogCard<T>(title: title, message: message, content: content, actions: actions),
       transitionBuilder: (_, animation, _, child) {

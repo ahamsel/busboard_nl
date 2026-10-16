@@ -86,9 +86,17 @@ final appForegroundProvider = NotifierProvider<AppForegroundNotifier, bool>(AppF
 /// the schedule, the live vehicle feed and the stop-prediction feed. Re-fetches
 /// every refresh interval while something watches it and the app is in the
 /// foreground; coming back to the foreground fetches once and resumes polling.
+///
+/// Loading until the schedule is first loaded (each launch parses it, and a first install downloads it first), and an
+/// error if that first load fails: never an empty list then, which would read as "No buses due soon". A schedule
+/// loaded once is used from then on, even when a reload fails (Refresh schedule, offline).
 final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>, String>((ref, stopId) async {
-  final repo = ref.watch(gtfsRepositoryProvider).value;
-  if (repo == null) return const [];
+  // The schedule already loaded, if any (kept through a failed reload); else the first load, waited for below. Only
+  // the future is watched (a reload starts a new one): watching the state too would run a second fetch as the first
+  // load lands, beside the one already waiting for it.
+  final load = ref.watch(gtfsRepositoryProvider.future);
+  final loaded = ref.read(gtfsRepositoryProvider);
+  final schedule = loaded.hasValue ? Future.value(loaded.requireValue) : load;
   final seconds = ref.watch(settingsProvider.select((s) => s.refreshIntervalSeconds));
   // Your stop's arrivals outlive their last listener (a bus card replaces the
   // your-stop card for a while): coming back shows them at once, no skeleton.
@@ -117,30 +125,39 @@ final stopArrivalsProvider = FutureProvider.autoDispose.family<List<ArrivalRow>,
   ref.listen(appForegroundProvider, (_, foreground) {
     if (foreground) refreshWhenWatched();
   });
-  if (ref.read(appForegroundProvider)) {
+
+  // The next poll is armed once this fetch is over: a fetch slower than the interval (the live client waits up
+  // to 10 s a feed) would otherwise be restarted before it could ever finish, and the rider would see no rows.
+  void armPoll() {
+    if (!ref.mounted || !ref.read(appForegroundProvider)) return;
     final timer = Timer(Duration(seconds: seconds), () {
       if (ref.read(appForegroundProvider)) refreshWhenWatched();
     });
     ref.onDispose(timer.cancel);
   }
 
-  List<TimeTrackVehicle>? liveVehicles;
   try {
-    final result = await ref.read(timetrackApiProvider).fetchVehiclesResult();
-    if (result.succeeded) liveVehicles = result.vehicles;
-  } catch (_) {
-    // Schedule only.
+    final repo = await schedule;
+    List<TimeTrackVehicle>? liveVehicles;
+    try {
+      final result = await ref.read(timetrackApiProvider).fetchVehiclesResult();
+      if (result.succeeded) liveVehicles = result.vehicles;
+    } catch (_) {
+      // Schedule only.
+    }
+    List<MetrobusDeparture>? stopPredictions;
+    try {
+      stopPredictions = (await ref.read(metrobusMobileApiProvider).fetchDeparturesResult(stopId)).departures;
+    } catch (_) {
+      // Schedule and live vehicles only.
+    }
+    return ArrivalService(repo).getUpcomingArrivals(
+      stopId: stopId,
+      now: DateTime.now(),
+      liveVehicles: liveVehicles,
+      stopPredictions: stopPredictions,
+    );
+  } finally {
+    armPoll();
   }
-  List<MetrobusDeparture>? stopPredictions;
-  try {
-    stopPredictions = (await ref.read(metrobusMobileApiProvider).fetchDeparturesResult(stopId)).departures;
-  } catch (_) {
-    // Schedule and live vehicles only.
-  }
-  return ArrivalService(repo).getUpcomingArrivals(
-    stopId: stopId,
-    now: DateTime.now(),
-    liveVehicles: liveVehicles,
-    stopPredictions: stopPredictions,
-  );
 });

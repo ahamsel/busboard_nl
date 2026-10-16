@@ -17,6 +17,7 @@ import '../../domain/map/delayed_track_renderer.dart';
 import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
+import '../../routing/planner_route.dart';
 import '../../state/follow_providers.dart';
 import '../../state/journey_on_map_provider.dart';
 import '../../state/map_providers.dart';
@@ -25,6 +26,7 @@ import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../copy/legal_copy.dart';
 import '../kit/kit.dart';
+import '../shell/top_actions.dart';
 import '../trip_planner/map_plan_sheet.dart';
 import 'bus_card.dart';
 import 'follow_camera.dart';
@@ -70,8 +72,9 @@ class _Follow {
 }
 
 /// The Map tab (spec §3.3): full-screen Harbour map with your-stop and route
-/// chips, a my-location control and one floating sheet whose card follows the
-/// selection (your stop / a stop / a bus). A long-press plans from or to that
+/// chips, a my-location control at the bottom right over the card, and one
+/// floating sheet whose card follows the selection (your stop / a stop / a
+/// bus). A long-press plans from or to that
 /// point; [pick] ('from' or 'to', from `/map?pick=`) makes the next tap choose
 /// that end of the trip; a journey shown from the planner is drawn on top.
 class MapScreen extends ConsumerStatefulWidget {
@@ -91,6 +94,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   static const _creditText = '© OpenStreetMap · OpenFreeMap';
   static const _creditMaxTextScale = 1.3;
   static const _creditLeft = BBSpace.s + BBSpace.xs;
+
+  /// The My location button's 44 pt target: it sits at the bottom right, on the
+  /// credit link's line.
+  static const double _controlSize = 44;
+
+  /// Room for MapLibre's own info button (about 20 pt), drawn right after the
+  /// credit link: the link stops short so it never reaches the My location button.
+  static const double _attributionButtonRoom = 24;
 
   /// Follow-camera air at the screen edges: 16 plus half a followed (1.35×)
   /// marker, so a fitted bus or stop badge is never cut by an edge.
@@ -113,6 +124,33 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   int _styleGeneration = 0;
   Future<void>? _installing;
   bool _tickersEnabled = true;
+
+  /// The subscription that keeps the live vehicle feed polling, held only while the Map tab shows. (Riverpod pauses a
+  /// provider with no active listener, but a `ref.listen` is never paused with the widget, so this is closed and
+  /// reopened by hand.)
+  ProviderSubscription<AsyncValue<Map<String, BusTrackingState>>>? _feedSub;
+  bool _feedOpenedBefore = false;
+
+  void _syncFeed() {
+    if (_tickersEnabled && _feedSub == null) {
+      _feedSub = ref.listenManual(busTrackingStreamProvider, (_, _) {});
+      final resumed = _feedOpenedBefore;
+      _feedOpenedBefore = true;
+      // Back from another tab: the buses are as old as the time away, so poll at once, not after the refresh interval.
+      // Until that poll lands the snapshot is stale, and a follow is not judged on it (it would be lost for contact
+      // after 5 min away): the app-resume gate, [_feedIsFresh], holds the follow's endings and restarts its clocks.
+      if (resumed) {
+        _awaitingFreshFeed = true;
+        _feedAtResume = ref.read(busTrackingStreamProvider).value;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _feedSub != null) ref.invalidate(busTrackingStreamProvider);
+        });
+      }
+    } else if (!_tickersEnabled && _feedSub != null) {
+      _feedSub!.close();
+      _feedSub = null;
+    }
+  }
   bool _appResumed = true;
   // After a pause the feed is as old as the pause (iOS stops polling): the
   // follow is not judged until a poll newer than this snapshot arrives.
@@ -128,6 +166,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   var _actionsKey = GlobalKey();
   double? _actionsBottom;
   bool _headerMeasureScheduled = false;
+  // The top controls: your-stop chip and the top buttons, then the route filter.
   double _controlsHeight = 44 + BBSpace.m + 44;
   bool _measureScheduled = false;
   bool _frameInFlight = false;
@@ -180,8 +219,10 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   void didChangeDependencies() {
     super.didChangeDependencies();
     final enabled = TickerMode.valuesOf(context).enabled;
-    if (enabled == _tickersEnabled) return;
+    final changed = enabled != _tickersEnabled;
     _tickersEnabled = enabled;
+    _syncFeed();
+    if (!changed) return;
     // An offstage map tab asks for no frames at all.
     if (!enabled) {
       _ticker?.stop();
@@ -576,7 +617,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, tap);
     final q = ref.read(planQueryProvider.notifier);
     forFrom ? q.setFrom(place) : q.setTo(place);
-    context.go('/plan');
+    reopenPlannerOverMap(context);
   }
 
   void _onTap(LatLng tap) {
@@ -721,9 +762,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       // While following, the follow camera frames the new stop itself.
       if (next != null && _follow == null) unawaited(_recentreOn(next));
     });
-    // Keep the live feed subscribed (it drives the track store and the taps)
-    // without rebuilding the screen on every poll.
-    ref.listen(busTrackingStreamProvider, (_, _) {});
+    // The live feed is kept subscribed (it drives the track store and the taps) without rebuilding the screen on every
+    // poll, while the Map tab shows: see [_syncFeed].
     ref.listen<FollowTarget?>(followProvider, (prev, next) {
       if (prev != next) _onFollowChanged(next);
       // A planned trip's boarding stop is marked for the follow, the saved one after it.
@@ -803,24 +843,32 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
       final actionsPx = follow == null || _actionsBottom == null ? 0.0 : _actionsBottom! + 20 + BBSpace.s;
       final peek = math.max((peekPx / sheetArea).clamp(0.12, _maxPeek), math.min(actionsPx / sheetArea, _maxActionsPeek));
       final peekTop = navInset + BBSpace.s + peek * sheetArea; // from the bottom
-      // Just above the card, but below the chips and the my-location pill. With
-      // no room, stay on screen and overlap the card's top edge instead.
+      // The credit link and, on its line at the right, the My location button:
+      // just above the card, but below the chips. With no room, stay on screen
+      // and overlap the card's top edge instead.
+      final creditLineHeight = math.max(creditTextHeight, _controlSize);
       final belowControls =
-          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + BBSpace.s) - creditTextHeight;
+          constraints.maxHeight - (media.padding.top + BBSpace.s + _controlsHeight + BBSpace.s) - creditLineHeight;
       final creditBottom = math.min(
         math.max(math.min(peekTop + BBSpace.xs, belowControls), peekTop - BBSpace.s),
-        constraints.maxHeight - creditTextHeight,
+        constraints.maxHeight - creditLineHeight,
       );
       _mapSize = constraints.biggest;
       // The follow camera keeps the bus and your stop clear of the chips, the
-      // credit and the card, with room for half a followed marker on each side.
+      // credit line (and My location on it) and the card, with room for half a
+      // followed marker on each side.
       _fitPadding = EdgeInsets.fromLTRB(
         _fitMargin,
         media.padding.top + BBSpace.s + _controlsHeight + _fitMargin / 2,
         _fitMargin,
-        math.max(peekTop, creditBottom + creditTextHeight) + _fitMargin / 2,
+        math.max(peekTop, creditBottom + creditLineHeight) + _fitMargin / 2,
       );
-      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - BBSpace.s));
+      // My location at the right margin, clear of the sensor housing in
+      // landscape like the top controls; the link and MapLibre's info button
+      // after it stop a margin short of it.
+      final myLocationRight = media.padding.right + BBSpace.s;
+      final creditRight = myLocationRight + _controlSize + BBSpace.s + _attributionButtonRoom + BBSpace.s;
+      final creditWidth = math.min(creditTextWidth, math.max(0.0, constraints.maxWidth - _creditLeft - creditRight));
       final creditEnd = _creditLeft + creditWidth + BBSpace.s;
       // iOS (MLNMapView) measures the attribution margin from the safe area, so
       // the bottom inset is already in it; Android measures from the view edge.
@@ -857,72 +905,68 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
             ),
             Positioned(
               top: media.padding.top + BBSpace.s,
-              left: BBSpace.s,
-              right: BBSpace.s,
+              // In landscape, clear of the sensor housing on either side.
+              left: media.padding.left + BBSpace.s,
+              right: media.padding.right + BBSpace.s,
               child: Column(
                 key: _controlsKey,
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (pickFrom != null) ...[_pickBanner(pickFrom), const SizedBox(height: BBSpace.s)],
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        flex: 3,
-                        child: follow != null
-                            ? _followChip(follow)
-                            : BBChip(
-                                label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
-                                icon: myStop == null ? BBIcons.search : BBIcons.star,
-                                chevron: true,
-                                semanticLabel:
-                                    myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
-                                onTap: () => context.go('/'),
-                              ),
-                      ),
-                      const SizedBox(width: BBSpace.s),
-                      Flexible(
-                        flex: 2,
-                        child: BBChip(
-                          label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
-                          icon: BBIcons.filter,
-                          chevron: true,
-                          selected: filter.isNotEmpty,
-                          onTap: _openRouteFilter,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: BBSpace.m),
+                  // Your stop (or the followed bus), then Plan, Alerts and Settings at the top right.
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: journey == null
-                              ? const SizedBox.shrink()
+                          child: follow != null
+                              ? _followChip(follow)
                               : BBChip(
-                                  label: 'Hide trip',
-                                  icon: BBIcons.close,
-                                  semanticLabel: 'Hide the trip from the map',
-                                  onTap: () => ref.read(journeyOnMapProvider.notifier).clear(),
+                                  label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
+                                  icon: myStop == null ? BBIcons.search : BBIcons.star,
+                                  chevron: true,
+                                  semanticLabel:
+                                      myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
+                                  onTap: () => context.go('/'),
                                 ),
                         ),
                       ),
                       const SizedBox(width: BBSpace.s),
-                      BBControlPill(items: [
-                        BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
-                      ]),
+                      const TopActions(floating: true),
                     ],
                   ),
+                  const SizedBox(height: BBSpace.m),
+                  // The route filter (My location is at the bottom right, over the card).
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: BBChip(
+                      label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
+                      icon: BBIcons.filter,
+                      chevron: true,
+                      selected: filter.isNotEmpty,
+                      onTap: _openRouteFilter,
+                    ),
+                  ),
+                  if (journey != null) ...[
+                    const SizedBox(height: BBSpace.m),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: BBChip(
+                        label: 'Hide trip',
+                        icon: BBIcons.close,
+                        semanticLabel: 'Hide the trip from the map',
+                        onTap: () => ref.read(journeyOnMapProvider.notifier).clear(),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             Positioned(
               left: _creditLeft,
-              right: BBSpace.s,
+              right: creditRight,
               bottom: creditBottom,
               // The Align keeps the opaque tap target as wide as the text only: the
               // rest of the band belongs to the map.
@@ -951,6 +995,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                   ),
                 ),
               ),
+            ),
+            // Before the sheet: a sheet pulled up covers it.
+            Positioned(
+              right: myLocationRight,
+              bottom: creditBottom,
+              child: BBControlPill(items: [
+                BBControlPillItem(icon: BBIcons.location, semanticLabel: 'My location', onPressed: _goToMyLocation),
+              ]),
             ),
             Positioned.fill(
               child: BBSheet(
@@ -985,8 +1037,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 left: 0,
                 right: 0,
                 // Last in the stack, so it comes and goes without disturbing the sheet.
-                // Above the credit link, which sits just over the peeking card.
-                bottom: creditBottom + 44 + BBSpace.xs,
+                // Above the credit line (the link and My location), just over the peeking card.
+                bottom: creditBottom + _controlSize + BBSpace.xs,
                 child: Center(child: _backChip(follow)),
               ),
           ],
@@ -998,7 +1050,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   /// What the next tap chooses, and a way out without choosing.
   Widget _pickBanner(bool forFrom) {
     final bb = context.bb;
-    void cancel() => context.go('/plan');
+    void cancel() => reopenPlannerOverMap(context);
     return DecoratedBox(
       decoration: bb.floating(radius: BBRadius.sheet),
       child: Padding(
@@ -1039,10 +1091,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
         },
       );
 
+  /// Floats over a sheet pulled up; a tap brings the sheet back to peek too, so the map shows.
   Widget _backChip(_Follow f) => BBChip(
         label: 'Back to bus ${f.vehicleId}',
         icon: BBIcons.bus,
-        onTap: () => _resumeFollow(f),
+        onTap: () {
+          _resumeFollow(f);
+          unawaited(_sheet.collapse());
+        },
       );
 
   /// The follow card at peek. Its destination, route and delay come from the
@@ -1107,8 +1163,8 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     });
   }
 
-  /// The chips and the my-location pill are taller at large text sizes: measure
-  /// them after layout so the credit link can stay clear of them.
+  /// The chips are taller at large text sizes: measure them after layout so the
+  /// credit line and the follow camera can stay clear of them.
   void _scheduleControlsMeasure() {
     if (_measureScheduled) return;
     _measureScheduled = true;

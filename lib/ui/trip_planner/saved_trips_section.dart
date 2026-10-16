@@ -46,21 +46,35 @@ String _clock(DateTime t, bool use24h) =>
 /// The first ride of [j]; null for a journey that is only walking.
 RideLeg? _firstRide(Journey j) => j.legs.whereType<RideLeg>().firstOrNull;
 
+/// One of a saved trip's next buses: when its first ride leaves, and that ride.
+typedef SavedTripDeparture = ({DateTime time, RideLeg ride});
+
+/// What a saved trip says once no bus is left today, on its card here and its line on the stop picker.
+const savedTripNoBuses = 'No more buses today';
+
 /// The buses the card lists: each journey's first ride, by when it leaves, earliest first. Journeys that share
 /// a first bus, or leave at the same time on the same route, count once; at most three.
 @visibleForTesting
-List<({DateTime time, RideLeg ride})> savedTripDepartures(Iterable<Journey> journeys) {
+List<SavedTripDeparture> savedTripDepartures(Iterable<Journey> journeys) {
   final all = [
     for (final j in journeys)
       if (_firstRide(j) case final ride?) (time: j.at(ride.departs), ride: ride),
   ]..sort((a, b) => a.time.compareTo(b.time));
-  final out = <({DateTime time, RideLeg ride})>[];
+  final out = <SavedTripDeparture>[];
   for (final d in all) {
     if (out.any((o) => o.ride.tripId == d.ride.tripId || (o.time == d.time && o.ride.routeId == d.ride.routeId))) continue;
     out.add(d);
     if (out.length == 3) break;
   }
   return out;
+}
+
+/// The saved trip [id]'s next buses, as [savedTripDepartures] lists them, live: null while they first load, empty
+/// once there are no more today. Its card on the planner and its line on the stop picker both read them here.
+List<SavedTripDeparture>? watchSavedTripDepartures(WidgetRef ref, String id) {
+  final next = ref.watch(savedTripNextProvider(id));
+  if (next.isLoading && !next.hasValue) return null;
+  return savedTripDepartures(next.value ?? const <Journey>[]);
 }
 
 class _SavedTripCard extends ConsumerWidget {
@@ -92,18 +106,18 @@ class _SavedTripCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bb = context.bb;
-    final next = ref.watch(savedTripNextProvider(trip.id));
+    final next = watchSavedTripDepartures(ref, trip.id);
     final repo = ref.watch(gtfsRepositoryProvider).value;
     final use24h = BBTime.use24h(context);
 
     // Each departure is its first ride's: when the bus leaves, not when the rider sets out.
     final rides = [
-      for (final d in savedTripDepartures(next.value ?? const <Journey>[])) (time: _clock(d.time, use24h), ride: d.ride),
+      for (final d in next ?? const <SavedTripDeparture>[]) (time: _clock(d.time, use24h), ride: d.ride),
     ];
 
     final String label;
     final Widget departures;
-    if (next.isLoading && !next.hasValue) {
+    if (next == null) {
       label = 'Saved trip ${trip.name}, loading departures';
       departures = const BBSkeleton(
         kind: BBSkeletonKind.line,
@@ -113,7 +127,7 @@ class _SavedTripCard extends ConsumerWidget {
     } else if (rides.isEmpty) {
       label = 'Saved trip ${trip.name}, no more buses today';
       departures = Text(
-        'No more buses today',
+        savedTripNoBuses,
         style: bb.text.body.copyWith(color: bb.colors.muted),
       );
     } else {
@@ -241,6 +255,8 @@ class _NameFieldState extends State<_NameField> {
   Widget build(BuildContext context) => BBTextField(
     controller: _controller,
     hint: 'Trip name',
+    // The field opens on the current name: without a label it would be announced by that value alone.
+    semanticLabel: 'Trip name',
     autofocus: true,
     onChanged: widget.onChanged,
     inputFormatters: [LengthLimitingTextInputFormatter(savedTripNameMax)],

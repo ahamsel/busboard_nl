@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 
 import 'bb_nav_bar.dart';
@@ -14,8 +15,18 @@ abstract final class BBToast {
 
   static OverlayEntry? _current;
 
-  static void show(BuildContext context, String message, {Duration duration = const Duration(seconds: 3)}) {
+  /// [announce] also tells screen readers now, for a message that answers a tap (a live region alone is not read
+  /// out by VoiceOver).
+  static void show(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(seconds: 3),
+    bool announce = false,
+  }) {
     _dismissCurrent();
+    if (announce) {
+      unawaited(SemanticsService.sendAnnouncement(View.of(context), message, Directionality.of(context)));
+    }
     final overlay = Overlay.of(context, rootOverlay: true);
     final reserveNavBar = BBNavBarScope.isPresent(context);
     late final OverlayEntry entry;
@@ -24,6 +35,7 @@ abstract final class BBToast {
         message: message,
         duration: duration,
         reserveNavBar: reserveNavBar,
+        announce: announce,
         onDone: () {
           if (identical(_current, entry)) _current = null;
           if (entry.mounted) entry.remove();
@@ -46,12 +58,16 @@ class _ToastView extends StatefulWidget {
     required this.message,
     required this.duration,
     required this.reserveNavBar,
+    required this.announce,
     required this.onDone,
   });
 
   final String message;
   final Duration duration;
   final bool reserveNavBar;
+
+  /// Already announced by [BBToast.show]: not a live region too, or TalkBack reads it twice.
+  final bool announce;
   final VoidCallback onDone;
 
   @override
@@ -115,7 +131,7 @@ class _ToastViewState extends State<_ToastView> with SingleTickerProviderStateMi
         child: SlideTransition(
           position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(curved),
           child: Semantics(
-            liveRegion: true,
+            liveRegion: !widget.announce,
             child: Container(
               key: BBToast.cardKey,
               padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.m),

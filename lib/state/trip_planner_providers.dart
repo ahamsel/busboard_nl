@@ -34,11 +34,25 @@ final timetableIndexBuilderProvider = Provider<IndexBuilder>((ref) => buildIndex
 DateTime _day(DateTime t) => DateTime(t.year, t.month, t.day);
 
 /// The planner for one service day ([day] is date-only), kept for 10 minutes after it was built.
+///
+/// An error if the schedule's first load fails. A schedule loaded once is used from then on, even when a reload fails
+/// (Refresh schedule, offline); a reload that succeeds is waited for, so the planner moves to the new schedule.
 final tripPlannerProvider = FutureProvider.autoDispose.family<TripPlanner, DateTime>((ref, day) async {
   final link = ref.keepAlive();
   final timer = Timer(const Duration(minutes: 10), link.close);
   ref.onDispose(timer.cancel);
-  final repo = await ref.watch(gtfsRepositoryProvider.future);
+  // Only the future is watched (a reload starts a new one): watching the state too would build a second planner as
+  // the load lands. The schedule loaded before is kept for a reload that fails; it can't stand in while the reload
+  // runs, as the stop departures' does, since nothing would move this planner on to the new schedule afterwards.
+  final load = ref.watch(gtfsRepositoryProvider.future);
+  final kept = ref.read(gtfsRepositoryProvider).value;
+  GtfsRepository repo;
+  try {
+    repo = await load;
+  } catch (_) {
+    if (kept == null) rethrow;
+    repo = kept;
+  }
   return TripPlanner(repo, await ref.read(timetableIndexBuilderProvider)(repo, day));
 });
 
@@ -74,7 +88,7 @@ DateTime defaultPlanTime(DateTime now) {
 }
 
 /// [defaultPlanTime] for now, moved on as the clock passes each 5-minute mark, so a Leave by or Arrive by time the
-/// rider never picked doesn't go stale while the Plan tab stays open.
+/// rider never picked doesn't go stale while the planner stays open.
 final planDefaultTimeProvider = Provider.autoDispose<DateTime>((ref) {
   final now = ref.read(plannerClockProvider)();
   final at = defaultPlanTime(now);
@@ -101,9 +115,56 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
 
 final planQueryProvider = NotifierProvider<PlanQueryNotifier, PlanDraft>(PlanQueryNotifier.new);
 
+/// The trip whose steps the rider opened and has not closed with back. "Show on map", "Follow bus" or an arrival
+/// alert's notification take the rider to a tab without closing them, and the Plan button brings them back over the
+/// planner, as 1.4.1's Plan tab kept its steps page. Null once the rider goes back from the steps, or plans afresh
+/// from a stop or the map.
+final openJourneyProvider = NotifierProvider<OpenJourneyNotifier, Journey?>(OpenJourneyNotifier.new);
+
+class OpenJourneyNotifier extends Notifier<Journey?> {
+  @override
+  Journey? build() => null;
+
+  void open(Journey journey) => state = journey;
+
+  /// Closes [journey] (any open trip when null); a newer trip opened since stays open.
+  void close([Journey? journey]) {
+    if (journey == null || identical(state, journey)) state = null;
+  }
+
+  /// The open trip to bring back at [now], or null: one that has arrived is over, and is closed.
+  Journey? stillUnderWay(DateTime now) {
+    final j = state;
+    if (j == null) return null;
+    if (now.isAfter(j.at(j.arrives))) {
+      state = null;
+      return null;
+    }
+    return j;
+  }
+}
+
 /// The live feed for plans, fetched again every 30 s while anything watches it (spec §3.4); null when unreadable.
+///
+/// Not while every listener is paused (the planner's pages, hidden behind another page): the refresh that falls due
+/// then waits for a listener to resume, so a hidden screen that rebuilds reads the last answer instead of fetching,
+/// and coming back fetches once.
 final plannerLiveFeedProvider = FutureProvider.autoDispose<TimeTrackFetchResult?>((ref) async {
-  final timer = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+  var watched = true;
+  var stale = false;
+  ref.onCancel(() => watched = false);
+  ref.onResume(() {
+    watched = true;
+    // Invalidating from inside the resume callback itself has no effect (as with the stop's arrivals).
+    if (stale) scheduleMicrotask(() => ref.mounted ? ref.invalidateSelf() : null);
+  });
+  final timer = Timer(const Duration(seconds: 30), () {
+    if (watched) {
+      ref.invalidateSelf();
+    } else {
+      stale = true;
+    }
+  });
   ref.onDispose(timer.cancel);
   try {
     return await ref.read(timetrackApiProvider).fetchLiveVehiclesResult();

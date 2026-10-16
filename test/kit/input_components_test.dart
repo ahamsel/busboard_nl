@@ -47,6 +47,29 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('BBTextField: a semanticLabel names the field once, empty or not, focused or not', (tester) async {
+    final handle = tester.ensureSemantics();
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(
+      kitHost(BBTextField(controller: controller, focusNode: focus, hint: 'Name', semanticLabel: 'Name')),
+    );
+    expect(find.text('Name'), findsOneWidget, reason: 'the hint is still drawn');
+    expect(tester.getSemantics(find.byType(TextField)), isSemantics(isTextField: true, label: 'Name'));
+    focus.requestFocus();
+    await tester.pump();
+    expect(tester.getSemantics(find.byType(TextField)), isSemantics(isTextField: true, label: 'Name', isFocused: true));
+    controller.text = 'Work';
+    await tester.pump();
+    expect(
+      tester.getSemantics(find.byType(TextField)),
+      isSemantics(isTextField: true, label: 'Name', value: 'Work', isFocused: true),
+    );
+    handle.dispose();
+  });
+
   testWidgets('BBTextField shows hint and reports typing', (tester) async {
     final typed = <String>[];
     await tester.pumpWidget(kitHost(BBTextField(hint: 'Stop name or number on the pole', onChanged: typed.add)));

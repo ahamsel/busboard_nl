@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/data/trip_planner/saved_trip_store.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
@@ -274,6 +275,95 @@ void main() {
       () => c.read(savedTripNextProvider('1').future),
     ).timeout(const Duration(seconds: 2));
     expect(next.first.departs, 8 * 3600 + 600);
+  });
+
+  testWidgets('with every listener paused the live feed waits to refresh, and a read meanwhile gets the last answer',
+      (tester) async {
+    var fetches = 0;
+    liveAnswer = (_) async {
+      fetches++;
+      return http.Response('', 503);
+    };
+    final sub = c.listen(plannerLiveFeedProvider, (_, _) {});
+    await tester.pump(const Duration(seconds: 1));
+    final first = fetches;
+    expect(first, greaterThan(0));
+    sub.pause(); // its screen is behind another tab
+    await tester.pump(const Duration(seconds: 95));
+    c.read(plannerLiveFeedProvider); // a hidden screen that rebuilds reads it
+    await tester.pump(const Duration(seconds: 1));
+    expect(fetches, first, reason: 'no refresh while hidden');
+    sub.resume();
+    await tester.pump(const Duration(seconds: 1));
+    expect(fetches, greaterThan(first), reason: 'one refresh on coming back');
+    sub.close();
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  group('the schedule', () {
+    // Settings, Refresh schedule: the second load fails while offline, or brings a new schedule.
+    late int builds;
+    ProviderContainer withSchedule(Future<GtfsRepository> Function(int load) schedule) {
+      var loads = 0;
+      builds = 0;
+      final r = ProviderContainer(
+        overrides: [
+          gtfsRepositoryProvider.overrideWith((ref) => schedule(++loads)),
+          plannerClockProvider.overrideWithValue(() => clock),
+          timetableIndexBuilderProvider.overrideWithValue((repo, day) async {
+            builds++;
+            return TimetableIndex.build(repo, day);
+          }),
+          timetrackApiProvider.overrideWithValue(TimeTrackApi(client: MockClient((r) => liveAnswer(r)))),
+        ],
+      );
+      addTearDown(r.dispose);
+      r.listen(planResultsProvider, (_, _) {});
+      return r;
+    }
+
+    test('that fails to reload keeps the one loaded: a new trip still plans', () async {
+      final r = withSchedule((load) async => load > 1 ? throw StateError('offline') : TestNetwork().repo);
+      r.read(planQueryProvider.notifier)
+        ..setFrom(stop('A'))
+        ..setTo(stop('C'));
+      expect(await r.read(planResultsProvider.future), isA<PlanFound>());
+      r.invalidate(gtfsRepositoryProvider);
+      await expectLater(r.read(gtfsRepositoryProvider.future), throwsStateError, reason: 'the reload failed');
+      r.read(planQueryProvider.notifier).setTo(stop('B'));
+      final out = await r.read(planResultsProvider.future);
+      expect(out, isA<PlanFound>(), reason: 'not an error until a relaunch');
+      expect((out as PlanFound).journeys.first.departs, 8 * 3600 + 600);
+    });
+
+    test('that reloads moves the planner to the new one', () async {
+      final schedules = [TestNetwork().repo, TestNetwork().repo];
+      final reloaded = Completer<void>();
+      final r = withSchedule((load) async {
+        if (load > 1) await reloaded.future; // a reload takes a while: parsing, or a download first
+        return schedules[load - 1];
+      });
+      r.listen(tripPlannerProvider(testDay), (_, _) {});
+      expect((await r.read(tripPlannerProvider(testDay).future)).repo, same(schedules[0]));
+      r.invalidate(gtfsRepositoryProvider);
+      await pumpEventQueue(); // the planner starts again while the reload runs
+      expect(r.read(gtfsRepositoryProvider).isLoading, isTrue);
+      reloaded.complete();
+      expect(await r.read(gtfsRepositoryProvider.future), same(schedules[1]));
+      expect((await r.read(tripPlannerProvider(testDay).future)).repo, same(schedules[1]),
+          reason: 'not the old schedule, kept while the reload ran');
+      await pumpEventQueue();
+      expect(builds, 2, reason: 'one planner per schedule, not a second as the reload lands');
+    });
+
+    test('that fails its first load: the plan is an error', () async {
+      final r = withSchedule((_) async => throw StateError('no schedule'));
+      r.read(planQueryProvider.notifier)
+        ..setFrom(stop('A'))
+        ..setTo(stop('C'));
+      await expectLater(r.read(tripPlannerProvider(testDay).future), throwsStateError);
+      await expectLater(r.read(planResultsProvider.future), throwsStateError);
+    });
   });
 
   test('the real background build sends the slim repository and returns the day index', () async {

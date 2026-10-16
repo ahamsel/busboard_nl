@@ -5,12 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/trip_planner/place.dart';
+import '../../routing/push_once.dart';
 import '../../state/follow_providers.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../alerts/service_alert_card.dart';
 import '../board/arrival_row_tile.dart';
+import '../board/first_bus_note.dart';
 import '../kit/kit.dart';
 
 /// Stop card header (spec §3.3): stop pole, name, stop number.
@@ -67,11 +69,14 @@ class StopCardBody extends ConsumerWidget {
           ArrivalsPreview(stopId: stop.stopId, max: 3),
           if (alerts.isNotEmpty) ...[
             const SizedBox(height: BBSpace.m),
-            ServiceAlertCard(
-              alert: alerts.first,
-              stopNames: {stop.stopId: stop.stopName},
-              compact: true,
-              onTap: () => context.go('/alerts'),
+            // Once for a quick double tap, as for Plan below.
+            PushOnce(
+              builder: (context, push) => ServiceAlertCard(
+                alert: alerts.first,
+                stopNames: {stop.stopId: stop.stopName},
+                compact: true,
+                onTap: () => push('/alerts'),
+              ),
             ),
           ],
           const SizedBox(height: BBSpace.l),
@@ -82,16 +87,20 @@ class StopCardBody extends ConsumerWidget {
             onPressed: () => context.go('/board/${stop.stopId}'),
           ),
           const SizedBox(height: BBSpace.s),
-          BBButton(
-            label: 'Plan a trip from here',
-            icon: BBIcons.plan,
-            kind: BBButtonKind.quiet,
-            expand: true,
-            wrap: true,
-            onPressed: () {
-              ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stop.stopId, name: stop.stopName));
-              context.go('/plan');
-            },
+          PushOnce(
+            builder: (context, push) => BBButton(
+              label: 'Plan a trip from here',
+              icon: BBIcons.plan,
+              kind: BBButtonKind.quiet,
+              expand: true,
+              wrap: true,
+              onPressed: () {
+                ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stop.stopId, name: stop.stopName));
+                // A new plan: a trip left open no longer comes back from the Plan button.
+                ref.read(openJourneyProvider.notifier).close();
+                push('/plan');
+              },
+            ),
           ),
           const SizedBox(height: BBSpace.s),
           BBButton(
@@ -124,7 +133,16 @@ class ArrivalsPreview extends ConsumerWidget {
           ? Text("Couldn't load arrivals", style: bb.text.caption)
           : BBSkeleton(kind: BBSkeletonKind.arrivalRow, count: max ?? 3);
     }
-    if (rows.isEmpty) return Text('No buses due soon', style: bb.text.caption);
+    if (rows.isEmpty) {
+      // At night, or before a day's service: the first bus, in words a screen reader gets in full.
+      final first = firstBusNoteFor(ref, stopId, use24h: BBTime.use24h(context));
+      if (first == null) return Text('No buses due soon', style: bb.text.caption);
+      return Semantics(
+        label: first.spoken,
+        excludeSemantics: true,
+        child: Text(first.text, style: bb.text.caption),
+      );
+    }
     return ArrivalsList(rows: max == null ? rows : rows.take(max!).toList());
   }
 }
@@ -148,6 +166,14 @@ class ArrivalsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [for (final a in rows) ArrivalRowTile(arrival: a, onTap: _followable(ref, a))],
+        children: [
+          for (final a in rows)
+            ArrivalRowTile(
+              arrival: a,
+              onTap: _followable(ref, a),
+              // A row with no bus to follow says why.
+              onExplain: () => BBToast.show(context, ArrivalRowTile.whyNotFollowable(a), announce: true),
+            ),
+        ],
       );
 }

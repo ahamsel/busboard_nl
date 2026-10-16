@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../data/gtfs/headsign.dart';
 import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/route_geometry.dart';
 import '../kit/kit.dart';
@@ -115,7 +116,8 @@ class FollowCardHeader extends StatelessWidget {
     final route = routeLabel ?? busLabel(bus);
     // After arrival the bus may be on its next trip: its headsign and delay
     // no longer describe the trip being followed.
-    final headsign = arrived || bus.headsign.isEmpty ? tripHeadsign : bus.headsign;
+    final feedHeadsign = arrived || bus.headsign.isEmpty ? tripHeadsign : bus.headsign;
+    final headsign = feedHeadsign == null ? null : readableHeadsign(feedHeadsign);
     final delay = arrived ? '' : delayText(bus.schedDiffMins);
     final subtitle = snapshot.stale
         ? 'Bus $id · Last seen ${agoText(snapshot.lastSeenAgo ?? Duration.zero)}'

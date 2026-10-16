@@ -1,7 +1,7 @@
 name: busboard_nl
 description: "BusBoard NL - Personalized arrival board for Metrobus St. John's, NL"
 publish_to: 'none'
-version: 1.4.1+9
+version: 1.5.0+10
 
 environment:
   sdk: ^3.13.0
@@ -45,15 +45,15 @@ flutter_launcher_icons:
   remove_alpha_ios: true
   image_path: "assets/icon/app_icon.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#3E7CB1"
+  adaptive_icon_background: "#1272C9"
   adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
 
 flutter_native_splash:
-  color: "#3E7CB1"
+  color: "#1272C9"
   image: "assets/icon/splash_logo.png"
   android_12:
     image: "assets/icon/splash_logo_android12.png"
-    icon_background_color: "#3E7CB1"
+    icon_background_color: "#1272C9"
 
 flutter:
   uses-material-design: true

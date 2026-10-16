@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../routing/push_once.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
 
@@ -25,7 +25,7 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
     super.dispose();
   }
 
-  void _submit() {
+  void _submit(PushOnceCallback push) {
     final text = _controller.text.trim();
 
     if (text.isEmpty) {
@@ -40,15 +40,15 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
 
     setState(() => _errorText = null);
 
-    // Save and navigate
+    // Save and navigate (once for a quick double tap on Go)
     ref.read(settingsProvider.notifier).setSelectedStop(text);
-    context.push('/board/$text');
+    push('/board/$text');
   }
 
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
-    return Column(
+    return PushOnce(builder: (context, push) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Stop number', style: bb.text.label.copyWith(color: bb.colors.muted)),
@@ -61,6 +61,8 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
                 controller: _controller,
                 focusNode: _focusNode,
                 hint: 'Stop number on the pole',
+                // The same words name the field for screen readers, so it is not announced by its typed value alone.
+                semanticLabel: 'Stop number on the pole',
                 leadingIcon: BBIcons.pin,
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.go,
@@ -72,14 +74,14 @@ class _StopIdEntryState extends ConsumerState<StopIdEntry> {
                 onChanged: (_) {
                   if (_errorText != null) setState(() => _errorText = null);
                 },
-                onSubmitted: (_) => _submit(),
+                onSubmitted: (_) => _submit(push),
               ),
             ),
             const SizedBox(width: BBSpace.s),
-            BBButton(label: 'Go', icon: BBIcons.search, onPressed: _submit),
+            BBButton(label: 'Go', icon: BBIcons.search, onPressed: () => _submit(push)),
           ],
         ),
       ],
-    );
+    ));
   }
 }

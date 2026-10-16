@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
@@ -11,6 +13,19 @@ class _FakeTimeTrack extends TimeTrackApi {
   @override
   Future<TimeTrackFetchResult> fetchVehiclesResult() async =>
       TimeTrackFetchResult.success(const [], source: LiveDataSource.gtfsRealtime);
+}
+
+/// A live feed that answers after [delay], counting its calls.
+class _SlowTimeTrack extends TimeTrackApi {
+  _SlowTimeTrack(this.delay);
+  final Duration delay;
+  int calls = 0;
+  @override
+  Future<TimeTrackFetchResult> fetchVehiclesResult() async {
+    calls++;
+    await Future<void>.delayed(delay);
+    return TimeTrackFetchResult.success(const [], source: LiveDataSource.gtfsRealtime);
+  }
 }
 
 class _FakeMobile extends MetrobusMobileApi {
@@ -65,6 +80,69 @@ void main() {
     c.listen(stopArrivalsProvider('1150'), (_, _) {});
     expect(await c.read(stopArrivalsProvider('1150').future), isEmpty);
     expect(mobile.asked, ['1150']);
+  });
+
+  group('stop arrivals before the schedule is loaded', () {
+    testWidgets('they are loading, not an empty list, until the schedule is in; then they load', (tester) async {
+      final mobile = _FakeMobile();
+      final schedule = Completer<GtfsRepository>();
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) => schedule.future),
+        timetrackApiProvider.overrideWithValue(_FakeTimeTrack()),
+        metrobusMobileApiProvider.overrideWithValue(mobile),
+      ]);
+      c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      final loading = c.read(stopArrivalsProvider('1150'));
+      expect(loading.isLoading, isTrue);
+      expect(loading.hasValue, isFalse, reason: 'an empty list would read as "No upcoming departures"');
+      expect(mobile.asked, isEmpty, reason: 'nothing to show them against yet');
+      schedule.complete(GtfsRepository());
+      await tester.pump(const Duration(seconds: 1));
+      expect(c.read(stopArrivalsProvider('1150')).value, isEmpty);
+      expect(mobile.asked, ['1150']);
+      c.dispose();
+    });
+
+    testWidgets('a schedule that fails to reload keeps the one loaded: departures stay data, poll after poll',
+        (tester) async {
+      // Settings, Refresh schedule, while offline: the second load fails.
+      final mobile = _FakeMobile();
+      var loads = 0;
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async {
+          if (++loads > 1) throw StateError('offline');
+          return GtfsRepository();
+        }),
+        timetrackApiProvider.overrideWithValue(_FakeTimeTrack()),
+        metrobusMobileApiProvider.overrideWithValue(mobile),
+      ]);
+      c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      expect(c.read(stopArrivalsProvider('1150')).hasValue, isTrue);
+      c.invalidate(gtfsRepositoryProvider);
+      await tester.pump(const Duration(seconds: 1));
+      expect(c.read(gtfsRepositoryProvider).hasError, isTrue, reason: 'the reload failed');
+      final asked = mobile.asked.length;
+      await tester.pump(const Duration(seconds: 6)); // the next poll
+      expect(mobile.asked.length, greaterThan(asked), reason: 'polling goes on');
+      final after = c.read(stopArrivalsProvider('1150'));
+      expect(after.hasError, isFalse, reason: 'not "Offline" on the old schedule');
+      expect(after.hasValue, isTrue);
+      c.dispose();
+    });
+
+    testWidgets('a schedule that fails to load is an error, not an empty list', (tester) async {
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => throw StateError('no schedule')),
+        timetrackApiProvider.overrideWithValue(_FakeTimeTrack()),
+        metrobusMobileApiProvider.overrideWithValue(_FakeMobile()),
+      ]);
+      c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 1));
+      expect(c.read(stopArrivalsProvider('1150')).hasError, isTrue);
+      c.dispose();
+    });
   });
 
   group('stop arrivals cache', () {
@@ -169,6 +247,27 @@ void main() {
       expect(mobile.asked, hasLength(1));
       await tester.pump(const Duration(seconds: 6));
       expect(mobile.asked.length, greaterThan(1));
+      c.dispose();
+    });
+
+    testWidgets('a fetch slower than the poll interval still completes, and polling goes on after it', (tester) async {
+      final mobile = _FakeMobile();
+      final slow = _SlowTimeTrack(const Duration(seconds: 8)); // the default poll is 5 s
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
+        timetrackApiProvider.overrideWithValue(slow),
+        metrobusMobileApiProvider.overrideWithValue(mobile),
+      ]);
+      await c.read(gtfsRepositoryProvider.future);
+      c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 7));
+      expect(c.read(stopArrivalsProvider('1150')).hasValue, isFalse, reason: 'still loading, not restarted');
+      expect(slow.calls, 1, reason: 'the poll did not restart the fetch');
+      await tester.pump(const Duration(seconds: 2));
+      expect(c.read(stopArrivalsProvider('1150')).hasValue, isTrue);
+      await tester.pump(const Duration(seconds: 6));
+      expect(slow.calls, 2, reason: 'the next poll came one interval after the fetch ended');
+      await tester.pump(const Duration(seconds: 7)); // let that second fetch end
       c.dispose();
     });
 

@@ -60,7 +60,7 @@ Future<PlacePick?> showPlacePicker(BuildContext context, {required bool forFrom}
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Close',
-    barrierColor: const Color(0x331C2A3A),
+    barrierColor: const Color(0x33000000),
     transitionDuration: BBMotion.of(context, BBMotion.standard),
     pageBuilder: (_, _, _) => _PlacePickerCard(forFrom: forFrom),
     transitionBuilder: (_, animation, _, child) => FadeTransition(
@@ -179,6 +179,9 @@ class _PlacePickerCardState extends ConsumerState<_PlacePickerCard> {
                         const SizedBox(height: BBSpace.s),
                         BBTextField(
                           hint: 'Stop number or name',
+                          // The same words name the field for screen readers, so it is not announced by its typed
+                          // value alone.
+                          semanticLabel: 'Stop number or name',
                           leadingIcon: BBIcons.search,
                           autofocus: true,
                           textInputAction: TextInputAction.search,

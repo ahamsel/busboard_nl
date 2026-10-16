@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../routing/push_once.dart';
 import '../../state/arrival_alert_providers.dart';
 import '../../state/follow_providers.dart';
 import '../../state/providers.dart';
@@ -14,7 +15,9 @@ import '../alerts/service_alert_card.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../arrival_alerts/alert_strip.dart';
 import '../kit/kit.dart';
+import '../shell/top_actions.dart';
 import 'arrival_row_tile.dart';
+import 'first_bus_note.dart';
 
 /// Arrival board screen for a selected stop.
 ///
@@ -40,6 +43,9 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   String? _liveIssue;
   String? _error;
 
+  /// The Board is on screen: behind another tab (its tickers off) it does not poll, and it refreshes once it shows.
+  bool _visible = true;
+
   @override
   void initState() {
     super.initState();
@@ -56,8 +62,23 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (visible == _visible) return;
+    _visible = visible;
+    if (visible) {
+      _refreshData();
+      _startTimer();
+    } else {
+      _refreshTimer?.cancel();
+    }
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      if (!_visible) return;
       _refreshData();
       _startTimer();
     } else {
@@ -67,6 +88,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
 
   void _startTimer() {
     _refreshTimer?.cancel();
+    if (!_visible) return;
     final settings = ref.read(settingsProvider);
     _refreshTimer = Timer.periodic(
       Duration(seconds: settings.refreshIntervalSeconds),
@@ -79,15 +101,13 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     _refreshInProgress = true;
 
     try {
+      // The schedule loaded once is used from then on, even when a reload fails (Refresh schedule, offline). While
+      // the first load runs the board stays loading: the listener in build refreshes as it lands, and an error only
+      // shows if it fails.
       final repoAsync = ref.read(gtfsRepositoryProvider);
-      final repo = repoAsync.asData?.value;
+      final repo = repoAsync.value;
       if (repo == null) {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _error = 'Schedule data not loaded';
-          });
-        }
+        if (mounted && repoAsync.hasError) _showScheduleError();
         return;
       }
 
@@ -146,6 +166,11 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     }
   }
 
+  void _showScheduleError() => setState(() {
+        _loading = false;
+        _error = 'Schedule data not loaded';
+      });
+
   @override
   Widget build(BuildContext context) {
     // Restart timer when refresh interval changes in settings
@@ -159,6 +184,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     // link straight to the board); load the departures as soon as it arrives.
     ref.listen<AsyncValue<Object?>>(gtfsRepositoryProvider, (prev, next) {
       if (next.hasValue && prev?.hasValue != true) _refreshData();
+      if (!next.hasValue && next.hasError) _showScheduleError();
     });
 
     final bb = context.bb;
@@ -184,21 +210,24 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         ? null
         : Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, BBSpace.xs),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ServiceAlertCard(
-                alert: relevantAlerts.first,
-                stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
-                compact: true,
-                onTap: () => context.go('/alerts'),
-              ),
-              if (relevantAlerts.length > 1)
-                BBButton(
-                  label:
-                      '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
-                  kind: BBButtonKind.quiet,
-                  onPressed: () => context.go('/alerts'),
+            // Both open the Alerts page, once for a quick double tap.
+            child: PushOnce(
+              builder: (context, push) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ServiceAlertCard(
+                  alert: relevantAlerts.first,
+                  stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
+                  compact: true,
+                  onTap: () => push('/alerts'),
                 ),
-            ]),
+                if (relevantAlerts.length > 1)
+                  BBButton(
+                    label:
+                        '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
+                    kind: BBButtonKind.quiet,
+                    onPressed: () => push('/alerts'),
+                  ),
+              ]),
+            ),
           );
 
     // The "Alert set" strip leads the list while an arrival alert exists, and
@@ -216,30 +245,34 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.xs, 0),
-            child: Row(children: [
-              // Pill and Change share the width the 44 pt settings button leaves,
-              // so large text ellipsises them instead of overflowing the row.
-              Expanded(
-                flex: 3,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: BBPill(
-                    label: 'STOP ${widget.stopId}',
-                    background: bb.colors.ink,
-                    foreground: bb.colors.bg,
-                  ),
-                ),
-              ),
-              Flexible(
-                flex: 2,
-                child: BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop()),
-              ),
-              BBIconButton(
-                icon: BBIcons.settings,
-                semanticLabel: 'Settings',
-                onPressed: () => context.push('/settings'),
-              ),
-            ]),
+            child: LayoutBuilder(builder: (context, box) {
+              final pill = BBPill(label: 'STOP ${widget.stopId}', background: bb.colors.ink, foreground: bb.colors.bg);
+              final change = BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop());
+              // The pill, then Change at its own width, beside the three 44 pt buttons (Plan, Alerts, Settings). Only
+              // when the two together don't fit the room the buttons leave (large text on a small phone) do the
+              // buttons take a row of their own above them.
+              final room = box.maxWidth - TopActions.headerWidth;
+              final pillWidth =
+                  TopActions.textWidth(context, pill.label, bb.text.caption.copyWith(fontWeight: FontWeight.w700)) +
+                      2 * BBSpace.s;
+              final changeWidth = TopActions.textWidth(
+                      context, change.label, bb.text.label.copyWith(fontSize: 15, fontWeight: FontWeight.w800)) +
+                  36;
+              if (pillWidth + changeWidth <= room) {
+                return Row(children: [
+                  Expanded(child: Align(alignment: Alignment.centerLeft, child: pill)),
+                  change,
+                  const TopActions(),
+                ]);
+              }
+              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Align(alignment: Alignment.centerRight, child: TopActions()),
+                Row(children: [
+                  Expanded(child: Align(alignment: Alignment.centerLeft, child: pill)),
+                  change,
+                ]),
+              ]);
+            }),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, 0),
@@ -287,7 +320,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   }
 
   /// A live row with a known vehicle follows that bus on the map (spec §3.5);
-  /// scheduled-only rows are not tappable.
+  /// a row with no bus to follow says why instead.
   VoidCallback? _followable(ArrivalRow a) {
     final vehicle = a.followableVehicle;
     if (vehicle == null) return null;
@@ -324,10 +357,21 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
       return centered(BBEmptyState(icon: BBIcons.error, tone: BBEmptyTone.error, title: _error!));
     }
     if (_arrivals.isEmpty) {
-      return centered(const BBEmptyState(
-        icon: BBIcons.schedule,
-        title: 'No upcoming departures',
-        message: 'There are no scheduled departures\nfrom this stop right now.',
+      // Service over: the first bus. A gap in the day, or no service for a week, keeps the plain words.
+      const title = 'No upcoming departures';
+      final first = firstBusNoteFor(ref, widget.stopId, use24h: BBTime.use24h(context));
+      if (first == null) {
+        return centered(const BBEmptyState(
+          icon: BBIcons.schedule,
+          title: title,
+          message: 'There are no scheduled departures\nfrom this stop right now.',
+        ));
+      }
+      return centered(Semantics(
+        // The weekday in full for a screen reader ("Monday"), where the screen shows "Mon".
+        label: '$title. ${first.spoken}',
+        excludeSemantics: true,
+        child: BBEmptyState(icon: BBIcons.schedule, title: title, message: first.text),
       ));
     }
     final leading = leadingItems.length;
@@ -343,6 +387,8 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
           child: ArrivalRowTile(
             arrival: arrival,
             onTap: _followable(arrival),
+            // A row with no bus to follow says why.
+            onExplain: () => BBToast.show(context, ArrivalRowTile.whyNotFollowable(arrival), announce: true),
             action: AlertBell(arrival: arrival, stopId: widget.stopId, stopName: stopName),
           ),
         );

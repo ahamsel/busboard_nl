@@ -31,7 +31,7 @@ final _aToC = SavedTrip(
 ProviderContainer _container(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(PlanScreen)));
 
-/// Opens the Plan tab at [now] with [trips] saved.
+/// Opens the planner at [now] with [trips] saved.
 Future<void> _pump(
   WidgetTester tester, {
   DateTime? now,
@@ -102,6 +102,17 @@ void main() {
       _container(tester).read(savedTripsProvider).value!.single.name,
       'Work',
     );
+  });
+
+  testWidgets('the Trip name field is named for screen readers, not just read by its value', (tester) async {
+    final handle = tester.ensureSemantics();
+    await _pump(tester);
+    await tester.tap(_more);
+    await tester.pumpAndSettle();
+    final field = tester.getSemantics(find.byType(EditableText));
+    expect(field.label, 'Trip name');
+    expect(field.value, 'Stop A → Stop C', reason: 'the field opens on the current name');
+    handle.dispose();
   });
 
   testWidgets('long-pressing the card opens the same dialog', (tester) async {
