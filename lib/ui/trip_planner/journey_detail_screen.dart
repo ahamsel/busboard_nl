@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -97,7 +98,10 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
     // As the Board does on each refresh: a newer live time for the first ride re-times its alert (iPhone).
     _feedSub = ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _retimeAlert(ref.read(plannerLiveFeedProvider).value);
+      if (!mounted) return;
+      _retimeAlert(ref.read(plannerLiveFeedProvider).value);
+      // Kept when the rider leaves for a tab without going back (Show on map, Follow bus, a notification).
+      ref.read(openJourneyProvider.notifier).open(widget.journey);
     });
   }
 
@@ -187,7 +191,15 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
         firstRide == null || repo == null ? null : boardArrivalFor(widget.journey, firstRide, repo, feed, now);
     final onSave = from == null || to == null || _saving ? null : () => _save(from, to);
 
-    return BBScaffold(
+    // Back from the steps closes the trip: the Plan button then opens the planner alone. The rider's back (the
+    // button, the system back, the edge swipe) pops between frames; Show on map, Follow bus or a notification (a `go`)
+    // removes the page while the navigator rebuilds, and leaves the trip open.
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop || SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) return;
+        ref.read(openJourneyProvider.notifier).close(widget.journey);
+      },
+      child: BBScaffold(
       body: ListView(
         children: [
           BBTopBar(
@@ -261,6 +273,7 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
           ),
           SizedBox(height: MediaQuery.paddingOf(context).bottom + BBSpace.l),
         ],
+      ),
       ),
     );
   }

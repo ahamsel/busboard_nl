@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../routing/push_once.dart';
 import '../../state/providers.dart';
+import '../../state/trip_planner_providers.dart';
 import '../kit/kit.dart';
 
 /// The three buttons at the top right of both tabs, in this order: Plan, Alerts (the Alerts tab's megaphone, counting
@@ -60,7 +65,19 @@ class TopActions extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _TopButton(buttonKey: planKey, icon: BBIcons.plan, label: 'Plan a trip', location: '/plan', floating: floating),
+        _TopButton(
+          buttonKey: planKey,
+          icon: BBIcons.plan,
+          label: 'Plan a trip',
+          location: '/plan',
+          floating: floating,
+          // A trip whose steps the rider left open (Show on map, Follow bus, a notification) comes back over the
+          // planner, as on 1.4.1's Plan tab.
+          then: () {
+            final open = ref.read(openJourneyProvider.notifier).stillUnderWay(ref.read(plannerClockProvider)());
+            if (open != null) unawaited(GoRouter.of(context).push('/plan/journey', extra: open));
+          },
+        ),
         SizedBox(width: gap),
         _TopButton(
           buttonKey: alertsKey,
@@ -91,6 +108,7 @@ class _TopButton extends StatelessWidget {
     required this.location,
     required this.floating,
     this.badgeCount = 0,
+    this.then,
   });
 
   final Key buttonKey;
@@ -99,6 +117,9 @@ class _TopButton extends StatelessWidget {
   final String location;
   final bool floating;
   final int badgeCount;
+
+  /// Runs after the page is pushed.
+  final VoidCallback? then;
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +161,7 @@ class _TopButton extends StatelessWidget {
     // Once for a quick double tap: two taps before the page shows would open two.
     return PushOnce(
       builder: (context, push) =>
-          BBPressable(key: buttonKey, semanticLabel: label, onTap: () => push(location), child: face),
+          BBPressable(key: buttonKey, semanticLabel: label, onTap: () => push(location, then: then), child: face),
     );
   }
 }
