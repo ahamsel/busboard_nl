@@ -34,11 +34,25 @@ final timetableIndexBuilderProvider = Provider<IndexBuilder>((ref) => buildIndex
 DateTime _day(DateTime t) => DateTime(t.year, t.month, t.day);
 
 /// The planner for one service day ([day] is date-only), kept for 10 minutes after it was built.
+///
+/// An error if the schedule's first load fails. A schedule loaded once is used from then on, even when a reload fails
+/// (Refresh schedule, offline); a reload that succeeds is waited for, so the planner moves to the new schedule.
 final tripPlannerProvider = FutureProvider.autoDispose.family<TripPlanner, DateTime>((ref, day) async {
   final link = ref.keepAlive();
   final timer = Timer(const Duration(minutes: 10), link.close);
   ref.onDispose(timer.cancel);
-  final repo = await ref.watch(gtfsRepositoryProvider.future);
+  // Only the future is watched (a reload starts a new one): watching the state too would build a second planner as
+  // the load lands. The schedule loaded before is kept for a reload that fails; it can't stand in while the reload
+  // runs, as the stop departures' does, since nothing would move this planner on to the new schedule afterwards.
+  final load = ref.watch(gtfsRepositoryProvider.future);
+  final kept = ref.read(gtfsRepositoryProvider).value;
+  GtfsRepository repo;
+  try {
+    repo = await load;
+  } catch (_) {
+    if (kept == null) rethrow;
+    repo = kept;
+  }
   return TripPlanner(repo, await ref.read(timetableIndexBuilderProvider)(repo, day));
 });
 
