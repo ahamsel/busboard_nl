@@ -6,6 +6,7 @@ import '../../state/providers.dart';
 import '../kit/kit.dart';
 import '../shell/top_actions.dart';
 import 'near_me_list.dart';
+import 'plan_trip_card.dart';
 import 'stop_id_entry.dart';
 
 class StopPickerScreen extends ConsumerWidget {
@@ -54,8 +55,10 @@ class StopPickerScreen extends ConsumerWidget {
                   sliver: SliverList.list(children: [
                     if (settings.selectedStopId != null) ...[
                       _LastStopCard(stopId: settings.selectedStopId!),
-                      const SizedBox(height: BBSpace.xl),
+                      const SizedBox(height: BBSpace.m),
                     ],
+                    const PlanTripCard(),
+                    const SizedBox(height: BBSpace.xl),
                     const StopIdEntry(),
                     const SizedBox(height: BBSpace.xl),
                     Row(children: [

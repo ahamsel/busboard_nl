@@ -144,6 +144,10 @@ void main() {
     await _pump(tester, gtfs: _repoWithDirections, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)],
         textScale: 2.0);
     expect(tester.takeException(), isNull);
+    // Below the fold at this size, under the Plan a trip card.
+    await tester.scrollUntilVisible(find.text('Downtown · Kelsey Drive'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(tester.takeException(), isNull);
     expect(find.text('Downtown · Kelsey Drive'), findsOneWidget);
   });
 
