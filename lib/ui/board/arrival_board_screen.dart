@@ -41,6 +41,9 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   String? _liveIssue;
   String? _error;
 
+  /// The Board is on screen: behind another tab (its tickers off) it does not poll, and it refreshes once it shows.
+  bool _visible = true;
+
   @override
   void initState() {
     super.initState();
@@ -57,8 +60,23 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.valuesOf(context).enabled;
+    if (visible == _visible) return;
+    _visible = visible;
+    if (visible) {
+      _refreshData();
+      _startTimer();
+    } else {
+      _refreshTimer?.cancel();
+    }
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      if (!_visible) return;
       _refreshData();
       _startTimer();
     } else {
@@ -68,6 +86,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
 
   void _startTimer() {
     _refreshTimer?.cancel();
+    if (!_visible) return;
     final settings = ref.read(settingsProvider);
     _refreshTimer = Timer.periodic(
       Duration(seconds: settings.refreshIntervalSeconds),
