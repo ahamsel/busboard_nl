@@ -167,9 +167,10 @@ GtfsRepository _repoStartingIn(int daysAhead) {
 GtfsRepository _repo() =>
     GtfsRepository()..stopsById['1150'] = const StopInfo(stopId: '1150', stopName: 'MUN Centre', stopLat: 0, stopLon: 0);
 
-Future<void> _pump(
+Future<ProviderContainer> _pump(
   WidgetTester tester, {
   GtfsRepository? repo,
+  Future<GtfsRepository> Function(int load)? schedule,
   List<ServiceAlert> alerts = const [],
   http.Client? timeTrackClient,
   double textScale = 1.0,
@@ -187,9 +188,11 @@ Future<void> _pump(
     GoRoute(path: '/alerts', builder: (_, _) => const Text('ALERTS')),
     GoRoute(path: '/map', builder: (_, _) => const Text('MAP')),
   ]);
+  var loads = 0;
   final container = ProviderContainer(overrides: [
       ...fakeAlertOverrides,
       gtfsRepositoryProvider.overrideWith((ref) async {
+        if (schedule != null) return schedule(++loads);
         if (repo == null) throw Exception('not loaded');
         return repo;
       }),
@@ -218,6 +221,7 @@ Future<void> _pump(
     ),
   ));
   if (settle) await tester.pumpAndSettle();
+  return container;
 }
 
 Future<void> _unmount(WidgetTester tester) async {
@@ -314,6 +318,56 @@ void main() {
   testWidgets('schedule not loaded shows the error state', (tester) async {
     await _pump(tester);
     expect(find.text('Schedule data not loaded'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('while the schedule loads at a cold start the board is loading, not an error; then its rows come in',
+      (tester) async {
+    final handle = tester.ensureSemantics();
+    final schedule = Completer<GtfsRepository>();
+    await _pump(tester, schedule: (_) => schedule.future, settle: false);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Schedule data not loaded'), findsNothing);
+    expect(find.byType(BBSkeleton), findsOneWidget);
+    expect(find.text('Checking live data…'), findsOneWidget);
+    expect(find.textContaining('showing schedule'), findsNothing, reason: 'no provisional state announced');
+    schedule.complete(_repoWithDepartures());
+    await tester.pump(const Duration(minutes: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Schedule data not loaded'), findsNothing);
+    expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets('a schedule that fails its first load after a wait shows the error state', (tester) async {
+    final schedule = Completer<GtfsRepository>();
+    await _pump(tester, schedule: (_) => schedule.future, settle: false);
+    await tester.pump(const Duration(milliseconds: 100));
+    schedule.completeError(Exception('offline'));
+    await tester.pumpAndSettle();
+    expect(find.text('Schedule data not loaded'), findsOneWidget);
+    expect(find.byType(BBSkeleton), findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('a schedule that fails to reload keeps the departures on the old one, refresh after refresh',
+      (tester) async {
+    // Settings, Refresh schedule, while offline: the second load fails, and the old schedule is kept.
+    final first = _repoWithDepartures();
+    final container = await _pump(
+      tester,
+      schedule: (load) async => load > 1 ? throw Exception('offline') : first,
+    );
+    expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    container.invalidate(gtfsRepositoryProvider);
+    await tester.pump();
+    await tester.pump();
+    expect(container.read(gtfsRepositoryProvider).hasError, isTrue, reason: 'the reload failed');
+    await tester.pump(const Duration(minutes: 1)); // the next refreshes
+    await tester.pumpAndSettle();
+    expect(find.text('Schedule data not loaded'), findsNothing);
+    expect(find.byType(ArrivalRowTile), findsNWidgets(2));
     await _unmount(tester);
   });
 

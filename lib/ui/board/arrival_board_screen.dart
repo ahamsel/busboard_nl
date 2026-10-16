@@ -80,15 +80,13 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     _refreshInProgress = true;
 
     try {
+      // The schedule loaded once is used from then on, even when a reload fails (Refresh schedule, offline). While
+      // the first load runs the board stays loading: the listener in build refreshes as it lands, and an error only
+      // shows if it fails.
       final repoAsync = ref.read(gtfsRepositoryProvider);
-      final repo = repoAsync.asData?.value;
+      final repo = repoAsync.value;
       if (repo == null) {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _error = 'Schedule data not loaded';
-          });
-        }
+        if (mounted && repoAsync.hasError) _showScheduleError();
         return;
       }
 
@@ -147,6 +145,11 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     }
   }
 
+  void _showScheduleError() => setState(() {
+        _loading = false;
+        _error = 'Schedule data not loaded';
+      });
+
   @override
   Widget build(BuildContext context) {
     // Restart timer when refresh interval changes in settings
@@ -160,6 +163,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
     // link straight to the board); load the departures as soon as it arrives.
     ref.listen<AsyncValue<Object?>>(gtfsRepositoryProvider, (prev, next) {
       if (next.hasValue && prev?.hasValue != true) _refreshData();
+      if (!next.hasValue && next.hasError) _showScheduleError();
     });
 
     final bb = context.bb;
