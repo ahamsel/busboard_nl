@@ -17,6 +17,7 @@ Widget _host(
   bool dismissible = false,
   VoidCallback? onDismiss,
   Brightness brightness = Brightness.light,
+  double peekFraction = 0.15,
 }) {
   return kitHost(
     MediaQuery(
@@ -27,7 +28,7 @@ Widget _host(
           children: [
             BBSheet(
               controller: controller,
-              peekFraction: 0.15,
+              peekFraction: peekFraction,
               header: header,
               bottomInset: bottomInset,
               dismissible: dismissible,
@@ -293,6 +294,58 @@ void main() {
       await settle(tester);
       expect(controller.size, closeTo(0.15, 0.01));
       expect(ticks, 2);
+    });
+
+    group('a smaller peek (the content above it shrank)', () {
+      testWidgets('a sheet moved back to its peek by code settles at the new peek, with no tick', (tester) async {
+        mockHaptics(tester);
+        final controller = BBSheetController();
+        await tester.pumpWidget(_host(controller));
+        unawaited(controller.animateToDetent(BBSheetDetent.half));
+        await settle(tester);
+        unawaited(controller.collapse());
+        await settle(tester);
+        expect(controller.size, closeTo(0.15, 0.001));
+        final before = ticks;
+        await tester.pumpWidget(_host(controller, peekFraction: 0.1));
+        await settle(tester);
+        expect(controller.size, closeTo(0.1, 0.001));
+        expect(ticks, before, reason: 'the content changed, not a settle the rider made');
+      });
+
+      testWidgets('a sheet at half stays at half', (tester) async {
+        final controller = BBSheetController();
+        await tester.pumpWidget(_host(controller));
+        unawaited(controller.animateToDetent(BBSheetDetent.half));
+        await settle(tester);
+        await tester.pumpWidget(_host(controller, peekFraction: 0.1));
+        await settle(tester);
+        expect(controller.size, closeTo(0.5, 0.001));
+      });
+
+      testWidgets('a sheet just starting for half (a card opening) still gets there', (tester) async {
+        final controller = BBSheetController();
+        await tester.pumpWidget(_host(controller));
+        unawaited(controller.collapse());
+        await settle(tester);
+        unawaited(controller.animateToDetent(BBSheetDetent.half));
+        await tester.pumpWidget(_host(controller, peekFraction: 0.1));
+        await settle(tester);
+        expect(controller.size, closeTo(0.5, 0.001));
+      });
+
+      testWidgets('a sheet the rider dragged down to its peek settles at the new peek', (tester) async {
+        final controller = BBSheetController();
+        await tester.pumpWidget(_host(controller));
+        unawaited(controller.animateToDetent(BBSheetDetent.half));
+        await settle(tester);
+        await tester.drag(find.text('row 0'), const Offset(0, 400));
+        await settle(tester);
+        expect(controller.size, closeTo(0.15, 0.001));
+        await tester.pumpWidget(_host(controller, peekFraction: 0.1));
+        await settle(tester);
+        expect(controller.size, closeTo(0.1, 0.001));
+      });
     });
 
     testWidgets('programmatic animation to full ticks once, not when crossing half', (tester) async {
