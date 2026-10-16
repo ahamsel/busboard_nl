@@ -8,6 +8,7 @@ import 'package:busboard_nl/state/follow_providers.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
+import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:busboard_nl/ui/map/bus_card.dart';
 import 'package:busboard_nl/ui/map/my_stop_card.dart';
@@ -162,7 +163,22 @@ void main() {
     expect(find.text('BOARD 1150'), findsNothing, reason: 'the rider stays on the map');
   });
 
-  testWidgets('stop card: scheduled-only and vehicle-less rows are inert', (tester) async {
+  testWidgets('stop card: the Follow pill does what tapping the row does', (tester) async {
+    await _host(tester,
+        header: const StopCardHeader(stop: _mun),
+        body: const StopCardBody(stop: _mun),
+        arrivals: [row(route: '21', live: true, vehicle: '2573')]);
+    final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
+    container.read(mapSelectionProvider.notifier).select(const StopSelection('1150'));
+    expect(find.textContaining('Follow 2573'), findsOneWidget);
+    await tester.tap(find.byKey(ArrivalRowTile.followKey));
+    await tester.pumpAndSettle();
+    expect(container.read(followProvider), const FollowTarget('2573'));
+    expect(container.read(mapSelectionProvider), isNull);
+    expect(find.text('BOARD 1150'), findsNothing, reason: 'the rider stays on the map');
+  });
+
+  testWidgets('stop card: scheduled and number-less rows follow nothing and say why', (tester) async {
     await _host(tester,
         header: const StopCardHeader(stop: _mun),
         body: const StopCardBody(stop: _mun),
@@ -172,10 +188,16 @@ void main() {
           row(route: '7', live: true, vehicle: ''),
         ]);
     final container = ProviderScope.containerOf(tester.element(find.byType(StopCardBody)));
-    for (final route in ['5', '6', '7']) {
-      await tester.tap(find.bySemanticsLabel(RegExp('^Route $route ')));
-      await tester.pumpAndSettle();
-    }
+    expect(find.byKey(ArrivalRowTile.followKey), findsNothing);
+    await tester.tap(find.byType(ArrivalRowTile).at(0));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text(ArrivalRowTile.notLiveYet), findsOneWidget);
+    await tester.tap(find.byType(ArrivalRowTile).at(1));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text(ArrivalRowTile.noNumberYet), findsOneWidget);
+    expect(find.text(ArrivalRowTile.notLiveYet), findsNothing, reason: 'one toast at a time');
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
     expect(container.read(followProvider), isNull);
   });
 
@@ -196,7 +218,7 @@ void main() {
     );
     expect(
       find.semantics.byLabel('Route 5 Downtown, scheduled, 4 minutes'),
-      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: false, hasTapAction: false),
+      isSemantics(label: 'Route 5 Downtown, scheduled, 4 minutes', isButton: true, hasTapAction: true),
     );
     handle.dispose();
   });

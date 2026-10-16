@@ -3,6 +3,7 @@ import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../kit/kit_test_helpers.dart';
@@ -146,6 +147,106 @@ void main() {
     await tester.tap(find.text('Signal Hill Rd'));
     expect(taps, 1);
     handle.dispose();
+  });
+
+  group('the Follow pill', () {
+    testWidgets('a followable live row shows "Follow 2134" in place of "Bus 2134", in brandSoft and brandInk',
+        (tester) async {
+      await tester.pumpWidget(kitHost(ArrivalRowTile(
+        arrival: _row(isLive: true, status: LiveStatus.onTime, vehicle: '2134', routeRun: '29-1'),
+        onTap: () {},
+      )));
+      expect(find.textContaining('Follow 2134'), findsOneWidget);
+      expect(find.text('29-1'), findsOneWidget);
+      expect(find.textContaining('Bus 2134'), findsNothing);
+      final box = tester.widget<DecoratedBox>(
+        find.descendant(of: find.byKey(ArrivalRowTile.followKey), matching: find.byType(DecoratedBox)).first,
+      );
+      expect((box.decoration as BoxDecoration).color, BBColors.light.brandSoft);
+      final text = tester.widget<Text>(find.textContaining('Follow 2134'));
+      expect(text.style!.color, BBColors.light.brandInk);
+    });
+
+    testWidgets('its target is at least 44 x 44, it is its own button, and a tap follows', (tester) async {
+      final handle = tester.ensureSemantics();
+      var taps = 0;
+      await tester.pumpWidget(kitHost(ArrivalRowTile(
+        arrival: _row(isLive: true, status: LiveStatus.onTime, vehicle: '2134'),
+        onTap: () => taps++,
+      )));
+      final pill = find.byKey(ArrivalRowTile.followKey);
+      final size = tester.getSize(pill);
+      expect(size.width, greaterThanOrEqualTo(44));
+      expect(size.height, greaterThanOrEqualTo(44));
+      expect(
+        tester.getSemantics(pill),
+        isSemantics(label: 'Follow bus 2134 on the map', isButton: true, hasTapAction: true),
+      );
+      await tester.tap(pill);
+      expect(taps, 1);
+      handle.dispose();
+    });
+
+    testWidgets('the row keeps its own sentence and follow hint beside the pill', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(kitHost(ArrivalRowTile(
+        arrival: _row(isLive: true, status: LiveStatus.onTime, vehicle: '2134'),
+        onTap: () {},
+      )));
+      expect(
+        find.semantics.byLabel('Route 29 Signal Hill Rd, on time, 4 minutes'),
+        isSemantics(
+          label: 'Route 29 Signal Hill Rd, on time, 4 minutes',
+          isButton: true,
+          hasTapAction: true,
+          onTapHint: 'follow bus 2134 on the map',
+        ),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('no pill without a follow, or on a scheduled row', (tester) async {
+      await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: _row(isLive: true, vehicle: '2134', routeRun: '29-1'))));
+      expect(find.byKey(ArrivalRowTile.followKey), findsNothing);
+      expect(find.text('29-1 · Bus 2134'), findsOneWidget, reason: 'a row that cannot be followed keeps the plain number');
+      await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: _row(), onExplain: () {})));
+      expect(find.byKey(ArrivalRowTile.followKey), findsNothing);
+    });
+
+    testWidgets('at 2x text on 320 pt the pill reads in full', (tester) async {
+      await tester.pumpWidget(kitHost(
+        ArrivalRowTile(
+          arrival: _row(isLive: true, status: LiveStatus.onTime, vehicle: '2134', routeRun: '29-1', minutes: 15),
+          onTap: () {},
+        ),
+        textScale: 2.0,
+        width: 320,
+      ));
+      expect(tester.takeException(), isNull);
+      final pill = tester.renderObject<RenderParagraph>(find.textContaining('Follow 2134'));
+      expect(pill.didExceedMaxLines, isFalse);
+    });
+  });
+
+  group('a row with no bus to follow', () {
+    test('says why: a scheduled row has no bus yet, a live row has no number yet', () {
+      expect(ArrivalRowTile.whyNotFollowable(_row()), "No bus on this trip yet. You can follow it once it's live.");
+      expect(ArrivalRowTile.whyNotFollowable(_row(isLive: true)),
+          "This bus isn't sharing its number yet, so it can't be followed.");
+    });
+
+    testWidgets('onExplain makes it a button that explains, with no follow hint', (tester) async {
+      final handle = tester.ensureSemantics();
+      var explained = 0;
+      await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: _row(), onExplain: () => explained++)));
+      expect(
+        find.semantics.byLabel('Route 29 Signal Hill Rd, scheduled, 4 minutes'),
+        isSemantics(label: 'Route 29 Signal Hill Rd, scheduled, 4 minutes', isButton: true, hasTapAction: true),
+      );
+      await tester.tap(find.text('Signal Hill Rd'));
+      expect(explained, 1);
+      handle.dispose();
+    });
   });
 
   testWidgets('a row without onTap has no tap action', (tester) async {

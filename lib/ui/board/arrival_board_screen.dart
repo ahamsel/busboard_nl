@@ -287,7 +287,7 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
   }
 
   /// A live row with a known vehicle follows that bus on the map (spec §3.5);
-  /// scheduled-only rows are not tappable.
+  /// a row with no bus to follow says why instead.
   VoidCallback? _followable(ArrivalRow a) {
     final vehicle = a.followableVehicle;
     if (vehicle == null) return null;
@@ -343,6 +343,8 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
           child: ArrivalRowTile(
             arrival: arrival,
             onTap: _followable(arrival),
+            // A row with no bus to follow says why.
+            onExplain: () => BBToast.show(context, ArrivalRowTile.whyNotFollowable(arrival), announce: true),
             action: AlertBell(arrival: arrival, stopId: widget.stopId, stopName: stopName),
           ),
         );
