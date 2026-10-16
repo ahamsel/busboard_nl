@@ -83,7 +83,7 @@ class _NearbyStopTile extends ConsumerWidget {
     final bb = context.bb;
     final stop = nearby.stop;
     final routes =
-        ref.watch(gtfsRepositoryProvider).asData?.value.routeDirectionsForStop(stop.stopId) ?? const <RouteDirections>[];
+        ref.watch(gtfsRepositoryProvider).value?.routeDirectionsForStop(stop.stopId) ?? const <RouteDirections>[];
     final routesText = routes.isEmpty ? '' : ', routes ${routes.map(_spokenDirections).join(', ')}';
     // Once for a quick double tap: two taps before the Board shows would push two.
     return PushOnce(builder: (context, push) => BBPressable(

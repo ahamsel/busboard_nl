@@ -33,7 +33,9 @@ class StopPickerScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            // A reload that fails (Refresh schedule, offline) keeps the schedule loaded once: Settings says so.
             ...gtfsAsync.when(
+              skipError: true,
               data: (_) => [
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: BBSpace.screen),

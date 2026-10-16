@@ -372,6 +372,7 @@ void main() {
       schedule: (load) async => load > 1 ? throw Exception('offline') : first,
     );
     expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    expect(find.text('MUN Centre'), findsOneWidget);
     container.invalidate(gtfsRepositoryProvider);
     await tester.pump();
     await tester.pump();
@@ -380,6 +381,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Schedule data not loaded'), findsNothing);
     expect(find.byType(ArrivalRowTile), findsNWidgets(2));
+    expect(find.text('MUN Centre'), findsOneWidget, reason: 'the header keeps the stop name, not "Stop 1150"');
+    expect(find.text('Stop 1150'), findsNothing);
     await _unmount(tester);
   });
 

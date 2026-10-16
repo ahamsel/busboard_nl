@@ -232,8 +232,9 @@ final nearestStopServiceProvider = Provider<NearestStopService>((ref) {
 final nearestStopsProvider = FutureProvider.autoDispose<List<NearbyStop>>((
   ref,
 ) async {
-  final repoAsync = ref.watch(gtfsRepositoryProvider);
-  final repo = repoAsync.asData?.value;
+  // The schedule loaded once is kept when a reload fails (Refresh schedule, offline), and only a new one asks again:
+  // its loading and failed retries in between do not.
+  final repo = ref.watch(gtfsRepositoryProvider.select((s) => s.value));
   if (repo == null) return [];
 
   final service = ref.read(nearestStopServiceProvider);
@@ -322,8 +323,7 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
 
 // ─── Stop Info helper ──────────────────────────────────────
 
+/// The stop from the schedule loaded once, also after a reload fails (the Board header keeps its name).
 final stopInfoProvider = Provider.family<StopInfo?, String>((ref, stopId) {
-  final repoAsync = ref.watch(gtfsRepositoryProvider);
-  final repo = repoAsync.asData?.value;
-  return repo?.stopsById[stopId];
+  return ref.watch(gtfsRepositoryProvider.select((s) => s.value?.stopsById[stopId]));
 });
