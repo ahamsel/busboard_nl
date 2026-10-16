@@ -469,12 +469,12 @@ class _BBSheetState extends State<BBSheet> {
             ),
     );
     if (!widget.fadeUnderHeader) return header;
-    // A strip under the header, surface to clear: the list's top fades under it. The pinned header
-    // paints after the list, so the strip lies over it.
+    // A strip under the header, surface to clear: the list's top fades under it. The pinned header paints after
+    // the list, so the strip lies over the list. It comes first here, so the header's own shadow, which reaches
+    // down over the strip, paints above it and stays visible.
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        header,
         Positioned(
           key: BBSheet.topFadeKey,
           left: 0,
@@ -497,6 +497,7 @@ class _BBSheetState extends State<BBSheet> {
             ),
           ),
         ),
+        header,
       ],
     );
   }

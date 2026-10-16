@@ -200,6 +200,24 @@ void main() {
       expect(fade(), 1);
     });
 
+    testWidgets('the top fade lies under the header, so the header\'s shadow is painted over it, not hidden by it',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(_sheet(fadeUnderHeader: true));
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('row 5'), const Offset(0, -200));
+      await tester.pumpAndSettle();
+      expect(_header(tester).boxShadow, isNotEmpty, reason: 'scrolled: the header has its shadow');
+      final stack =
+          tester.widget<Stack>(find.ancestor(of: find.byKey(BBSheet.headerKey), matching: find.byType(Stack)).first);
+      final order = stack.children.map((w) => w.key).toList();
+      expect(order, containsAll([BBSheet.headerKey, BBSheet.topFadeKey]));
+      // Later children paint on top: the header (and its shadow) after the fade strip.
+      expect(order.indexOf(BBSheet.headerKey), greaterThan(order.indexOf(BBSheet.topFadeKey)));
+    });
+
     testWidgets('the bottom fade follows content that changes without a scroll', (tester) async {
       tester.view.physicalSize = const Size(390, 800);
       tester.view.devicePixelRatio = 1;
