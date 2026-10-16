@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+import 'package:shared_preferences_platform_interface/types.dart';
 
 /// A fresh app start over what the phone holds ([prefs]).
 ProviderContainer _start([Map<String, Object> prefs = const {}]) {
@@ -53,6 +54,20 @@ void main() {
     final next = _restart();
     expect(await _tabOnceRead(next), HomeTab.board);
     expect(next.read(boardStopProvider), isNull, reason: 'the migration runs once');
+  });
+
+  test('the migration stores the Board before it clears the 1.4 key, so a failed write keeps the stop', () async {
+    final log = <String>[];
+    SharedPreferencesAsyncPlatform.instance = _LoggingPrefs({HomeTabStore.legacyBoardOpenKey: 'C'}, log);
+    await const HomeTabStore().readStart();
+    expect(log, ['set home_tab.v1', 'remove board_open.v1']);
+
+    // A write that fails leaves the 1.4 key where it was, to be migrated again on the next start; the stop shows now.
+    SharedPreferencesAsyncPlatform.instance =
+        _LoggingPrefs({HomeTabStore.legacyBoardOpenKey: 'C'}, log, failSet: true);
+    final start = await const HomeTabStore().readStart();
+    expect(start.boardStopId, 'C');
+    expect(await SharedPreferencesAsync().getString(HomeTabStore.legacyBoardOpenKey), 'C');
   });
 
   test('an empty 1.4 key is cleared and opens as a first launch would', () async {
@@ -105,4 +120,25 @@ void main() {
     c.read(boardStopProvider.notifier).restore('C');
     expect(c.read(boardStopProvider), const BoardStop('A', nearMe: true));
   });
+}
+
+/// Records the writes it passes on, and can fail the sets.
+base class _LoggingPrefs extends InMemorySharedPreferencesAsync {
+  _LoggingPrefs(super.data, this.log, {this.failSet = false}) : super.withData();
+  final List<String> log;
+  final bool failSet;
+
+  @override
+  Future<bool> setString(String key, String value, SharedPreferencesOptions options) {
+    log.add('set $key');
+    if (failSet) throw StateError('disk full');
+    return super.setString(key, value, options);
+  }
+
+  @override
+  Future<bool> clear(ClearPreferencesParameters parameters, SharedPreferencesOptions options) {
+    // SharedPreferencesAsync.remove clears the one key.
+    log.add('remove ${parameters.filter.allowList!.single}');
+    return super.clear(parameters, options);
+  }
 }

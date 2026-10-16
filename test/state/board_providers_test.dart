@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:busboard_nl/data/trip_planner/saved_place_store.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
 import 'package:busboard_nl/state/board_providers.dart';
@@ -10,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+
+import '../trip_planner/test_network.dart';
 
 SavedPlace _saved(String id, Place place, {SavedPlaceIcon icon = SavedPlaceIcon.star}) =>
     SavedPlace(id: id, name: id, icon: icon, place: place);
@@ -106,6 +110,48 @@ void main() {
 
     test('with nothing chosen, nothing saved and nothing viewed, there are none', () {
       expect(boardStopChips(), isEmpty);
+    });
+  });
+
+  group('the chips only name stops in the loaded schedule', () {
+    // The network has stops A..H, X, Y, Z; the GONE ones are stops a later schedule removed.
+    ProviderContainer container({String? mine, List<SavedPlace> saved = const [], Future<void>? repoGate}) {
+      final net = TestNetwork();
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async {
+          if (repoGate != null) await repoGate;
+          return net.repo;
+        }),
+        settingsProvider.overrideWith(() => _Mine(mine)),
+        savedPlacesProvider.overrideWith(() => _Saved(saved)),
+      ]);
+      addTearDown(c.dispose);
+      return c;
+    }
+
+    test('a removed stop in the recents, saved places or settings gets no chip, and the rest still fill the row',
+        () async {
+      for (final id in ['GONE', 'A', 'B', 'C', 'D', 'E']) {
+        await RecentStopStore().push(id);
+      }
+      final gone = _saved('Old', StopPlace(stopId: 'GONE2', name: 'Old'));
+      final c = container(mine: 'GONE3', saved: [gone, _home]);
+      await c.read(gtfsRepositoryProvider.future);
+      await c.read(savedPlacesProvider.future);
+      await c.read(recentStopsProvider.future);
+      final chips = c.read(boardChipsProvider);
+      expect(chips.map((c) => '${c.kind.name}:${c.stopId}'), ['saved:H', 'recent:E', 'recent:D', 'recent:C']);
+    });
+
+    test('no chips for stops while the schedule is still loading', () async {
+      await RecentStopStore().push('A');
+      final gate = Completer<void>();
+      final c = container(mine: 'B', repoGate: gate.future);
+      await c.read(recentStopsProvider.future);
+      expect(c.read(boardChipsProvider), isEmpty);
+      gate.complete();
+      await c.read(gtfsRepositoryProvider.future);
+      expect(c.read(boardChipsProvider).map((c) => c.stopId), ['B', 'A']);
     });
   });
 

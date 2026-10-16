@@ -33,11 +33,18 @@ class HomeTabStore {
     final prefs = SharedPreferencesAsync();
     final legacy = await prefs.getString(legacyBoardOpenKey);
     if (legacy != null) {
-      await prefs.remove(legacyBoardOpenKey);
       if (legacy.isNotEmpty) {
-        await prefs.setString(key, HomeTab.board.name);
+        // The tab first, the old key after: if the write fails the old key stays, and the stop is migrated again on the
+        // next start instead of being lost.
+        try {
+          await prefs.setString(key, HomeTab.board.name);
+          await prefs.remove(legacyBoardOpenKey);
+        } catch (_) {
+          // Shown this time all the same.
+        }
         return HomeTabStart(HomeTab.board, boardStopId: legacy);
       }
+      await prefs.remove(legacyBoardOpenKey);
     }
     final stored = await prefs.getString(key);
     return HomeTabStart(stored == HomeTab.map.name ? HomeTab.map : HomeTab.board);

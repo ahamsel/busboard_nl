@@ -51,14 +51,26 @@ List<BoardChip> boardStopChips({
   ];
 }
 
-/// The Board's stop chips for the rider's stop, saved places and recent stops.
-final boardChipsProvider = Provider<List<BoardChip>>(
-  (ref) => boardStopChips(
-    yourStopId: ref.watch(settingsProvider.select((s) => s.selectedStopId)),
-    saved: ref.watch(savedPlacesProvider).value ?? const [],
-    recent: ref.watch(recentStopsProvider).value ?? const [],
-  ),
-);
+/// The Board's stop chips for the rider's stop, saved places and recent stops. Only stops in the loaded schedule get
+/// one (a stop a later schedule removed, still in the recents or the settings, would show as "Stop 1234" and an empty
+/// board); until the schedule is loaded there are none.
+final boardChipsProvider = Provider<List<BoardChip>>((ref) {
+  final stops = ref.watch(gtfsRepositoryProvider).asData?.value.stopsById;
+  bool known(String id) => stops != null && stops.containsKey(id);
+  final mine = ref.watch(settingsProvider.select((s) => s.selectedStopId));
+  return boardStopChips(
+    yourStopId: mine != null && known(mine) ? mine : null,
+    saved: [
+      for (final p in ref.watch(savedPlacesProvider).value ?? const <SavedPlace>[])
+        if (p.place is! StopPlace || known((p.place as StopPlace).stopId)) p,
+    ],
+    // Filtered before the first few are taken, so the unknown ones do not use up the row.
+    recent: [
+      for (final id in ref.watch(recentStopsProvider).value ?? const <String>[])
+        if (known(id)) id,
+    ],
+  );
+});
 
 /// The stop the Board shows: the one picked, else your stop, else the first saved place that is a stop. Null when
 /// there is none: the Board asks you to choose your stop.

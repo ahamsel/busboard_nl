@@ -61,7 +61,7 @@ class _Bar extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const HomeTip(),
-          const _WhereTo(),
+          const WhereToField(key: HomeSheetContent.whereToKey),
           const SizedBox(height: BBSpace.s),
           HomeStopLine(onChooseStop: onChooseStop),
           if (hasAlert) ...[const SizedBox(height: BBSpace.s), const AlertStrip()],
@@ -71,15 +71,15 @@ class _Bar extends ConsumerWidget {
   }
 }
 
-/// "Where to?": the search field, at least 48 pt tall.
-class _WhereTo extends StatefulWidget {
-  const _WhereTo();
+/// "Where to?": the search field, at least 48 pt tall. On the map's bar and on the Board.
+class WhereToField extends StatefulWidget {
+  const WhereToField({super.key});
 
   @override
-  State<_WhereTo> createState() => _WhereToState();
+  State<WhereToField> createState() => _WhereToFieldState();
 }
 
-class _WhereToState extends State<_WhereTo> {
+class _WhereToFieldState extends State<WhereToField> {
   /// The search this opened is still open: a second tap (a quick double tap, both before the next frame builds the
   /// search page) must not push another.
   bool _open = false;
@@ -110,7 +110,6 @@ class _WhereToState extends State<_WhereTo> {
   Widget build(BuildContext context) {
     final bb = context.bb;
     return BBPressable(
-      key: HomeSheetContent.whereToKey,
       semanticLabel: 'Where to? Search for a place or a stop',
       onTap: _openSearch,
       child: ConstrainedBox(
@@ -164,7 +163,7 @@ class _Header extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!belowBar) ...[const HomeTip(), const _WhereTo()],
+          if (!belowBar) ...[const HomeTip(), const WhereToField(key: HomeSheetContent.whereToKey)],
           const SizedBox(height: BBSpace.s),
           Wrap(
             spacing: BBSpace.s,

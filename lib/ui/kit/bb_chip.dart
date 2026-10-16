@@ -21,6 +21,7 @@ class BBChip extends StatelessWidget {
     this.selected = false,
     this.onTap,
     this.semanticLabel,
+    this.toggle = false,
   });
 
   final String label;
@@ -31,6 +32,10 @@ class BBChip extends StatelessWidget {
   final VoidCallback? onTap;
   final String? semanticLabel;
 
+  /// One of a set the rider picks from (the Board's stop chips): screen readers hear "selected" or "not selected".
+  /// An ordinary chip is a plain button, with no selected state until it is selected.
+  final bool toggle;
+
   static const surfaceKey = ValueKey('bb-chip-surface');
 
   @override
@@ -40,7 +45,7 @@ class BBChip extends StatelessWidget {
     final lead = leading ?? (icon == null ? null : Icon(icon, size: 18, color: selected ? fg : bb.colors.brandInk));
     // Null (not false) when unselected: an ordinary button is not a toggle.
     return Semantics(
-      selected: selected ? true : null,
+      selected: toggle ? selected : (selected ? true : null),
       child: BBPressable(
         onTap: onTap,
         semanticLabel: semanticLabel ?? label,

@@ -18,7 +18,8 @@ import '../board/arrival_row_tile.dart';
 import '../kit/kit.dart';
 import 'follow_tip.dart';
 
-/// A stop's sheet: everything the Board showed (spec 2026-10-12 §3.2).
+/// A stop's sheet: everything the Board showed (spec 2026-10-12 §3.2). The Board tab shows the same stop with
+/// [info], [body] and [planFrom] (spec 2026-10-15 §3).
 abstract final class StopSheetContent {
   static const starKey = ValueKey('stop-star');
   static const refreshKey = ValueKey('stop-refresh');
@@ -26,8 +27,18 @@ abstract final class StopSheetContent {
   static const closeKey = ValueKey('stop-close');
   static const openBoardKey = ValueKey('stop-open-board');
   static const showMapKey = ValueKey('stop-show-map');
+
+  /// The card's header: [info], Close, Open board and Plan a trip from here.
   static Widget header(String stopId) => _StopHeader(stopId: stopId);
+
+  /// The stop's number, name and live state, with its star and refresh: the Board tab's header for the stop.
+  static Widget info(String stopId) => _StopInfo(stopId: stopId, closable: false);
+
+  /// Alerts for the stop, then its departures.
   static Widget body(String stopId) => _StopBody(stopId: stopId);
+
+  /// "Plan a trip from here": a new trip from [stopId], leaving now, and a search for where to.
+  static Widget planFrom(String stopId) => _PlanFrom(stopId: stopId);
 }
 
 class _StopHeader extends ConsumerWidget {
@@ -36,77 +47,13 @@ class _StopHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bb = context.bb;
-    final stop = ref.watch(stopInfoProvider(stopId));
-    final name = stop?.stopName ?? 'Stop $stopId';
-    final arrivals = ref.watch(stopArrivalsProvider(stopId));
-    final rows = arrivals.value;
-    final checking = rows == null && !arrivals.hasError;
-    final live = rows != null && rows.any((r) => r.isLive);
-    final updatedAt = ref.watch(stopArrivalsUpdatedAtProvider.select((m) => m[stopId]));
-    final mine = ref.watch(settingsProvider.select((s) => s.selectedStopId)) == stopId;
+    final name = ref.watch(stopInfoProvider(stopId))?.stopName ?? 'Stop $stopId';
     return Padding(
       padding: const EdgeInsets.fromLTRB(BBSpace.l, 0, BBSpace.s, BBSpace.s),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(children: [
-            BBPill(label: 'STOP $stopId', background: bb.colors.ink, foreground: bb.colors.bg),
-            const Spacer(),
-            BBIconButton(
-              key: StopSheetContent.starKey,
-              icon: mine ? BBIcons.star : BBIcons.starOutline,
-              semanticLabel: mine ? 'Your stop' : 'Set as my stop',
-              onPressed: mine ? null : () => ref.read(settingsProvider.notifier).setSelectedStop(stopId),
-            ),
-            // The sheet owns the drag, so there is no pull to refresh: this button does it.
-            BBIconButton(
-              key: StopSheetContent.refreshKey,
-              icon: BBIcons.refresh,
-              semanticLabel: 'Refresh departures',
-              onPressed: () => ref.invalidate(stopArrivalsProvider(stopId)),
-            ),
-            // Back to what was under the sheet: the way out for a screen reader, the side panel (no drag) and
-            // iPhone (no system back), as well as a swipe down (spec §3.2).
-            BBIconButton(
-              key: StopSheetContent.closeKey,
-              icon: BBIcons.close,
-              semanticLabel: 'Close',
-              onPressed: () => ref.read(homeSheetProvider.notifier).back(),
-            ),
-          ]),
-          Semantics(
-            header: true,
-            child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: bb.text.headline),
-          ),
-          const SizedBox(height: BBSpace.xs),
-          Row(children: [
-            BBLiveDot(color: live ? bb.colors.live : bb.colors.muted, breathing: live),
-            const SizedBox(width: BBSpace.s),
-            Flexible(
-              child: Semantics(
-                // Silent while the first load is in flight so assistive tech never hears a provisional negative state.
-                liveRegion: !checking,
-                child: Text(
-                  checking
-                      ? 'Checking live data…'
-                      : live
-                          ? 'Live'
-                          : 'Showing schedule',
-                  style: bb.text.caption,
-                ),
-              ),
-            ),
-            // Outside the live region, so assistive tech hears live <-> schedule changes, not every refresh time.
-            // Flexible too, so at large text the pair shares the row and wraps instead of crushing the state label.
-            if (live && updatedAt != null)
-              Flexible(
-                child: Text(
-                  ' · updated ${BBTime.of(updatedAt, use24h: BBTime.use24h(context), seconds: true)}',
-                  style: bb.text.caption,
-                ),
-              ),
-          ]),
+          _StopInfo(stopId: stopId, closable: true),
           const SizedBox(height: BBSpace.s),
           // For riders used to the Board tab: the whole Board in one tap (the sheet at full height; on the tablet panel,
           // its departures). With the Board open it turns into the way back: "Show map" brings the sheet to half over
@@ -135,21 +82,115 @@ class _StopHeader extends ConsumerWidget {
                     onPressed: () => ref.read(homeSheetProvider.notifier).openBoard(stopId),
                   ),
           ),
-          BBButton(
-            key: StopSheetContent.planFromKey,
-            label: 'Plan a trip from here',
-            icon: BBIcons.plan,
-            kind: BBButtonKind.quiet,
-            expand: true,
-            wrap: true,
-            onPressed: () {
-              // A new trip from this stop, leaving now; the search's pick keeps this start (Ruling 14).
-              ref.read(planQueryProvider.notifier).startFrom(StopPlace(stopId: stopId, name: name));
-              context.push('/search?keep=1');
-            },
-          ),
+          _PlanFrom(stopId: stopId),
         ],
       ),
+    );
+  }
+}
+
+/// The stop's number, star, refresh (and on a card, Close), then its name and whether its times are live.
+class _StopInfo extends ConsumerWidget {
+  const _StopInfo({required this.stopId, required this.closable});
+  final String stopId;
+  final bool closable;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bb = context.bb;
+    final stop = ref.watch(stopInfoProvider(stopId));
+    final name = stop?.stopName ?? 'Stop $stopId';
+    final arrivals = ref.watch(stopArrivalsProvider(stopId));
+    final rows = arrivals.value;
+    final checking = rows == null && !arrivals.hasError;
+    final live = rows != null && rows.any((r) => r.isLive);
+    final updatedAt = ref.watch(stopArrivalsUpdatedAtProvider.select((m) => m[stopId]));
+    final mine = ref.watch(settingsProvider.select((s) => s.selectedStopId)) == stopId;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(children: [
+          BBPill(label: 'STOP $stopId', background: bb.colors.ink, foreground: bb.colors.bg),
+          const Spacer(),
+          BBIconButton(
+            key: StopSheetContent.starKey,
+            icon: mine ? BBIcons.star : BBIcons.starOutline,
+            semanticLabel: mine ? 'Your stop' : 'Set as my stop',
+            onPressed: mine ? null : () => ref.read(settingsProvider.notifier).setSelectedStop(stopId),
+          ),
+          // A card's sheet owns the drag, so it has no pull to refresh: this button does it (the Board has both).
+          BBIconButton(
+            key: StopSheetContent.refreshKey,
+            icon: BBIcons.refresh,
+            semanticLabel: 'Refresh departures',
+            onPressed: () => ref.invalidate(stopArrivalsProvider(stopId)),
+          ),
+          // Back to what was under the sheet: the way out for a screen reader, the side panel (no drag) and
+          // iPhone (no system back), as well as a swipe down (spec §3.2).
+          if (closable)
+            BBIconButton(
+              key: StopSheetContent.closeKey,
+              icon: BBIcons.close,
+              semanticLabel: 'Close',
+              onPressed: () => ref.read(homeSheetProvider.notifier).back(),
+            ),
+        ]),
+        Semantics(
+          header: true,
+          child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: bb.text.headline),
+        ),
+        const SizedBox(height: BBSpace.xs),
+        Row(children: [
+          BBLiveDot(color: live ? bb.colors.live : bb.colors.muted, breathing: live),
+          const SizedBox(width: BBSpace.s),
+          Flexible(
+            child: Semantics(
+              // Silent while the first load is in flight so assistive tech never hears a provisional negative state.
+              liveRegion: !checking,
+              child: Text(
+                checking
+                    ? 'Checking live data…'
+                    : live
+                        ? 'Live'
+                        : 'Showing schedule',
+                style: bb.text.caption,
+              ),
+            ),
+          ),
+          // Outside the live region, so assistive tech hears live <-> schedule changes, not every refresh time.
+          // Flexible too, so at large text the pair shares the row and wraps instead of crushing the state label.
+          if (live && updatedAt != null)
+            Flexible(
+              child: Text(
+                ' · updated ${BBTime.of(updatedAt, use24h: BBTime.use24h(context), seconds: true)}',
+                style: bb.text.caption,
+              ),
+            ),
+        ]),
+      ],
+    );
+  }
+}
+
+class _PlanFrom extends ConsumerWidget {
+  const _PlanFrom({required this.stopId});
+  final String stopId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = ref.watch(stopInfoProvider(stopId))?.stopName ?? 'Stop $stopId';
+    return BBButton(
+      key: StopSheetContent.planFromKey,
+      label: 'Plan a trip from here',
+      icon: BBIcons.plan,
+      kind: BBButtonKind.quiet,
+      expand: true,
+      wrap: true,
+      onPressed: () {
+        // A new trip from this stop, leaving now; the search's pick keeps this start (Ruling 14).
+        ref.read(planQueryProvider.notifier).startFrom(StopPlace(stopId: stopId, name: name));
+        context.push('/search?keep=1');
+      },
     );
   }
 }

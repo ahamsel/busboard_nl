@@ -8,7 +8,10 @@ import '../../state/providers.dart';
 import '../kit/kit.dart';
 
 class NearMeList extends ConsumerWidget {
-  const NearMeList({super.key});
+  const NearMeList({super.key, this.onPick});
+
+  /// What a tap on a stop does with its id; by default its card opens on the map.
+  final ValueChanged<String>? onPick;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -68,7 +71,7 @@ class NearMeList extends ConsumerWidget {
                     index: i,
                     child: Column(children: [
                       if (i > 0) const BBDivider(indent: 52),
-                      _NearbyStopTile(nearby: stops[i]),
+                      _NearbyStopTile(nearby: stops[i], onPick: onPick),
                     ]),
                   ),
               ]),
@@ -81,9 +84,10 @@ class NearMeList extends ConsumerWidget {
 }
 
 class _NearbyStopTile extends ConsumerWidget {
-  const _NearbyStopTile({required this.nearby});
+  const _NearbyStopTile({required this.nearby, this.onPick});
 
   final NearbyStop nearby;
+  final ValueChanged<String>? onPick;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -94,7 +98,11 @@ class _NearbyStopTile extends ConsumerWidget {
     final routesText = routes.isEmpty ? '' : ', routes ${routes.map(_spokenDirections).join(', ')}';
     return BBPressable(
       semanticLabel: '${stop.stopName}, stop ${stop.stopId}, ${nearby.distanceDisplay} away$routesText',
-      onTap: () => ref.read(homeSheetProvider.notifier).open(StopSheet(stop.stopId)),
+      onTap: () {
+        final pick = onPick;
+        if (pick != null) return pick(stop.stopId);
+        ref.read(homeSheetProvider.notifier).open(StopSheet(stop.stopId));
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: BBSpace.m),
         child: Row(children: [
