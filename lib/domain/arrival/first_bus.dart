@@ -18,28 +18,23 @@ DateTime? firstBusAfter(GtfsRepository repo, String stopId, DateTime now) {
   // holiday) are skipped over, up to a week out.
   for (var offset = -1; offset <= firstBusDaysAhead; offset++) {
     final day = DateTime(today.year, today.month, today.day + offset);
-    final services = repo.activeServiceIds(day);
-    if (services.isEmpty) continue;
-    int? earliest;
-    int? soonest;
-    for (final st in times) {
-      final trip = repo.tripsById[st.tripId];
-      if (trip == null || !services.contains(trip.serviceId)) continue;
-      final GtfsTime t;
-      try {
-        t = GtfsTime.parse(st.departureTime);
-      } on FormatException {
-        continue;
+    final seconds = repo.departureSecondsOn(stopId, day);
+    if (seconds.isEmpty) continue;
+    // The first departure of the day still ahead: a binary search, as the list is sorted.
+    var lo = 0, hi = seconds.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      if (GtfsTime.fromSeconds(seconds[mid]).toDateTime(day).isAfter(now)) {
+        hi = mid;
+      } else {
+        lo = mid + 1;
       }
-      final s = t.totalSeconds;
-      if (earliest == null || s < earliest) earliest = s;
-      if (t.toDateTime(day).isAfter(now) && (soonest == null || s < soonest)) soonest = s;
     }
-    if (soonest == null) continue;
-    final at = GtfsTime.fromSeconds(soonest).toDateTime(day);
+    if (lo == seconds.length) continue;
+    final at = GtfsTime.fromSeconds(seconds[lo]).toDateTime(day);
     if (next == null || at.isBefore(next)) {
       next = at;
-      nextIsFirst = soonest == earliest;
+      nextIsFirst = seconds[lo] == seconds.first;
     }
   }
   return nextIsFirst ? next : null;

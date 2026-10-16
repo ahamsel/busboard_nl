@@ -1,4 +1,5 @@
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
+import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/domain/arrival/first_bus.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -28,6 +29,26 @@ TestNetwork _weekdays() {
 void _noServiceOn(TestNetwork net, DateTime day) => net.repo.calendarDates.add(
       CalendarDate(serviceId: TestNetwork.serviceId, date: day, exceptionType: ExceptionType.removed),
     );
+
+/// The test network's data in a repository that counts how often it is asked which services run on a day.
+class _CountingRepo extends GtfsRepository {
+  _CountingRepo(GtfsRepository from) {
+    stopsById.addAll(from.stopsById);
+    routesById.addAll(from.routesById);
+    tripsById.addAll(from.tripsById);
+    stopTimesByStopId.addAll(from.stopTimesByStopId);
+    calendarsById.addAll(from.calendarsById);
+    calendarDates.addAll(from.calendarDates);
+  }
+
+  int serviceLookups = 0;
+
+  @override
+  Set<String> activeServiceIds(DateTime date) {
+    serviceLookups++;
+    return super.activeServiceIds(date);
+  }
+}
 
 void main() {
   // TestNetwork: stop A's buses leave 08:00 to 08:50; service runs every day of 2026.
@@ -67,11 +88,36 @@ void main() {
     }
     expect(firstBusAfter(net.repo, 'A', _at(13, 0)), isNull, reason: 'nothing within 7 days');
     net.repo.calendarDates.removeLast();
+    net.repo.clearDerivedCaches(); // what a reload of the data does
     expect(firstBusAfter(net.repo, 'A', _at(13, 0)), _at(8, 0, day: 7), reason: 'the seventh day is in range');
   });
 
   test('a stop with no stop times, or an unknown one, has no first bus', () {
     expect(firstBusAfter(TestNetwork().repo, 'H', _at(5, 0)), isNull);
     expect(firstBusAfter(TestNetwork().repo, 'nowhere', _at(5, 0)), isNull);
+  });
+
+  test('rebuilds do not rescan: a stop and service date is worked out once, whatever the minute', () {
+    final repo = _CountingRepo(_weekdays().repo);
+    final first = firstBusAfter(repo, 'A', _at(22, 0, day: 2));
+    expect(first, _at(8, 0, day: 5));
+    final lookups = repo.serviceLookups;
+    expect(lookups, greaterThan(0));
+    // The stop line rebuilds all night (and every minute): the same answer, and no further scan of the stop's times.
+    for (var minute = 0; minute < 120; minute++) {
+      expect(firstBusAfter(repo, 'A', _at(22, 0, day: 2).add(Duration(minutes: minute))), first);
+    }
+    expect(repo.serviceLookups, lookups, reason: 'no day was rescanned');
+    // Another stop is its own entry.
+    firstBusAfter(repo, 'B', _at(22, 0, day: 2));
+    expect(repo.serviceLookups, greaterThan(lookups));
+  });
+
+  test('a repository that is loaded again forgets what it worked out', () {
+    final net = _weekdays();
+    expect(firstBusAfter(net.repo, 'A', _at(22, 0, day: 2)), _at(8, 0, day: 5));
+    _noServiceOn(net, _at(0, 0, day: 5));
+    net.repo.clearDerivedCaches();
+    expect(firstBusAfter(net.repo, 'A', _at(22, 0, day: 2)), _at(8, 0, day: 6));
   });
 }
