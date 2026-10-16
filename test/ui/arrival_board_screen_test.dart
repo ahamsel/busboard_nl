@@ -23,6 +23,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../kit/kit_test_helpers.dart';
 import '../helpers/fake_alerts.dart';
+import '../helpers/planner_app.dart';
+import '../trip_planner/test_network.dart';
 
 final _failing = MockClient((_) async => http.Response('down', 500));
 final _emptyKiosk = MockClient((_) async => http.Response('{"arrivals":[]}', 200));
@@ -78,6 +80,16 @@ String _clock(int seconds) {
 }
 
 /// A hand-filled repository has no loader to flip the loaded flag.
+/// The stop-prediction feed, counting the stops asked for.
+class _CountingMobile extends MetrobusMobileApi {
+  final asked = <String>[];
+  @override
+  Future<MetrobusDeparturesResult> fetchDeparturesResult(String stopId, {bool forceRefresh = false}) async {
+    asked.add(stopId);
+    return MetrobusDeparturesResult.failure();
+  }
+}
+
 class _LoadedRepository extends GtfsRepository {
   @override
   bool get isLoaded => true;
@@ -478,6 +490,48 @@ void main() {
       isSemantics(isLiveRegion: true, label: 'Live feed error · showing schedule'),
     );
     handle.dispose();
+    await _unmount(tester);
+  });
+
+  testWidgets('the Board stops polling behind another tab, and refreshes once on coming back', (tester) async {
+    final mobile = _CountingMobile();
+    await pumpPlannerApp(
+      tester,
+      net: TestNetwork(),
+      now: DateTime(testDay.year, testDay.month, testDay.day, 7, 50),
+      initial: '/board/A',
+      overrides: [metrobusMobileApiProvider.overrideWithValue(mobile)],
+    );
+    expect(find.byType(ArrivalBoardScreen), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+    expect(mobile.asked.length, greaterThan(1), reason: 'polls every 5 s while shown');
+    final bar = find.byType(BBNavBar);
+    await tester.tap(find.descendant(of: bar, matching: find.text('Alerts')));
+    await tester.pumpAndSettle();
+    final hidden = mobile.asked.length;
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 5));
+    }
+    expect(mobile.asked.length, hidden, reason: 'no polling behind another tab');
+    // Back from the background behind another tab: still no polling.
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pump(const Duration(seconds: 11));
+    expect(mobile.asked.length, hidden, reason: 'a return to the app does not wake the hidden Board');
+    await tester.tap(find.descendant(of: bar, matching: find.text('Board')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(mobile.asked.length, hidden + 1, reason: 'one refresh on coming back');
+    await tester.pump(const Duration(seconds: 6));
+    expect(mobile.asked.length, greaterThan(hidden + 1), reason: 'and polling again');
     await _unmount(tester);
   });
 }
