@@ -5,8 +5,8 @@ import '../../routing/push_once.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
 
-/// The three buttons at the top right of both tabs, in this order: Plan, Alerts (a bell counting the active service
-/// alerts, as the Alerts tab did) and Settings. Each opens its page over the tabs; back returns to the tab.
+/// The three buttons at the top right of both tabs, in this order: Plan, Alerts (the Alerts tab's megaphone, counting
+/// the active service alerts) and Settings. Each opens its page over the tabs; back returns to the tab.
 ///
 /// In the Board's headers they are icon buttons like the gear they replace; on the map ([floating]) each is a round
 /// floating button, as the map's my-location control is.
@@ -20,7 +20,7 @@ class TopActions extends ConsumerWidget {
   static const alertsKey = ValueKey('top-alerts');
   static const settingsKey = ValueKey('top-settings');
 
-  /// The bell's screen-reader label: "Service alerts, 2 active".
+  /// The alerts button's screen-reader label: "Service alerts, 2 active".
   static String alertsLabel(int active) => active > 0 ? 'Service alerts, $active active' : 'Service alerts';
 
   /// The width of the three header buttons (44 pt each).
@@ -64,7 +64,7 @@ class TopActions extends ConsumerWidget {
         SizedBox(width: gap),
         _TopButton(
           buttonKey: alertsKey,
-          icon: BBIcons.bell,
+          icon: BBIcons.alerts,
           label: alertsLabel(active),
           location: '/alerts',
           floating: floating,
@@ -103,7 +103,7 @@ class _TopButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bb = context.bb;
-    // A 44 pt target, like BBIconButton; the count sits on the bell's shoulder and is said in the label.
+    // A 44 pt target, like BBIconButton; the count sits on the icon's shoulder and is said in the label.
     Widget face = SizedBox(
       width: 44,
       height: 44,

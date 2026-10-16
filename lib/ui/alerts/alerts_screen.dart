@@ -26,7 +26,7 @@ class AlertsScreen extends ConsumerWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // A page over the tabs, opened from the bell: back returns to the tab.
+          // A page over the tabs, opened from the alerts button: back returns to the tab.
           BBTopBar(title: 'Service alerts', onBack: () => context.pop()),
           Expanded(
             child: BBRefresh(
