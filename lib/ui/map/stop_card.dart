@@ -91,6 +91,8 @@ class StopCardBody extends ConsumerWidget {
             wrap: true,
             onPressed: () {
               ref.read(planQueryProvider.notifier).setFrom(StopPlace(stopId: stop.stopId, name: stop.stopName));
+              // A new plan: a trip left open no longer comes back from the Plan button.
+              ref.read(openJourneyProvider.notifier).close();
               context.push('/plan');
             },
           ),

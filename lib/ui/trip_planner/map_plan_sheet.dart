@@ -39,6 +39,8 @@ Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) as
   if (fromHere == null || !context.mounted) return;
   final q = ref.read(planQueryProvider.notifier);
   fromHere ? q.setFrom(place) : q.setTo(place);
+  // A new plan: a trip left open no longer comes back from the Plan button.
+  ref.read(openJourneyProvider.notifier).close();
   // The planner opens over the map; back returns to it.
   unawaited(context.push('/plan'));
 }

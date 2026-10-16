@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
-/// Pushes a page for [PushOnce]'s child: once per burst of taps.
-typedef PushOnceCallback = void Function(String location, {Object? extra});
+/// Pushes a page for [PushOnce]'s child: once per burst of taps. [then] runs only for a push that happens (another
+/// page pushed over it, say).
+typedef PushOnceCallback = void Function(String location, {Object? extra, VoidCallback? then});
 
 /// Opens a page at most once for a quick double tap. Both taps land before the next frame shows the page (or while it
 /// slides in over this one), so each would push it and the rider would have to go back twice.
@@ -29,10 +30,11 @@ class _PushOnceState extends State<PushOnce> {
   /// This page was covered (its route no longer current) or hidden (offstage, or its tab behind another).
   bool _covered = false;
 
-  void _push(String location, {Object? extra}) {
+  void _push(String location, {Object? extra, VoidCallback? then}) {
     if (_open) return;
     _open = true;
     unawaited(context.push<Object?>(location, extra: extra).whenComplete(() => _open = false));
+    then?.call();
   }
 
   @override
