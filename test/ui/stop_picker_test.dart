@@ -192,6 +192,48 @@ void main() {
     expect(find.text('BOARD 1150'), findsOneWidget);
   });
 
+  group('a quick double tap opens one Board (the second tap lands before the Board shows)', () {
+    Future<void> doubleTap(WidgetTester tester, Finder target) async {
+      await tester.tap(target);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> expectOneBoardThenAgain(WidgetTester tester, Finder target) async {
+      expect(find.text('BOARD 1150', skipOffstage: false), findsOneWidget);
+      // One back returns to the picker, and the same tap opens the Board again.
+      GoRouter.of(tester.element(find.text('BOARD 1150'))).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(StopPickerScreen), findsOneWidget);
+      expect(find.text('BOARD 1150', skipOffstage: false), findsNothing);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(find.text('BOARD 1150'), findsOneWidget);
+    }
+
+    testWidgets('a near-me stop', (tester) async {
+      await _pump(tester, gtfs: _repo, nearby: () => const [NearbyStop(stop: _mun, distanceMeters: 80)]);
+      // Once visited, the stop is also the last stop card above Near me.
+      final nearMe = find.text('MUN Centre').last;
+      await doubleTap(tester, nearMe);
+      await expectOneBoardThenAgain(tester, nearMe);
+    });
+
+    testWidgets('the last stop card', (tester) async {
+      await _pump(tester, gtfs: _repo, prefs: {'selectedStopId': '1150'});
+      await doubleTap(tester, find.text('Last stop'));
+      await expectOneBoardThenAgain(tester, find.text('Last stop'));
+    });
+
+    testWidgets('Go', (tester) async {
+      // A stop already saved, so its card is there before and after (a new card would rebuild the field empty).
+      await _pump(tester, gtfs: _repo, prefs: {'selectedStopId': '1150'});
+      await tester.enterText(find.byType(TextField), '1150');
+      await doubleTap(tester, find.text('Go'));
+      await expectOneBoardThenAgain(tester, find.text('Go'));
+    });
+  });
+
   testWidgets('settings is reachable while GTFS is loading', (tester) async {
     final handle = tester.ensureSemantics();
     final never = Completer<GtfsRepository>();
