@@ -15,6 +15,19 @@ class _FakeTimeTrack extends TimeTrackApi {
       TimeTrackFetchResult.success(const [], source: LiveDataSource.gtfsRealtime);
 }
 
+/// A live feed that answers after [delay], counting its calls.
+class _SlowTimeTrack extends TimeTrackApi {
+  _SlowTimeTrack(this.delay);
+  final Duration delay;
+  int calls = 0;
+  @override
+  Future<TimeTrackFetchResult> fetchVehiclesResult() async {
+    calls++;
+    await Future<void>.delayed(delay);
+    return TimeTrackFetchResult.success(const [], source: LiveDataSource.gtfsRealtime);
+  }
+}
+
 class _FakeMobile extends MetrobusMobileApi {
   final asked = <String>[];
   @override
@@ -234,6 +247,27 @@ void main() {
       expect(mobile.asked, hasLength(1));
       await tester.pump(const Duration(seconds: 6));
       expect(mobile.asked.length, greaterThan(1));
+      c.dispose();
+    });
+
+    testWidgets('a fetch slower than the poll interval still completes, and polling goes on after it', (tester) async {
+      final mobile = _FakeMobile();
+      final slow = _SlowTimeTrack(const Duration(seconds: 8)); // the default poll is 5 s
+      final c = ProviderContainer(overrides: [
+        gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
+        timetrackApiProvider.overrideWithValue(slow),
+        metrobusMobileApiProvider.overrideWithValue(mobile),
+      ]);
+      await c.read(gtfsRepositoryProvider.future);
+      c.listen(stopArrivalsProvider('1150'), (_, _) {});
+      await tester.pump(const Duration(seconds: 7));
+      expect(c.read(stopArrivalsProvider('1150')).hasValue, isFalse, reason: 'still loading, not restarted');
+      expect(slow.calls, 1, reason: 'the poll did not restart the fetch');
+      await tester.pump(const Duration(seconds: 2));
+      expect(c.read(stopArrivalsProvider('1150')).hasValue, isTrue);
+      await tester.pump(const Duration(seconds: 6));
+      expect(slow.calls, 2, reason: 'the next poll came one interval after the fetch ended');
+      await tester.pump(const Duration(seconds: 7)); // let that second fetch end
       c.dispose();
     });
 
