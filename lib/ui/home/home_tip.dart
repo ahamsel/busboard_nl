@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../kit/kit.dart';
 
 const _key = 'home_tip_seen.v1';
-const homeTipText = 'Everything\'s on the map now: tap "Where to?" to plan, a stop for its buses, the bell for '
-    'alerts. Your Board is still here: tap Open board, or pull your stop up.';
+const homeTipText =
+    'Everything\'s on the map now: tap "Where to?" to plan, tap a stop for its buses, and the bell is your alerts.';
 
 class HomeTipSeenNotifier extends AsyncNotifier<bool> {
   HomeTipSeenNotifier();

@@ -23,7 +23,6 @@ abstract final class StopSheetContent {
   static const refreshKey = ValueKey('stop-refresh');
   static const planFromKey = ValueKey('stop-plan-from');
   static const closeKey = ValueKey('stop-close');
-  static const openBoardKey = ValueKey('stop-open-board');
   static Widget header(String stopId) => _StopHeader(stopId: stopId);
   static Widget body(String stopId) => _StopBody(stopId: stopId);
 }
@@ -106,23 +105,6 @@ class _StopHeader extends ConsumerWidget {
               ),
           ]),
           const SizedBox(height: BBSpace.s),
-          // For riders used to the Board tab: the whole Board in one tap (the sheet at full height; on the tablet panel,
-          // its departures). Kept at full too, where it brings the departures back into view: the header keeps one
-          // height, so the sheet's detents never move under a drag.
-          Padding(
-            // The header is padded l on the left but s on the right (for the icon buttons' own hit area): this evens
-            // the filled button's sides.
-            padding: const EdgeInsets.only(right: BBSpace.l - BBSpace.s),
-            child: BBButton(
-              key: StopSheetContent.openBoardKey,
-              label: 'Open board',
-              semanticLabel: 'Open board, $name',
-              icon: BBIcons.board,
-              expand: true,
-              wrap: true,
-              onPressed: () => ref.read(homeSheetProvider.notifier).openBoard(stopId),
-            ),
-          ),
           BBButton(
             key: StopSheetContent.planFromKey,
             label: 'Plan a trip from here',

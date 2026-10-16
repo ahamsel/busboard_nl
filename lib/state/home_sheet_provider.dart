@@ -94,14 +94,6 @@ class HomeSheetNotifier extends Notifier<HomeSheet> {
     state = _stack.last;
   }
 
-  /// "Open board": [stopId]'s sheet, pulled up to full height (its Board); on the tablet panel, scrolled to its
-  /// departures. A sheet already showing the stop stays as it is in the stack.
-  void openBoard(String stopId) {
-    final sheet = StopSheet(stopId);
-    if (_stack.last != sheet) open(sheet);
-    ref.read(boardRequestProvider.notifier)._request(stopId);
-  }
-
   /// False when already home (the caller lets the system leave the app).
   bool back() {
     if (_stack.length <= 1) return false;
@@ -128,21 +120,4 @@ class HomeSheetReopenedNotifier extends Notifier<int> {
   int build() => 0;
 
   void _bump() => state++;
-}
-
-/// A request to show [stopId]'s Board: its sheet at full height. A new object every time, so asking twice is two
-/// requests.
-final class BoardRequest {
-  BoardRequest(this.stopId);
-  final String stopId;
-}
-
-/// The latest "Open board" (or a cold start reopening the Board left open); the home screen moves the sheet.
-final boardRequestProvider = NotifierProvider<BoardRequestNotifier, BoardRequest?>(BoardRequestNotifier.new);
-
-class BoardRequestNotifier extends Notifier<BoardRequest?> {
-  @override
-  BoardRequest? build() => null;
-
-  void _request(String stopId) => state = BoardRequest(stopId);
 }

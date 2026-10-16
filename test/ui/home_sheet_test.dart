@@ -151,11 +151,6 @@ void main() {
       expect(await SharedPreferencesAsync().getBool('home_tip_seen.v1'), isTrue);
     });
 
-    testWidgets('tells riders used to the Board tab where it went', (tester) async {
-      await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: false);
-      expect(find.textContaining('Your Board is still here: tap Open board, or pull your stop up.'), findsOneWidget);
-    });
-
     testWidgets('a seen tip never shows', (tester) async {
       // pumpPlannerApp's homeTipSeen is the HomeTipSeenNotifier.seen() override.
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: true);
