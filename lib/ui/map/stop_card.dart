@@ -11,6 +11,7 @@ import '../../state/providers.dart';
 import '../../state/trip_planner_providers.dart';
 import '../alerts/service_alert_card.dart';
 import '../board/arrival_row_tile.dart';
+import '../board/first_bus_note.dart';
 import '../kit/kit.dart';
 
 /// Stop card header (spec §3.3): stop pole, name, stop number.
@@ -124,7 +125,16 @@ class ArrivalsPreview extends ConsumerWidget {
           ? Text("Couldn't load arrivals", style: bb.text.caption)
           : BBSkeleton(kind: BBSkeletonKind.arrivalRow, count: max ?? 3);
     }
-    if (rows.isEmpty) return Text('No buses due soon', style: bb.text.caption);
+    if (rows.isEmpty) {
+      // At night, or before a day's service: the first bus, in words a screen reader gets in full.
+      final first = firstBusNoteFor(ref, stopId, use24h: BBTime.use24h(context));
+      if (first == null) return Text('No buses due soon', style: bb.text.caption);
+      return Semantics(
+        label: first.spoken,
+        excludeSemantics: true,
+        child: Text(first.text, style: bb.text.caption),
+      );
+    }
     return ArrivalsList(rows: max == null ? rows : rows.take(max!).toList());
   }
 }

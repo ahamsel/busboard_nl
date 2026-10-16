@@ -15,6 +15,7 @@ import '../arrival_alerts/alert_bell.dart';
 import '../arrival_alerts/alert_strip.dart';
 import '../kit/kit.dart';
 import 'arrival_row_tile.dart';
+import 'first_bus_note.dart';
 
 /// Arrival board screen for a selected stop.
 ///
@@ -324,10 +325,21 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
       return centered(BBEmptyState(icon: BBIcons.error, tone: BBEmptyTone.error, title: _error!));
     }
     if (_arrivals.isEmpty) {
-      return centered(const BBEmptyState(
-        icon: BBIcons.schedule,
-        title: 'No upcoming departures',
-        message: 'There are no scheduled departures\nfrom this stop right now.',
+      // Service over: the first bus. A gap in the day, or no service for a week, keeps the plain words.
+      const title = 'No upcoming departures';
+      final first = firstBusNoteFor(ref, widget.stopId, use24h: BBTime.use24h(context));
+      if (first == null) {
+        return centered(const BBEmptyState(
+          icon: BBIcons.schedule,
+          title: title,
+          message: 'There are no scheduled departures\nfrom this stop right now.',
+        ));
+      }
+      return centered(Semantics(
+        // The weekday in full for a screen reader ("Monday"), where the screen shows "Mon".
+        label: '$title. ${first.spoken}',
+        excludeSemantics: true,
+        child: BBEmptyState(icon: BBIcons.schedule, title: title, message: first.text),
       ));
     }
     final leading = leadingItems.length;

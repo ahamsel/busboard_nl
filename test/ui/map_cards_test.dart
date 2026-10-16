@@ -59,6 +59,8 @@ Future<void> _host(
   Map<String, BusTrackingState> buses = const {},
   double textScale = 1,
   double width = 390,
+  GtfsRepository? repo,
+  DateTime? now,
 }) async {
   SharedPreferences.setMockInitialValues(prefs);
   final router = GoRouter(routes: [
@@ -77,7 +79,8 @@ Future<void> _host(
   addTearDown(tester.view.reset);
   await tester.pumpWidget(ProviderScope(
     overrides: [
-      gtfsRepositoryProvider.overrideWith((ref) async => _repo()),
+      gtfsRepositoryProvider.overrideWith((ref) async => repo ?? _repo()),
+      if (now != null) plannerClockProvider.overrideWithValue(() => now),
       stopArrivalsProvider.overrideWith((ref, stopId) async => arrivals),
       busTrackingStreamProvider.overrideWith((ref) => Stream.value(buses)),
     ],
@@ -148,6 +151,102 @@ void main() {
         tripId: 't-$route',
         vehicleNumber: vehicle,
       );
+
+  /// MUN Centre on weekday service only, its first bus 06:30 and its last 17:00 (2026-10-16 is a Friday).
+  GtfsRepository weekdayRepo() {
+    final repo = _repo();
+    repo.calendarsById['wk'] = ServiceCalendar(
+      serviceId: 'wk',
+      monday: true,
+      tuesday: true,
+      wednesday: true,
+      thursday: true,
+      friday: true,
+      saturday: false,
+      sunday: false,
+      startDate: DateTime(2026, 1, 1),
+      endDate: DateTime(2026, 12, 31),
+    );
+    repo.tripsById['wk-am'] =
+        const TripInfo(tripId: 'wk-am', routeId: 'r16', serviceId: 'wk', tripHeadsign: 'Downtown', directionId: 0);
+    repo.tripsById['wk-pm'] =
+        const TripInfo(tripId: 'wk-pm', routeId: 'r16', serviceId: 'wk', tripHeadsign: 'Downtown', directionId: 0);
+    for (final (trip, time) in [('wk-am', '06:30:00'), ('wk-pm', '17:00:00')]) {
+      repo.stopTimesByStopId['1150'] = [
+        ...?repo.stopTimesByStopId['1150'],
+        StopTimeRow(tripId: trip, arrivalTime: time, departureTime: time, stopId: '1150', stopSequence: 1),
+      ];
+    }
+    return repo;
+  }
+
+  group('with no bus due', () {
+    final fridayNight = DateTime(2026, 10, 16, 23, 0);
+    final thursdayNight = DateTime(2026, 10, 15, 23, 0);
+
+    testWidgets('stop card: at night it names the first bus', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          repo: weekdayRepo(),
+          now: thursdayNight);
+      expect(find.text('First bus 6:30 AM'), findsOneWidget);
+      expect(find.text('No buses due soon'), findsNothing);
+      expect(find.bySemanticsLabel('First bus 6:30 AM'), findsOneWidget);
+      handle.dispose();
+    });
+
+    testWidgets('stop card: over a weekend it names the weekday, in full for a screen reader', (tester) async {
+      final handle = tester.ensureSemantics();
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          repo: weekdayRepo(),
+          now: fridayNight);
+      expect(find.text('First bus Mon 6:30 AM'), findsOneWidget);
+      expect(find.bySemanticsLabel('First bus Monday 6:30 AM'), findsOneWidget);
+      expect(find.bySemanticsLabel('First bus Mon 6:30 AM'), findsNothing);
+      handle.dispose();
+    });
+
+    testWidgets('stop card: a gap in the day keeps "No buses due soon"', (tester) async {
+      // Midday Friday: the next bus (17:00) is not the day's first.
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          repo: weekdayRepo(),
+          now: DateTime(2026, 10, 16, 9, 0));
+      expect(find.text('No buses due soon'), findsOneWidget);
+    });
+
+    testWidgets('stop card: with no service in the schedule at all it keeps "No buses due soon"', (tester) async {
+      // The default repository has no stop times.
+      await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun), now: fridayNight);
+      expect(find.text('No buses due soon'), findsOneWidget);
+    });
+
+    testWidgets('your-stop card: at night it names the first bus', (tester) async {
+      await _host(tester,
+          header: MyStopCard.header(),
+          body: MyStopCard.body(),
+          prefs: {'selectedStopId': '1150'},
+          repo: weekdayRepo(),
+          now: fridayNight);
+      expect(find.text('First bus Mon 6:30 AM'), findsOneWidget);
+      expect(find.text('No buses due soon'), findsNothing);
+    });
+
+    testWidgets('a bus due keeps the rows and no first-bus line', (tester) async {
+      await _host(tester,
+          header: const StopCardHeader(stop: _mun),
+          body: const StopCardBody(stop: _mun),
+          arrivals: [row(route: '21', live: true, vehicle: '2573')],
+          repo: weekdayRepo(),
+          now: fridayNight);
+      expect(find.textContaining('First bus'), findsNothing);
+    });
+  });
 
   testWidgets('stop card: tapping a live row follows that bus and closes the card', (tester) async {
     await _host(tester,
