@@ -63,6 +63,22 @@ Future<void> _pump(
       ],
     );
 
+/// The text at [finder] reads in full: one line (unless [mayWrap]), with no ellipsis and no part of it past the stop line's ends. The
+/// time sits in a scale-down box with no line limit, so `didExceedMaxLines` is always false there and proves
+/// nothing; this checks the painted result instead.
+void _expectReadsInFull(WidgetTester tester, Finder finder, {bool mayWrap = false}) {
+  expect(finder, findsOneWidget);
+  final paragraph = tester.renderObject<RenderParagraph>(finder);
+  expect(paragraph.text.toPlainText(), isNot(contains('…')));
+  final lines = paragraph.getBoxesForSelection(TextSelection(baseOffset: 0, extentOffset: paragraph.text.toPlainText().length));
+  if (!mayWrap) expect(lines.map((b) => b.top).toSet(), hasLength(1), reason: 'one line, not wrapped or cut');
+  final text = tester.getRect(finder), line = tester.getRect(_line);
+  expect(text.left, greaterThanOrEqualTo(line.left - 0.01), reason: 'not past the line\'s start');
+  expect(text.right, lessThanOrEqualTo(line.right + 0.01), reason: 'not past the line\'s end');
+  expect(text.top, greaterThanOrEqualTo(line.top - 0.01));
+  expect(text.bottom, lessThanOrEqualTo(line.bottom + 0.01), reason: 'the line grows to hold every line of it');
+}
+
 void main() {
   setUpAll(loadAppFonts);
 
@@ -232,7 +248,7 @@ void main() {
     await _pump(tester, arrivals: () => [_row(12, live: true)], textScale: 3);
     expect(tester.takeException(), isNull);
     expect(tester.getRect(_line).right, lessThanOrEqualTo(320));
-    expect(tester.renderObject<RenderParagraph>(_inLine(find.text('12'))).didExceedMaxLines, isFalse);
+    _expectReadsInFull(tester, _inLine(find.text('12')));
   });
 
   testWidgets('an alert affecting the stop: a gold mark after its name', (tester) async {
@@ -359,7 +375,8 @@ void main() {
       expect(name.didExceedMaxLines, isTrue, reason: 'the name gives way');
       final time = _inLine(find.text(what == 'the next bus' ? '12' : ' · First bus 8:05 AM'));
       expect(time, findsOneWidget);
-      expect(tester.renderObject<RenderParagraph>(time).didExceedMaxLines, isFalse, reason: 'the time reads in full');
+      // The next bus's time stays on one line (it shrinks); the first-bus note may wrap onto a second, whole.
+      _expectReadsInFull(tester, time, mayWrap: what == 'the first bus');
     });
   }
 }
