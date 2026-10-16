@@ -22,6 +22,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import '../helpers/feed_fixtures.dart';
 import '../helpers/planner_app.dart';
@@ -458,6 +460,46 @@ void main() {
       await tester.pumpAndSettle();
       checkText();
       expect(tester.takeException(), isNull);
+    });
+  }
+
+  // The plan's live times refresh every 30 s (the planner's live feed). Behind another tab that stops, and it comes
+  // back with the Plan tab: the steps' manual listen is paused with the tickers, as the screens' watches are.
+  for (final steps in [false, true]) {
+    testWidgets("the trip's ${steps ? 'steps' : 'options'} stop refreshing their live times behind another tab, and "
+        'refresh on return', (tester) async {
+      var fetches = 0;
+      final live = MockClient((_) async {
+        fetches++;
+        return http.Response('', 503);
+      });
+      await pumpPlannerApp(tester, net: TestNetwork(), now: _at(7, 50), liveClient: live);
+      _container(tester).read(planQueryProvider.notifier)
+        ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
+        ..setTo(StopPlace(stopId: 'C', name: 'Stop C'));
+      await tester.pumpAndSettle();
+      if (steps) {
+        await tester.tap(find.byType(JourneyCard).first);
+        await tester.pumpAndSettle();
+        expect(find.byType(JourneyDetailScreen), findsOneWidget);
+      }
+      final first = fetches;
+      await tester.pump(const Duration(seconds: 31));
+      expect(fetches, greaterThan(first), reason: 'refreshed every 30 s on the Plan tab');
+      final bar = find.byType(BBNavBar);
+      await tester.tap(find.descendant(of: bar, matching: find.text('Alerts')));
+      await tester.pump(const Duration(seconds: 1));
+      final hidden = fetches;
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(seconds: 31));
+      }
+      expect(fetches, hidden, reason: 'no refresh behind another tab');
+      await tester.tap(find.descendant(of: bar, matching: find.text('Plan')));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fetches, greaterThan(hidden), reason: 'refreshed on coming back to the Plan tab');
+      expect(find.byType(JourneyDetailScreen), steps ? findsOneWidget : findsNothing);
+      await tester.pumpAndSettle();
     });
   }
 }

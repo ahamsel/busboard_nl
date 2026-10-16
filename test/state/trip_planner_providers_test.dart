@@ -277,6 +277,29 @@ void main() {
     expect(next.first.departs, 8 * 3600 + 600);
   });
 
+  testWidgets('with every listener paused the live feed waits to refresh, and a read meanwhile gets the last answer',
+      (tester) async {
+    var fetches = 0;
+    liveAnswer = (_) async {
+      fetches++;
+      return http.Response('', 503);
+    };
+    final sub = c.listen(plannerLiveFeedProvider, (_, _) {});
+    await tester.pump(const Duration(seconds: 1));
+    final first = fetches;
+    expect(first, greaterThan(0));
+    sub.pause(); // its screen is behind another tab
+    await tester.pump(const Duration(seconds: 95));
+    c.read(plannerLiveFeedProvider); // a hidden screen that rebuilds reads it
+    await tester.pump(const Duration(seconds: 1));
+    expect(fetches, first, reason: 'no refresh while hidden');
+    sub.resume();
+    await tester.pump(const Duration(seconds: 1));
+    expect(fetches, greaterThan(first), reason: 'one refresh on coming back');
+    sub.close();
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   group('the schedule', () {
     // Settings, Refresh schedule: the second load fails while offline, or brings a new schedule.
     late int builds;
