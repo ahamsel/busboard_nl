@@ -214,6 +214,18 @@ final timetrackApiProvider = Provider<TimeTrackApi>((ref) {
   return api;
 });
 
+/// The live feed the map polled last, and when: the iPhone alert re-timer reads it instead of fetching the feed a
+/// second time while the Map tab shows.
+final recentLiveFeedProvider =
+    NotifierProvider<RecentLiveFeed, ({DateTime at, TimeTrackFetchResult result})?>(RecentLiveFeed.new);
+
+class RecentLiveFeed extends Notifier<({DateTime at, TimeTrackFetchResult result})?> {
+  @override
+  ({DateTime at, TimeTrackFetchResult result})? build() => null;
+
+  void record(DateTime at, TimeTrackFetchResult result) => state = (at: at, result: result);
+}
+
 final timetrackVehiclesProvider = FutureProvider<List<TimeTrackVehicle>>((
   ref,
 ) async {
@@ -304,6 +316,7 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
       final fetchedAt = DateTime.now();
       if (result.succeeded) {
         store.ingest(result.vehicles, fetchedAt);
+        ref.read(recentLiveFeedProvider.notifier).record(fetchedAt, result);
       } else if (kDebugMode) {
         debugPrint('[Map] Live-data poll failed: ${result.error}');
       }

@@ -16,7 +16,7 @@ import '../platform/alert_runner.dart';
 import '../platform/android_alert_watcher.dart';
 import '../platform/ios_alert_scheduler.dart';
 import '../routing/notification_route.dart';
-import 'providers.dart' show timetrackApiProvider;
+import 'providers.dart' show recentLiveFeedProvider, timetrackApiProvider;
 
 final alertStoreProvider = Provider<AlertStore>((ref) => AlertStore());
 final alertNotificationsProvider = Provider<AlertNotifications>((ref) => LocalAlertNotifications(onOpen: openAlertRoute));
@@ -117,16 +117,22 @@ class ArrivalAlertController extends AsyncNotifier<ArrivalAlert?> {
     }
     final fed = _fedAt;
     if (fed != null && now.difference(fed) < ref.read(alertRetimeEveryProvider)) return;
-    _fetching = true;
+    // The Map tab polls the same feed: a poll within the interval is used as it is, not fetched again.
+    final recent = ref.read(recentLiveFeedProvider);
     TimeTrackFetchResult? feed;
-    try {
-      feed = await ref.read(alertLiveFeedProvider)();
-    } catch (_) {
-      feed = null;
-    } finally {
-      _fetching = false;
+    if (recent != null && DateTime.now().difference(recent.at) < ref.read(alertRetimeEveryProvider)) {
+      feed = recent.result;
+    } else {
+      _fetching = true;
+      try {
+        feed = await ref.read(alertLiveFeedProvider)();
+      } catch (_) {
+        feed = null;
+      } finally {
+        _fetching = false;
+      }
+      if (!ref.mounted) return;
     }
-    if (!ref.mounted) return;
     final current = state.value;
     // Cancelled, replaced or fired while the request was in flight.
     if (current == null || !current.isSameAlert(a) || current.firedAt != null) return;
