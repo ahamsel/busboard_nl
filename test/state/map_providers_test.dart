@@ -1,7 +1,6 @@
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/data/realtime/timetrack_api.dart';
-import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,19 +11,6 @@ class _FakeTimeTrack extends TimeTrackApi {
   @override
   Future<TimeTrackFetchResult> fetchVehiclesResult() async =>
       TimeTrackFetchResult.success(const [], source: LiveDataSource.gtfsRealtime);
-}
-
-/// A live feed that answers after [delay], counting its calls.
-class _SlowTimeTrack extends TimeTrackApi {
-  _SlowTimeTrack(this.delay);
-  final Duration delay;
-  int calls = 0;
-  @override
-  Future<TimeTrackFetchResult> fetchVehiclesResult() async {
-    calls++;
-    await Future<void>.delayed(delay);
-    return TimeTrackFetchResult.success(const [], source: LiveDataSource.gtfsRealtime);
-  }
 }
 
 class _FakeMobile extends MetrobusMobileApi {
@@ -55,16 +41,16 @@ void main() {
     expect(c.read(mapRouteFilterProvider), isEmpty);
   });
 
-  test('the sheet holds a stop or a bus, by value', () {
+  test('selection holds a stop or a bus, by value', () {
     final c = ProviderContainer();
     addTearDown(c.dispose);
-    c.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
-    expect(c.read(homeSheetProvider), const StopSheet('1150'));
-    c.read(homeSheetProvider.notifier).open(const BusSheet('2573'));
-    expect(c.read(homeSheetProvider), const BusSheet('2573'));
-    expect(const BusSheet('2573') == const BusSheet('2574'), isFalse);
-    c.read(homeSheetProvider.notifier).home();
-    expect(c.read(homeSheetProvider), const HomeSheetHome());
+    c.read(mapSelectionProvider.notifier).select(const StopSelection('1150'));
+    expect(c.read(mapSelectionProvider), const StopSelection('1150'));
+    c.read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
+    expect(c.read(mapSelectionProvider), const BusSelection('2573'));
+    expect(const BusSelection('2573') == const BusSelection('2574'), isFalse);
+    c.read(mapSelectionProvider.notifier).clear();
+    expect(c.read(mapSelectionProvider), isNull);
   });
 
   test('stop arrivals ask the stop-prediction feed for that stop', () async {
@@ -183,28 +169,6 @@ void main() {
       expect(mobile.asked, hasLength(1));
       await tester.pump(const Duration(seconds: 6));
       expect(mobile.asked.length, greaterThan(1));
-      c.dispose();
-    });
-
-    testWidgets('a fetch slower than the poll interval still completes, and polling goes on after it', (tester) async {
-      final mobile = _FakeMobile();
-      final slow = _SlowTimeTrack(const Duration(seconds: 8)); // the default poll is 5 s
-      final c = ProviderContainer(overrides: [
-        gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
-        timetrackApiProvider.overrideWithValue(slow),
-        metrobusMobileApiProvider.overrideWithValue(mobile),
-      ]);
-      await c.read(gtfsRepositoryProvider.future);
-      c.listen(stopArrivalsProvider('1150'), (_, _) {});
-      await tester.pump(const Duration(seconds: 7));
-      expect(c.read(stopArrivalsProvider('1150')).hasValue, isFalse, reason: 'still loading, not restarted');
-      expect(slow.calls, 1, reason: 'the poll did not restart the fetch');
-      await tester.pump(const Duration(seconds: 2));
-      expect(c.read(stopArrivalsProvider('1150')).hasValue, isTrue);
-      expect(c.read(stopArrivalsUpdatedAtProvider).keys, ['1150'], reason: 'the load is stamped');
-      await tester.pump(const Duration(seconds: 6));
-      expect(slow.calls, 2, reason: 'the next poll came one interval after the fetch ended');
-      await tester.pump(const Duration(seconds: 7)); // let that second fetch end
       c.dispose();
     });
 

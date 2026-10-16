@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../data/gtfs/gtfs_models.dart';
 import '../../domain/location/nearest_stop_service.dart';
-import '../../state/home_sheet_provider.dart';
 import '../../state/providers.dart';
 import '../kit/kit.dart';
 
@@ -87,7 +87,10 @@ class _NearbyStopTile extends ConsumerWidget {
     final routesText = routes.isEmpty ? '' : ', routes ${routes.map(_spokenDirections).join(', ')}';
     return BBPressable(
       semanticLabel: '${stop.stopName}, stop ${stop.stopId}, ${nearby.distanceDisplay} away$routesText',
-      onTap: () => ref.read(homeSheetProvider.notifier).open(StopSheet(stop.stopId)),
+      onTap: () {
+        ref.read(settingsProvider.notifier).setSelectedStop(stop.stopId);
+        context.push('/board/${stop.stopId}');
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: BBSpace.m),
         child: Row(children: [

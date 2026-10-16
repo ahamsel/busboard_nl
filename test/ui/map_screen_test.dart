@@ -7,29 +7,20 @@ import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
-import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
 import 'package:busboard_nl/state/journey_on_map_provider.dart';
-import 'package:busboard_nl/state/map_pick_provider.dart';
 import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/map/map_layers.dart';
 import 'package:busboard_nl/ui/trip_planner/journey_card.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/follow_providers.dart';
-import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/ui/copy/legal_copy.dart';
 import 'package:busboard_nl/ui/arrival_alerts/alert_bell.dart';
 import 'package:busboard_nl/ui/kit/kit.dart';
-import 'package:busboard_nl/ui/home/home_screen.dart';
-import 'package:busboard_nl/ui/home/home_tip.dart';
-import 'package:busboard_nl/ui/home/home_sheet.dart';
-import 'package:busboard_nl/ui/home/options_sheet.dart';
-import 'package:busboard_nl/ui/map/follow_card.dart';
+import 'package:busboard_nl/ui/map/map_screen.dart';
 import 'package:busboard_nl/ui/map/map_view.dart';
-import 'package:busboard_nl/ui/home/stop_sheet.dart';
-import 'package:busboard_nl/ui/search/search_screen.dart';
 import 'package:busboard_nl/ui/map/marker_images.dart';
 import 'package:flutter/material.dart' show MaterialApp;
 import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
@@ -184,17 +175,18 @@ Future<void> _pump(
   bool disableAnimations = false,
   List<Override> overrides = const [],
 }) async {
-  // Not flutter_test's 800x600, which is a tablet to the home screen: the tests here are of the phone layout.
-  tester.view.physicalSize = (size ?? const Size(390, 844)) * dpr;
-  tester.view.devicePixelRatio = dpr;
-  addTearDown(tester.view.reset);
+  if (size != null) {
+    tester.view.physicalSize = size * dpr;
+    tester.view.devicePixelRatio = dpr;
+    addTearDown(tester.view.reset);
+  }
   SharedPreferences.setMockInitialValues(prefs);
   useInMemoryAlertStore();
   final router = GoRouter(initialLocation: '/map', routes: [
     GoRoute(path: '/', builder: (_, _) => const Text('PICKER')),
     GoRoute(path: '/map', builder: (_, _) => ValueListenableBuilder<bool>(
         valueListenable: _tickerMode,
-        builder: (_, enabled, _) => TickerMode(enabled: enabled, child: const HomeScreen()),
+        builder: (_, enabled, _) => TickerMode(enabled: enabled, child: const MapScreen()),
       ),
     ),
     GoRoute(path: '/board/:id', builder: (_, s) => Text('BOARD ${s.pathParameters['id']}')),
@@ -240,21 +232,28 @@ void main() {
   testWidgets('with no stop chosen, the chip and sheet invite you to choose one', (tester) async {
     await _pump(tester);
     expect(find.byKey(const ValueKey('stub-map')), findsOneWidget);
-    expect(find.text('Choose your stop'), findsOneWidget);
+    expect(find.text('Choose a stop'), findsWidgets);
     expect(find.text('All routes'), findsOneWidget);
-    expect(find.byKey(HomeSheetContent.whereToKey), findsOneWidget);
+    expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
+  });
+
+  testWidgets('the stop chip names your stop and opens the picker', (tester) async {
+    await _pump(tester, prefs: {'selectedStopId': '1150'});
+    await tester.tap(find.text('MUN Centre · 1150'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('PICKER'), findsOneWidget);
   });
 
   testWidgets('tapping near a stop opens its card; tapping empty map returns to your stop', (tester) async {
     await _pump(tester);
     _config!.onTap(const LatLng(47.5701, -52.7300));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
-    expect(find.text('STOP 1150'), findsOneWidget);
+    expect(find.text('Open board'), findsOneWidget);
+    expect(find.text('Stop 1150'), findsOneWidget);
     _config!.onTap(const LatLng(47.0, -52.0));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('STOP 1150'), findsNothing);
-    expect(find.text('Choose your stop'), findsOneWidget);
+    expect(find.text('Stop 1150'), findsNothing);
+    expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
   });
 
   testWidgets('tapping near a bus opens its card', (tester) async {
@@ -262,35 +261,6 @@ void main() {
     _config!.onTap(const LatLng(47.5601, -52.7100));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('to Downtown'), findsOneWidget);
-  });
-
-  testWidgets("a bus's card has a Close button that returns to the home sheet (F2)", (tester) async {
-    await _pump(tester, buses: {'2573': _bus()});
-    _config!.onTap(const LatLng(47.5601, -52.7100));
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.bySemanticsLabel('Close'));
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('to Downtown'), findsNothing);
-    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
-    expect(container.read(homeSheetProvider), isA<HomeSheetHome>());
-  });
-
-  testWidgets('a stop sheet opened from outside the map centres the map on the stop (F1, spec §3.2)', (tester) async {
-    await _pump(tester);
-    expect(_surface.moves, isEmpty);
-    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
-    // As a notification, a nearby stop or the search's See its buses does.
-    container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, true)]);
-  });
-
-  testWidgets('with Reduce Motion the stop sheet\'s camera move jumps', (tester) async {
-    await _pump(tester, disableAnimations: true);
-    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
-    container.read(homeSheetProvider.notifier).open(const StopSheet('1150'));
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, false)]);
   });
 
   testWidgets('a bus parked on your stop (a terminal) is still tappable under the star', (tester) async {
@@ -305,11 +275,11 @@ void main() {
     await _pump(tester, buses: {'2573': _bus()});
     _config!.onTap(const LatLng(47.5701, -52.7300));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
+    expect(find.text('Open board'), findsOneWidget);
     _config!.onTap(const LatLng(47.5601, -52.7100));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('to Downtown'), findsOneWidget);
-    expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
+    expect(find.text('Open board'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -456,7 +426,7 @@ void main() {
     });
   });
 
-  testWidgets("the peek shows Where to?, your stop and its next two buses in full", (tester) async {
+  testWidgets("the peek is tall enough for your stop's two arrivals", (tester) async {
     ArrivalRow arrival(int minutes) => ArrivalRow(
           routeShortName: '10',
           headsign: 'Downtown',
@@ -470,28 +440,21 @@ void main() {
           isEnhanced: false,
           routeRun: '10-1',
         );
-    final handle = tester.ensureSemantics();
-    await _pump(tester, size: const Size(390, 844), prefs: {'selectedStopId': '1150'}, arrivals: [arrival(3), arrival(9), arrival(15)],
-        overrides: [homeTipSeenProvider.overrideWith(() => HomeTipSeenNotifier.seen())]);
+    await _pump(tester, size: const Size(390, 844), prefs: {'selectedStopId': '1150'}, arrivals: [arrival(3), arrival(9), arrival(15)]);
     final card = tester.getRect(find.byKey(BBSheet.cardKey));
     final tiles = find.byType(ArrivalRowTile);
     expect(tiles, findsAtLeastNWidgets(2));
-    // Where to?, then your stop's header row, then the next bus: all whole inside the peeking card (spec §3.1).
-    expect(tester.getRect(find.byKey(HomeSheetContent.whereToKey)).top, greaterThanOrEqualTo(card.top));
-    final yourStop = tester.getRect(find.bySemanticsLabel(RegExp('^Your stop')));
-    final first = tester.getRect(tiles.at(0));
-    expect(yourStop.top, greaterThanOrEqualTo(card.top));
-    expect(yourStop.bottom, lessThanOrEqualTo(first.top), reason: 'your stop is above its first bus');
-    expect(first.bottom, lessThanOrEqualTo(card.bottom), reason: 'the next bus fits inside the peeking card');
-    final second = tester.getRect(tiles.at(1));
-    expect(second.bottom, lessThanOrEqualTo(card.bottom), reason: 'the second bus fits inside the peeking card too');
-    handle.dispose();
+    for (final i in [0, 1]) {
+      final r = tester.getRect(tiles.at(i));
+      expect(r.top, greaterThanOrEqualTo(card.top));
+      expect(r.bottom, lessThanOrEqualTo(card.bottom), reason: 'arrival ${i + 1} fits inside the peeking card');
+    }
   });
 
   testWidgets('choosing a new stop recentres the map on it', (tester) async {
     await _pump(tester);
     expect(_surface.moves, isEmpty);
-    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
     await container.read(settingsProvider.notifier).setSelectedStop('1150');
     await tester.pump(const Duration(milliseconds: 100));
     expect(_surface.moves, [(const LatLng(47.5700, -52.7300), 15.0, true)]);
@@ -593,7 +556,7 @@ void main() {
       expect(surface.busSets.length, greaterThan(1));
       expect(surface.busSets.last.map((f) => (f['properties'] as Map)['vehicleId']), ['2573']);
 
-      ProviderScope.containerOf(tester.element(find.byType(HomeScreen))).read(mapRouteFilterProvider.notifier).toggle(99);
+      ProviderScope.containerOf(tester.element(find.byType(MapScreen))).read(mapRouteFilterProvider.notifier).toggle(99);
       await _frames(tester, 3);
       expect(surface.busSets.last, isEmpty);
     });
@@ -636,7 +599,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.bySemanticsLabel(RegExp('Route 10')).last);
     await tester.pump(const Duration(milliseconds: 100));
-    final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
     expect(container.read(mapRouteFilterProvider), {10});
     semantics.dispose();
   });
@@ -687,7 +650,7 @@ void main() {
     late StreamController<Map<String, BusTrackingState>> feed;
     late _RecordingSurface surface;
 
-    ProviderContainer containerOf(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    ProviderContainer containerOf(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
 
     Future<void> pumpFollow(
       WidgetTester tester, {
@@ -739,7 +702,7 @@ void main() {
       expect(find.text('Following bus 2573'), findsOneWidget);
       expect(find.textContaining('stops to'), findsOneWidget);
       expect(find.text('Stop following'), findsOneWidget);
-      expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
+      expect(find.text('Open board'), findsNothing);
       expect(find.text('Follow'), findsNothing);
       expect(tester.takeException(), isNull);
     });
@@ -768,28 +731,13 @@ void main() {
       expect(surface.features('bb-route'), hasLength(2));
     });
 
-    testWidgets('a follow sits under any sheet: open a stop, back returns to the follow card', (tester) async {
-      await pumpFollow(tester);
-      await startFollowing(tester);
-      final container = containerOf(tester);
-      container.read(homeSheetProvider.notifier).open(const StopSheet('s3'));
-      await _frames(tester, 3);
-      expect(find.text('Following bus 2573'), findsOneWidget); // the chip stays
-      expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
-      expect(find.byType(FollowCardHeader), findsNothing);
-      container.read(homeSheetProvider.notifier).back();
-      await _frames(tester, 3);
-      expect(find.byType(FollowCardHeader), findsOneWidget);
-      expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
-    });
-
     testWidgets('a follow set from a selected bus clears the selection', (tester) async {
       await pumpFollow(tester);
-      containerOf(tester).read(homeSheetProvider.notifier).open(const BusSheet('2573'));
+      containerOf(tester).read(mapSelectionProvider.notifier).select(const BusSelection('2573'));
       await tester.pump(const Duration(milliseconds: 100));
       containerOf(tester).read(followProvider.notifier).follow('2573');
       await _frames(tester, 2);
-      expect(containerOf(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+      expect(containerOf(tester).read(mapSelectionProvider), isNull);
       expect(find.text('Following bus 2573'), findsOneWidget);
     });
 
@@ -849,40 +797,9 @@ void main() {
       expect(padding.left, 64);
       expect(padding.right, 64);
       expect(padding.top, greaterThan(16 + 44), reason: 'below the chips');
-      final screenHeight = tester.getBottomLeft(find.byType(HomeScreen)).dy;
+      final screenHeight = tester.getBottomLeft(find.byType(MapScreen)).dy;
       final creditTop = tester.getTopLeft(find.textContaining('OpenStreetMap')).dy;
       expect(padding.bottom, greaterThanOrEqualTo(screenHeight - creditTop + 16), reason: 'above the credit and the peeking sheet');
-    });
-
-    testWidgets('on a tablet the camera fit clears the side panel and the follow card is in it', (tester) async {
-      var skew = Duration.zero;
-      await pumpFollow(tester,
-          size: const Size(1024, 768), overrides: [mapClockProvider.overrideWithValue(() => DateTime.now().add(skew))]);
-      await startFollowing(tester);
-      skew = const Duration(milliseconds: 1100);
-      await _frames(tester, 3);
-      expect(find.byType(BBSheet), findsNothing);
-      final panel = tester.getRect(find.byKey(const ValueKey('home-side-panel')));
-      expect(find.descendant(of: find.byKey(const ValueKey('home-side-panel')), matching: find.text('Stop following')), findsOneWidget);
-      final (_, _, padding, _) = surface.fits.last;
-      expect(padding.left, panel.right + 64, reason: 'the panel, then the edge air');
-      expect(padding.right, 64);
-      expect(padding.bottom, 64, reason: 'no sheet to clear');
-      expect(padding.top, greaterThan(16 + 44));
-    });
-
-    testWidgets('on a tablet See all stops scrolls the panel down to the stop list', (tester) async {
-      await pumpFollow(tester, size: const Size(1024, 300));
-      await startFollowing(tester);
-      final scrollable = find.descendant(of: find.byKey(const ValueKey('home-side-panel')), matching: find.byType(Scrollable));
-      ScrollPosition position() => tester.state<ScrollableState>(scrollable).position;
-      expect(position().maxScrollExtent, greaterThan(0), reason: 'the card is taller than the panel');
-      expect(position().pixels, 0);
-      await tester.tap(find.text('See all stops'));
-      for (var i = 0; i < 6; i++) {
-        await tester.pump(const Duration(milliseconds: 100)); // the scroll animation
-      }
-      expect(position().pixels, greaterThan(0));
     });
 
     testWidgets('while following, the route is drawn as a driven and an ahead part', (tester) async {
@@ -983,7 +900,7 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      // Full is 90% of the area under the status bar.
+      // Full is 90% of the area under the status bar and above the nav bar.
       expect(tester.getRect(find.byKey(BBSheet.cardKey)).top, lessThan(before - 400));
     });
 
@@ -1015,27 +932,13 @@ void main() {
       final open = await sheetTop(tester);
       _config!.onTap(LatLng(47.560045, lonAt(500)));
       await settle(tester);
-      expect(find.byKey(StopSheetContent.refreshKey), findsNothing);
+      expect(find.text('Open board'), findsNothing);
       expect(await sheetTop(tester), open);
       _config!.onTap(LatLng(47.5601, lonAt(100)));
       await settle(tester);
-      expect(containerOf(tester).read(homeSheetProvider), isA<HomeSheetHome>());
+      expect(containerOf(tester).read(mapSelectionProvider), isNull);
       expect(find.text('Following bus 2573'), findsOneWidget);
       expect(await sheetTop(tester), open);
-    });
-
-    testWidgets('a stop sheet over a follow: tapping another stop replaces it and the follow keeps running', (tester) async {
-      await pumpFollow(tester);
-      await startFollowing(tester);
-      final container = containerOf(tester);
-      container.read(homeSheetProvider.notifier).open(const StopSheet('s3'));
-      await _frames(tester, 3);
-      expect(find.byKey(StopSheetContent.refreshKey), findsOneWidget);
-      _config!.onTap(LatLng(47.560045, lonAt(500)));
-      await settle(tester);
-      expect(container.read(homeSheetProvider.notifier).stack, [const HomeSheetHome(), const StopSheet('s2')]);
-      expect(container.read(followProvider), isNotNull);
-      expect(find.text('Following bus 2573'), findsOneWidget);
     });
 
     testWidgets('while following, a tap on empty map collapses the sheet to peek', (tester) async {
@@ -1117,17 +1020,11 @@ void main() {
     });
 
     group('across an app pause (C1)', () {
-      // Through every state between, as a phone goes: the arrival alerts' lifecycle listener (alive whenever home is)
-      // asserts each step is to a neighbouring state.
       Future<void> lockFor(WidgetTester tester, Duration locked, void Function(Duration) setSkew) async {
-        for (final s in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused]) {
-          tester.binding.handleAppLifecycleStateChanged(s);
-        }
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
         await tester.pump();
         setSkew(locked);
-        for (final s in [AppLifecycleState.hidden, AppLifecycleState.inactive, AppLifecycleState.resumed]) {
-          tester.binding.handleAppLifecycleStateChanged(s);
-        }
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
         await _frames(tester, 3);
       }
 
@@ -1181,33 +1078,12 @@ void main() {
     });
 
     testWidgets('near your stop the camera centres the bus and stop in the band above the sheet', (tester) async {
-      var skew = Duration.zero;
-      await pumpFollow(tester, bus: followed(progress: 420), overrides: [mapClockProvider.overrideWithValue(() => DateTime.now().add(skew))]);
+      await pumpFollow(tester, bus: followed(progress: 420));
       await startFollowing(tester);
-      // The first move runs before the follow card has measured its header; the next, a second later, uses the settled layout.
-      skew = const Duration(milliseconds: 1100);
-      await _frames(tester, 3);
-      expect(surface.moves, hasLength(2));
-      final (target, zoom, _) = surface.moves.last;
+      final (target, zoom, _) = surface.moves.single;
       expect(zoom, 16.5);
-      // Where a point lands on screen with the camera at [target]/[zoom] (north-up, MapLibre's 512-point world).
-      double mercY(double lat) {
-        final r = lat * math.pi / 180;
-        return (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2;
-      }
-
-      final screenH = tester.getBottomLeft(find.byType(HomeScreen)).dy;
-      final world = 512 * math.pow(2, zoom);
-      double screenY(double lat) => screenH / 2 + (mercY(lat) - mercY(target.latitude)) * world;
-      // The band between the chip row (the right-hand buttons sit beside the map, not over the framing) and the peeking sheet.
-      final chipsBottom = tester.getRect(find.widgetWithText(BBChip, 'All routes')).bottom;
-      final sheetTop = tester.getRect(find.byKey(BBSheet.cardKey)).top;
-      final bus = screenY(47.5600);
-      final stop = screenY(47.560045);
-      expect(bus, inInclusiveRange(chipsBottom, sheetTop), reason: 'the bus is drawn between the chips and the sheet');
-      expect(stop, inInclusiveRange(chipsBottom, sheetTop), reason: 'and so is your stop');
-      // Centred in what the chips and the sheet leave: not pushed down by the buttons' column, which is not in the way.
-      expect((bus + stop) / 2, closeTo((chipsBottom + sheetTop) / 2, 40));
+      const midLat = (47.5600 + 47.560045) / 2;
+      expect(target.latitude, lessThan(midLat - 1e-4), reason: 'the camera centre is south, so the pair is drawn above the sheet');
     });
 
     testWidgets('the route line is not pushed again while the bus has not moved', (tester) async {
@@ -1380,49 +1256,33 @@ void main() {
     // Real glyph widths, so the 2x text checks measure what a phone shows.
     setUpAll(loadAppFonts);
     final eight = DateTime(testDay.year, testDay.month, testDay.day, 8, 1);
-    // Also while the search is pushed over home.
     ProviderContainer container(WidgetTester tester) =>
-        ProviderScope.containerOf(tester.element(find.byType(HomeScreen, skipOffstage: false)));
+        ProviderScope.containerOf(tester.element(find.byType(BBNavBar)));
+    String location(WidgetTester tester) => GoRouter.of(tester.element(find.byType(BBNavBar))).state.uri.toString();
+    // The real map tab started its own refresh timers; let them run out after it goes.
+    Future<void> unmount(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(minutes: 1));
+    }
 
-    testWidgets('a long-press on a stop opens a sheet named for it; Plan to here opens options to it', (tester) async {
+    testWidgets('a long-press on a stop opens a sheet named for it; Plan to here sets the destination', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
       map.longPress(47.5700, -52.7500);
       await tester.pumpAndSettle();
       expect(find.text('Stop C'), findsOneWidget);
       expect(find.text('Plan from here'), findsOneWidget);
       await tester.tap(find.text('Plan to here'));
       await tester.pumpAndSettle();
-      final c = container(tester);
-      expect(c.read(planQueryProvider).to, StopPlace(stopId: 'C', name: 'Stop C'));
-      expect(c.read(planQueryProvider).from, isNull, reason: 'location is off: the start stays empty');
-      expect(c.read(homeSheetProvider), isA<OptionsSheet>());
-      expect(find.byType(SearchScreen), findsNothing);
+      expect(container(tester).read(planQueryProvider).to, StopPlace(stopId: 'C', name: 'Stop C'));
+      expect(find.text('Plan a trip'), findsOneWidget);
+      expect(location(tester), '/plan');
+      await unmount(tester);
     });
 
-    testWidgets('Plan to here starts from the phone\'s position when there is no start', (tester) async {
+    testWidgets('a long-press far from any stop drops a pin; Plan from here sets the start to it', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(
-        tester,
-        net: TestNetwork(),
-        now: eight,
-        initial: '/',
-        mapView: map.build,
-        geolocator: FixedGeolocator(47.5601, -52.7501),
-      );
-      map.longPress(47.5700, -52.7500);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Plan to here'));
-      await tester.pumpAndSettle();
-      final draft = container(tester).read(planQueryProvider);
-      expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
-      expect(draft.from, isA<PinPlace>().having((p) => p.label, 'label', 'My location'));
-    });
-
-    testWidgets('a long-press far from any stop drops a pin; Plan from here sets the start and opens the search',
-        (tester) async {
-      final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
       map.longPress(47.0, -52.0);
       await tester.pumpAndSettle();
       expect(find.text('Dropped pin'), findsOneWidget);
@@ -1430,141 +1290,44 @@ void main() {
       await tester.pumpAndSettle();
       final from = container(tester).read(planQueryProvider).from;
       expect(from, isA<PinPlace>().having((p) => p.label, 'label', 'Dropped pin').having((p) => p.lat, 'lat', 47.0));
-      expect(tester.widget<SearchScreen>(find.byType(SearchScreen)).end, MapPick.to, reason: 'next: where to');
-    });
-
-    testWidgets('Plan to here starts a fresh trip: no old start, leaving now (F3, Ruling 14)', (tester) async {
-      final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
-      final c = container(tester);
-      c.read(planQueryProvider.notifier)
-        ..setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'E', name: 'Stop E'))
-        ..setMode(PlanMode.arriveBy)
-        ..setTime(eight.add(const Duration(hours: 1)));
-      map.longPress(47.5700, -52.7500);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Plan to here'));
-      await tester.pumpAndSettle();
-      final draft = c.read(planQueryProvider);
-      expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
-      expect(draft.from, isNull, reason: 'location is off: no start, not the old one');
-      expect(draft.mode, PlanMode.leaveNow);
-      expect(draft.time, isNull);
-    });
-
-    testWidgets('Plan from here starts a fresh trip from the press, leaving now, and its search keeps that start',
-        (tester) async {
-      final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
-      final c = container(tester);
-      c.read(planQueryProvider.notifier)
-        ..setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'E', name: 'Stop E'))
-        ..setMode(PlanMode.arriveBy);
-      map.longPress(47.5700, -52.7500);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Plan from here'));
-      await tester.pumpAndSettle();
-      expect(c.read(planQueryProvider).mode, PlanMode.leaveNow);
-      await tester.enterText(find.byKey(SearchScreen.fieldKey), 'Stop E');
-      await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('Stop E').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Go here'));
-      await tester.pumpAndSettle();
-      final draft = c.read(planQueryProvider);
-      expect(draft.from, StopPlace(stopId: 'C', name: 'Stop C'));
-      expect(draft.to, StopPlace(stopId: 'E', name: 'Stop E'));
-      expect(draft.mode, PlanMode.leaveNow);
-    });
-
-    testWidgets('a destination picked on the map from Where to? starts a fresh trip (F3)', (tester) async {
-      final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
-      final c = container(tester);
-      c.read(planQueryProvider.notifier)
-        ..setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'E', name: 'Stop E'))
-        ..setMode(PlanMode.arriveBy);
-      await tester.tap(find.byKey(HomeSheetContent.whereToKey));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Choose on map'));
-      await tester.pumpAndSettle();
-      map.tap(47.5700, -52.7500); // Stop C
-      await tester.pumpAndSettle();
-      final draft = c.read(planQueryProvider);
-      expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
-      expect(draft.from, isNull);
-      expect(draft.mode, PlanMode.leaveNow);
-    });
-
-    testWidgets('a destination picked on the map from the options keeps their start (F3)', (tester) async {
-      final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
-      final c = container(tester);
-      c.read(planQueryProvider.notifier).setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'E', name: 'Stop E'));
-      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(OptionsSheetContent.toRowKey));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Choose on map'));
-      await tester.pumpAndSettle();
-      map.tap(47.5700, -52.7500); // Stop C
-      await tester.pumpAndSettle();
-      final draft = c.read(planQueryProvider);
-      expect(draft.to, StopPlace(stopId: 'C', name: 'Stop C'));
-      expect(draft.from, StopPlace(stopId: 'A', name: 'Stop A'));
+      expect(find.text('Plan a trip'), findsOneWidget);
+      await unmount(tester);
     });
 
     testWidgets('a stop 60 m away is too far to count: the press drops a pin', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map', mapView: map.build);
       map.longPress(47.5700 + 60 / 111320, -52.7500); // 60 m north of C
       await tester.pumpAndSettle();
       expect(find.text('Dropped pin'), findsOneWidget);
+      await unmount(tester);
     });
 
-    testWidgets('pick mode: the banner asks for the start, and a tap at a stop sets it and keeps the sheet',
-        (tester) async {
+    testWidgets('pick mode: the banner asks for the start, and a tap at a stop sets it and goes back', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
-      final c = container(tester);
-      c.read(planQueryProvider.notifier).setDestination(StopPlace(stopId: 'C', name: 'Stop C'));
-      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
-      c.read(mapPickProvider.notifier).start(MapPick.from);
-      await tester.pumpAndSettle();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map?pick=from', mapView: map.build);
       expect(find.text('Tap the map to choose your starting point'), findsOneWidget);
       expect(find.bySemanticsLabel('Cancel choosing on the map'), findsOneWidget);
       map.tap(47.5600, -52.7500);
       await tester.pumpAndSettle();
-      expect(c.read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
-      expect(c.read(mapPickProvider), isNull);
-      expect(c.read(homeSheetProvider), isA<OptionsSheet>());
+      expect(container(tester).read(planQueryProvider).from, StopPlace(stopId: 'A', name: 'Stop A'));
+      expect(location(tester), '/plan');
+      // Back on the map later, the pick is over.
+      await tester.tap(find.descendant(of: find.byType(BBNavBar), matching: find.text('Map')));
+      await tester.pumpAndSettle();
       expect(find.text('Tap the map to choose your starting point'), findsNothing);
+      await unmount(tester);
     });
 
-    testWidgets('pick mode for the destination says so, and Cancel ends it with nothing set', (tester) async {
+    testWidgets('pick mode for the destination says so, and Cancel goes back with nothing set', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
-      final c = container(tester);
-      c.read(mapPickProvider.notifier).start(MapPick.to);
-      await tester.pumpAndSettle();
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/map?pick=to', mapView: map.build);
       expect(find.text('Tap the map to choose your destination'), findsOneWidget);
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(c.read(mapPickProvider), isNull);
-      expect(find.text('Tap the map to choose your destination'), findsNothing);
-      expect(c.read(planQueryProvider).to, isNull);
-      expect(c.read(homeSheetProvider), isA<HomeSheetHome>());
-    });
-
-    testWidgets('system back in pick mode ends the pick instead of leaving the app', (tester) async {
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/');
-      final c = container(tester);
-      c.read(mapPickProvider.notifier).start(MapPick.to);
-      await tester.pumpAndSettle();
-      expect(await tester.binding.handlePopRoute(), isTrue);
-      await tester.pumpAndSettle();
-      expect(c.read(mapPickProvider), isNull);
-      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(location(tester), '/plan');
+      expect(container(tester).read(planQueryProvider).to, isNull);
+      await unmount(tester);
     });
 
     for (final size in const [Size(320, 568), Size(390, 844)]) {
@@ -1585,12 +1348,10 @@ void main() {
           tester,
           net: TestNetwork(),
           now: eight,
-          initial: '/',
+          initial: '/map?pick=from',
           textScale: 2,
           mapView: map.build,
         );
-        container(tester).read(mapPickProvider.notifier).start(MapPick.from);
-        await tester.pumpAndSettle();
         readsInFull('Tap the map to choose your starting point');
         readsInFull('Cancel');
         map.longPress(47.0, -52.0);
@@ -1608,21 +1369,21 @@ void main() {
         await tester.pumpAndSettle();
         readsInFull('Hide trip');
         expect(tester.takeException(), isNull);
+        await unmount(tester);
       });
     }
 
-    testWidgets('a new destination picked on the map never shows the old results in the options', (tester) async {
+    testWidgets('a new destination picked on the map never shows the old results on the Plan tab', (tester) async {
       final map = StubMap();
-      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, initial: '/', mapView: map.build);
-      final c = container(tester);
-      c.read(planQueryProvider.notifier).setTrip(StopPlace(stopId: 'A', name: 'Stop A'), StopPlace(stopId: 'C', name: 'Stop C'));
-      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
-      await tester.pumpAndSettle();
-      await tester.drag(find.bySemanticsLabel('Map sheet'), const Offset(0, -600));
+      await pumpPlannerApp(tester, net: TestNetwork(), now: eight, mapView: map.build);
+      container(tester).read(planQueryProvider.notifier)
+        ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
+        ..setTo(StopPlace(stopId: 'C', name: 'Stop C'));
       await tester.pumpAndSettle();
       expect(find.byType(JourneyCard), findsWidgets);
-      // As the options' destination search does with Choose on map: the trip keeps its start.
-      c.read(mapPickProvider.notifier).start(MapPick.to, keepStart: true);
+      await tester.tap(find.text('Stop C'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pick on map'));
       await tester.pumpAndSettle();
       expect(find.text('Tap the map to choose your destination'), findsOneWidget);
       map.tap(47.5800, -52.7500); // Stop E
@@ -1638,11 +1399,10 @@ void main() {
       await tester.pump();
       onlyNewResults();
       await tester.pumpAndSettle();
-      expect(c.read(homeSheetProvider), isA<OptionsSheet>());
-      await tester.drag(find.bySemanticsLabel('Map sheet'), const Offset(0, -600));
-      await tester.pumpAndSettle();
+      expect(location(tester), '/plan');
       expect(find.byType(JourneyCard), findsWidgets);
       onlyNewResults();
+      await unmount(tester);
     });
   });
 
@@ -1682,7 +1442,7 @@ void main() {
       final surface = _RecordingSurface();
       _surface = surface;
       await _pump(tester, repo: network);
-      final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+      final container = ProviderScope.containerOf(tester.element(find.byType(MapScreen)));
       container.read(planQueryProvider.notifier).setFrom(PinPlace(lat: 47.5590, lon: -52.7500, label: 'Dropped pin'));
       container.read(journeyOnMapProvider.notifier).show(journey());
       await tester.runAsync(() => _styleLoaded(surface));
@@ -1717,19 +1477,6 @@ void main() {
       expect(surface.features(MapLayers.journeySource), isEmpty);
       expect(surface.features(MapLayers.journeyWalkSource), isEmpty);
       expect(find.text('Hide trip'), findsNothing);
-    });
-
-    testWidgets('the fit keeps the journey clear of the Hide trip chip', (tester) async {
-      final surface = _RecordingSurface();
-      _surface = surface;
-      await _pump(tester, repo: network);
-      final container = ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
-      container.read(journeyOnMapProvider.notifier).show(journey());
-      await tester.runAsync(() => _styleLoaded(surface));
-      await _frames(tester, 3);
-      final (_, _, padding, _) = surface.fits.last;
-      final hideBottom = tester.getRect(find.widgetWithText(BBChip, 'Hide trip')).bottom;
-      expect(padding.top, greaterThanOrEqualTo(hideBottom + 16), reason: 'a fitted marker is not drawn under the chip');
     });
 
     testWidgets('a journey shown before the style loads is drawn once it does', (tester) async {
