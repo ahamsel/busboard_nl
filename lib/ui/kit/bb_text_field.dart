@@ -64,6 +64,11 @@ class _BBTextFieldState extends State<BBTextField> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.focusNode != widget.focusNode) {
       (oldWidget.focusNode ?? _own)?.removeListener(_onFocus);
+      if (widget.focusNode != null) {
+        // An external node takes over: the one this field made for itself is no longer used, so let it go.
+        _own?.dispose();
+        _own = null;
+      }
       _focus.addListener(_onFocus);
       _onFocus();
     }

@@ -9,6 +9,18 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'kit_test_helpers.dart';
 
+/// Whether [n] has been disposed: a disposed notifier refuses new listeners.
+bool _disposed(ChangeNotifier n) {
+  void noop() {}
+  try {
+    n.addListener(noop);
+    n.removeListener(noop);
+    return false;
+  } on FlutterError {
+    return true;
+  }
+}
+
 void main() {
   testWidgets('BBSegmented reports the tapped value, ignores the selected one', (tester) async {
     final changes = <String>[];
@@ -56,6 +68,33 @@ void main() {
       isSemantics(isTextField: true, label: 'Name', value: 'Work', isFocused: true),
     );
     handle.dispose();
+  });
+
+  testWidgets('BBTextField disposes its own FocusNode once an external one takes over, and never the external one',
+      (tester) async {
+    final external = FocusNode();
+    addTearDown(external.dispose);
+    Widget field(FocusNode? node) => kitHost(BBTextField(hint: 'Search', focusNode: node));
+    await tester.pumpWidget(field(null));
+    final own = tester.widget<TextField>(find.byType(TextField)).focusNode!;
+    expect(_disposed(own), isFalse);
+
+    await tester.pumpWidget(field(external));
+    expect(tester.widget<TextField>(find.byType(TextField)).focusNode, same(external));
+    expect(_disposed(own), isTrue, reason: 'the field made it, so the field lets it go');
+    expect(_disposed(external), isFalse);
+
+    // Focus still tracks on the external node.
+    external.requestFocus();
+    await tester.pump();
+    expect(external.hasFocus, isTrue);
+
+    // And back to an own node: a fresh one, with the external one left alone.
+    await tester.pumpWidget(field(null));
+    final own2 = tester.widget<TextField>(find.byType(TextField)).focusNode!;
+    expect(own2, isNot(same(own)));
+    expect(_disposed(own2), isFalse);
+    expect(_disposed(external), isFalse);
   });
 
   testWidgets('BBSwitch toggles and announces state', (tester) async {
