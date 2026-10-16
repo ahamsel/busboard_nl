@@ -453,6 +453,25 @@ void main() {
       expect(find.descendant(of: find.byType(BoardTab), matching: find.byType(BBSkeleton)), findsOneWidget);
     });
 
+    testWidgets('a schedule that fails to load at a cold start reads "Couldn\'t load departures"', (tester) async {
+      final schedule = Completer<GtfsRepository>();
+      await pumpPlannerApp(
+        tester,
+        net: TestNetwork(),
+        now: DateTime(2026, 10, 7, 13, 0),
+        tab: HomeTab.board,
+        repoFuture: schedule.future,
+        settle: false,
+        overrides: [settingsProvider.overrideWith(() => _Settings('C'))],
+      );
+      schedule.completeError(StateError('no schedule'));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text("Couldn't load departures"), findsOneWidget);
+      expect(find.text('No upcoming departures'), findsNothing);
+    });
+
     /// Your stop C on the test network at [now], with no departures due (night): the Board, then the Map's stop line.
     Future<void> nightBoard(WidgetTester tester, DateTime now, {TestNetwork? net}) => pumpPlannerApp(
           tester,
