@@ -72,8 +72,39 @@ class _Bar extends ConsumerWidget {
 }
 
 /// "Where to?": the search field, at least 48 pt tall.
-class _WhereTo extends StatelessWidget {
+class _WhereTo extends StatefulWidget {
   const _WhereTo();
+
+  @override
+  State<_WhereTo> createState() => _WhereToState();
+}
+
+class _WhereToState extends State<_WhereTo> {
+  /// The search this opened is still open: a second tap (a quick double tap, both before the next frame builds the
+  /// search page) must not push another.
+  bool _open = false;
+
+  /// The search covered this page, so its route is no longer current.
+  bool _covered = false;
+
+  void _openSearch() {
+    if (_open) return;
+    _open = true;
+    unawaited(context.push<void>('/search').whenComplete(() => _open = false));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Back on top however the search went (popped, or replaced by a link): Where to? works again.
+    final current = ModalRoute.isCurrentOf(context) ?? true;
+    if (!current) {
+      _covered = true;
+    } else if (_covered) {
+      _covered = false;
+      _open = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +112,7 @@ class _WhereTo extends StatelessWidget {
     return BBPressable(
       key: HomeSheetContent.whereToKey,
       semanticLabel: 'Where to? Search for a place or a stop',
-      onTap: () => context.push('/search'),
+      onTap: _openSearch,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 48),
         child: DecoratedBox(

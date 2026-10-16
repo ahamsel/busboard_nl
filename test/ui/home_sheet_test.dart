@@ -147,6 +147,22 @@ Future<void> _pullUp(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('a quick double tap on Where to? opens one search, and back returns home', (tester) async {
+    await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/');
+    // Both taps land before the next frame builds the search page.
+    await tester.tap(find.byKey(HomeSheetContent.whereToKey));
+    await tester.tap(find.byKey(HomeSheetContent.whereToKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen, skipOffstage: false), findsOneWidget, reason: 'one search page, not two');
+    GoRouter.of(tester.element(find.byType(SearchScreen))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen, skipOffstage: false), findsNothing);
+    // Back home, Where to? opens the search again.
+    await tester.tap(find.byKey(HomeSheetContent.whereToKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchScreen), findsOneWidget);
+  });
+
   group('the one-time tip', () {
     testWidgets('shows once and stays dismissed', (tester) async {
       await pumpPlannerApp(tester, net: TestNetwork(), now: _now, initial: '/', homeTipSeen: false);
