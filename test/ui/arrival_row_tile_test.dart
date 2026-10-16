@@ -310,13 +310,19 @@ void main() {
           "This bus isn't sharing its number yet, so it can't be followed.");
     });
 
-    testWidgets('onExplain makes it a button that explains, with no follow hint', (tester) async {
+    testWidgets('onExplain makes it a button that explains, with its own hint', (tester) async {
       final handle = tester.ensureSemantics();
       var explained = 0;
       await tester.pumpWidget(kitHost(ArrivalRowTile(arrival: _row(), onExplain: () => explained++)));
+      // TalkBack says what the tap does, not a bare "double tap to activate".
       expect(
         find.semantics.byLabel('Route 29 Signal Hill Rd, scheduled, 4 minutes'),
-        isSemantics(label: 'Route 29 Signal Hill Rd, scheduled, 4 minutes', isButton: true, hasTapAction: true),
+        isSemantics(
+          label: 'Route 29 Signal Hill Rd, scheduled, 4 minutes',
+          isButton: true,
+          hasTapAction: true,
+          onTapHint: "hear why this bus can't be followed yet",
+        ),
       );
       await tester.tap(find.text('Signal Hill Rd'));
       expect(explained, 1);
