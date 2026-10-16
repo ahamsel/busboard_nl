@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Regenerates every brand PNG from assets/brand/*.svg (spec §3.2).
+# Regenerates every brand PNG from assets/brand/*.svg (spec 2026-10-14 §2.5).
 # Requires ImageMagick 7 (`magick`). Run from anywhere.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 B=assets/brand
 I=assets/icon
-BLUE='#3E7CB1'
-CREAM='#F7F2EA'
+BLUE='#1272C9'
+WHITE='#FFFFFF'
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -38,7 +38,7 @@ magick "$I/app_icon.png" -resize 512x512 "$I/app_icon_gplay.png"
 render "$B/busboard_mark.svg" 340x340 "$TMP/mark340.png"
 magick -size 1024x500 "xc:$BLUE" \
   "$TMP/mark340.png" -gravity west -geometry +80+0 -composite \
-  -fill "$CREAM" -gravity west \
+  -fill "$WHITE" -gravity west \
   -font assets/fonts/Figtree-ExtraBold.ttf -pointsize 88 -annotate +460-24 'BusBoard NL' \
   -font assets/fonts/Figtree-SemiBold.ttf -pointsize 34 -annotate +464+56 "Live arrivals for St. John's buses" \
   -alpha off "$I/feature_graph_gplay.png"   # Play rejects a feature graphic with alpha.
