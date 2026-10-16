@@ -63,6 +63,9 @@ class HomeTabNotifier extends Notifier<HomeTab?> {
   /// Starts on [tab] without reading the phone (tests).
   factory HomeTabNotifier.fixed(HomeTab tab) = _FixedHomeTab;
 
+  /// How long the tab used last may take to read at launch before the home opens on the Board without it.
+  static const readStartLimit = Duration(seconds: 2);
+
   /// A tab was chosen (a tap, a link, a follow) while the stored one was still being read: the choice wins.
   bool _chosen = false;
 
@@ -76,9 +79,10 @@ class HomeTabNotifier extends Notifier<HomeTab?> {
   Future<void> _readStart() async {
     var start = const HomeTabStart(HomeTab.board);
     try {
-      start = await ref.read(homeTabStoreProvider).readStart();
+      // A phone that never answers would leave the home blank: it gets [readStartLimit] (final review M6).
+      start = await ref.read(homeTabStoreProvider).readStart().timeout(readStartLimit);
     } catch (_) {
-      // Unreadable: a first launch.
+      // Unreadable, or too slow: a first launch.
     }
     if (!ref.mounted) return;
     final stop = start.boardStopId;

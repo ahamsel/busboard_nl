@@ -44,6 +44,14 @@ Future<HomeTab?> _tabOnceRead(ProviderContainer c) async {
   return c.read(homeTabProvider);
 }
 
+/// A phone whose stored tab is read by [read]: one that never answers, or one that fails.
+class _Store extends HomeTabStore {
+  const _Store(this.read);
+  final Future<HomeTabStart> Function() read;
+  @override
+  Future<HomeTabStart> readStart() => read();
+}
+
 void main() {
   test('a first launch opens on the Board (spec 2026-10-15 §2.2)', () async {
     final c = _start();
@@ -198,6 +206,30 @@ void main() {
     c.read(boardStopProvider.notifier).restore('C');
     await pumpEventQueue();
     expect(c.read(boardStopProvider), const BoardStop('A', nearMe: true));
+  });
+
+  group('a stored tab that cannot be read opens on the Board (final review M6)', () {
+    testWidgets('a read that never answers gives up after 2 s', (tester) async {
+      final c = ProviderContainer(overrides: [
+        ..._schedule(),
+        homeTabStoreProvider.overrideWithValue(_Store(() => Completer<HomeTabStart>().future)),
+      ]);
+      addTearDown(c.dispose);
+      c.read(homeTabProvider);
+      await tester.pump(const Duration(milliseconds: 1900));
+      expect(c.read(homeTabProvider), isNull, reason: 'a slow phone still gets the time to answer');
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(c.read(homeTabProvider), HomeTab.board, reason: 'not a blank home forever');
+    });
+
+    test('a read that fails', () async {
+      final c = ProviderContainer(overrides: [
+        ..._schedule(),
+        homeTabStoreProvider.overrideWithValue(_Store(() async => throw StateError('unreadable'))),
+      ]);
+      addTearDown(c.dispose);
+      expect(await _tabOnceRead(c), HomeTab.board);
+    });
   });
 }
 
