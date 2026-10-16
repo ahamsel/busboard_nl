@@ -8,6 +8,8 @@ void main() {
     for (final s in [t.display, t.title, t.headline, t.body, t.label, t.caption, t.minutes, t.minutesUnit]) {
       expect(s.fontFamily, BBText.family);
       expect(s.decoration, TextDecoration.none);
+      // A solid style, so a strike-through added later never inherits the fallback's double line.
+      expect(s.decorationStyle, TextDecorationStyle.solid);
     }
     expect(t.minutes.fontFeatures, contains(const FontFeature.tabularFigures()));
     expect(t.minutes.fontSize, 26);
