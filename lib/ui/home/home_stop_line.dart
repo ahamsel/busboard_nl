@@ -119,10 +119,13 @@ class StopLineInfo {
 
   /// The words after the stop name for the kinds without a route: "No buses for a while", "First bus 6:28 AM",
   /// "Offline · updated 9:42 AM". Null for [StopLineKind.next] and [StopLineKind.loading].
-  String? note({required bool use24h}) => switch (kind) {
+  ///
+  /// [spoken] is for screen readers: the weekday in full ("Monday"), where the screen shows "Mon".
+  String? note({required bool use24h, bool spoken = false}) => switch (kind) {
     StopLineKind.none => 'No buses for a while',
     StopLineKind.firstBus =>
-      'First bus ${firstBusDay == null ? '' : '$firstBusDay '}${BBTime.of(firstBus!, use24h: use24h)}',
+      'First bus ${firstBusDay == null ? '' : '${spoken ? DateFormat('EEEE').format(firstBus!) : firstBusDay} '}'
+          '${BBTime.of(firstBus!, use24h: use24h)}',
     StopLineKind.offline =>
       updatedAt == null ? 'Offline' : 'Offline · updated ${BBTime.of(updatedAt!, use24h: use24h)}',
     StopLineKind.next || StopLineKind.loading => null,
@@ -139,7 +142,7 @@ class StopLineInfo {
         '$head Route $route in ${minutes == 1 ? '1 minute' : '$minutes minutes'}, $status. Open board',
       StopLineKind.offline =>
         '$head ${updatedAt == null ? 'Offline' : 'Offline, updated ${BBTime.of(updatedAt!, use24h: use24h)}'}. Open board',
-      _ => '$head ${note(use24h: use24h)}. Open board',
+      _ => '$head ${note(use24h: use24h, spoken: true)}. Open board',
     };
   }
 }

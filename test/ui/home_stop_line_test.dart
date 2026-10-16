@@ -122,7 +122,8 @@ void main() {
       final friday = DateTime(2026, 10, 9, 22, 0);
       final monday = resolveAt(friday, DateTime(2026, 10, 12, 6, 28));
       expect(monday.note(use24h: false), 'First bus Mon 6:28 AM');
-      expect(monday.semantics(use24h: false), 'Your stop, MUN Centre. First bus Mon 6:28 AM. Open board');
+      expect(monday.semantics(use24h: false), 'Your stop, MUN Centre. First bus Monday 6:28 AM. Open board',
+          reason: 'spoken in full, shown as Mon');
       expect(monday.note(use24h: true), 'First bus Mon 06:28');
       // Later today and tomorrow need no day: tomorrow's is the next morning, and the line has no "tomorrow" form.
       final tomorrow = resolveAt(friday, DateTime(2026, 10, 10, 6, 28));
@@ -204,7 +205,7 @@ void main() {
     // testDay is a Wednesday: two days on is Friday.
     await _pump(tester, net: net, now: DateTime(testDay.year, testDay.month, testDay.day + 2, 22, 0));
     expect(_inLine(find.text(' · First bus Mon 8:05 AM')), findsOneWidget);
-    expect(find.bySemanticsLabel('Your stop, Stop C. First bus Mon 8:05 AM. Open board'), findsOneWidget);
+    expect(find.bySemanticsLabel('Your stop, Stop C. First bus Monday 8:05 AM. Open board'), findsOneWidget);
   });
 
   testWidgets('loading: the name and a shimmer where the time goes', (tester) async {
