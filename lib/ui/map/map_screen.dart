@@ -17,6 +17,7 @@ import '../../domain/map/delayed_track_renderer.dart';
 import '../../domain/map/follow_tracker.dart';
 import '../../domain/map/heading_smoother.dart';
 import '../../domain/trip_planner/journey.dart';
+import '../../routing/planner_route.dart';
 import '../../state/follow_providers.dart';
 import '../../state/journey_on_map_provider.dart';
 import '../../state/map_providers.dart';
@@ -25,6 +26,7 @@ import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../copy/legal_copy.dart';
 import '../kit/kit.dart';
+import '../shell/top_actions.dart';
 import '../trip_planner/map_plan_sheet.dart';
 import 'bus_card.dart';
 import 'follow_camera.dart';
@@ -605,7 +607,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final place = mapPlaceAt(ref.read(gtfsRepositoryProvider).value, tap);
     final q = ref.read(planQueryProvider.notifier);
     forFrom ? q.setFrom(place) : q.setTo(place);
-    context.go('/plan');
+    reopenPlannerOverMap(context);
   }
 
   void _onTap(LatLng tap) {
@@ -893,50 +895,44 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (pickFrom != null) ...[_pickBanner(pickFrom), const SizedBox(height: BBSpace.s)],
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        flex: 3,
-                        child: follow != null
-                            ? _followChip(follow)
-                            : BBChip(
-                                label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
-                                icon: myStop == null ? BBIcons.search : BBIcons.star,
-                                chevron: true,
-                                semanticLabel:
-                                    myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
-                                onTap: () => context.go('/'),
-                              ),
-                      ),
-                      const SizedBox(width: BBSpace.s),
-                      Flexible(
-                        flex: 2,
-                        child: BBChip(
-                          label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
-                          icon: BBIcons.filter,
-                          chevron: true,
-                          selected: filter.isNotEmpty,
-                          onTap: _openRouteFilter,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: BBSpace.m),
+                  // Your stop (or the followed bus), then Plan, Alerts and Settings at the top right.
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: journey == null
-                              ? const SizedBox.shrink()
+                          child: follow != null
+                              ? _followChip(follow)
                               : BBChip(
-                                  label: 'Hide trip',
-                                  icon: BBIcons.close,
-                                  semanticLabel: 'Hide the trip from the map',
-                                  onTap: () => ref.read(journeyOnMapProvider.notifier).clear(),
+                                  label: myStop == null ? 'Choose a stop' : '${myStop.stopName} · ${myStop.stopId}',
+                                  icon: myStop == null ? BBIcons.search : BBIcons.star,
+                                  chevron: true,
+                                  semanticLabel:
+                                      myStop == null ? 'Choose a stop' : 'Your stop, ${myStop.stopName}. Change stop',
+                                  onTap: () => context.go('/'),
                                 ),
+                        ),
+                      ),
+                      const SizedBox(width: BBSpace.s),
+                      const TopActions(floating: true),
+                    ],
+                  ),
+                  const SizedBox(height: BBSpace.m),
+                  // The route filter, then my location at the right, as before under the top buttons.
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: BBChip(
+                            label: filter.isEmpty ? 'All routes' : 'Routes ${(filter.toList()..sort()).join(', ')}',
+                            icon: BBIcons.filter,
+                            chevron: true,
+                            selected: filter.isNotEmpty,
+                            onTap: _openRouteFilter,
+                          ),
                         ),
                       ),
                       const SizedBox(width: BBSpace.s),
@@ -945,6 +941,18 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                       ]),
                     ],
                   ),
+                  if (journey != null) ...[
+                    const SizedBox(height: BBSpace.m),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: BBChip(
+                        label: 'Hide trip',
+                        icon: BBIcons.close,
+                        semanticLabel: 'Hide the trip from the map',
+                        onTap: () => ref.read(journeyOnMapProvider.notifier).clear(),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1026,7 +1034,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
   /// What the next tap chooses, and a way out without choosing.
   Widget _pickBanner(bool forFrom) {
     final bb = context.bb;
-    void cancel() => context.go('/plan');
+    void cancel() => reopenPlannerOverMap(context);
     return DecoratedBox(
       decoration: bb.floating(radius: BBRadius.sheet),
       child: Padding(

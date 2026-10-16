@@ -92,8 +92,8 @@ class StubMap {
   void longPress(double lat, double lon) => config!.onLongPress!(LatLng(lat, lon));
 }
 
-/// Pumps the app's real route tree (shell, four tabs) on [net] at [now] ([clock], when given, tells the time
-/// instead), starting at [initial].
+/// Pumps the app's real route tree (shell, two tabs, the pages over them) on [net] at [now] ([clock], when given,
+/// tells the time instead), starting at [initial]. [alerts] are the service alerts.
 /// The live feed answers 503, so plans use timetable times; the map is a plain box ([mapView], when given, builds it).
 Future<void> pumpPlannerApp(
   WidgetTester tester, {
@@ -105,6 +105,7 @@ Future<void> pumpPlannerApp(
   GeolocatorPlatform? geolocator,
   http.Client? liveClient,
   MapViewBuilder? mapView,
+  List<ServiceAlert> alerts = const [],
   List<Override> overrides = const [],
 }) async {
   SharedPreferences.setMockInitialValues({});
@@ -121,7 +122,7 @@ Future<void> pumpPlannerApp(
       overrides: [
         serviceUpdatesProvider.overrideWith(
           (ref) =>
-              Stream.value(ServiceUpdates(alerts: const [], serviceStatus: null, fetchedAt: now, feedTimestamp: null)),
+              Stream.value(ServiceUpdates(alerts: alerts, serviceStatus: null, fetchedAt: now, feedTimestamp: null)),
         ),
         gtfsRepositoryProvider.overrideWith((ref) async => net.repo),
         nearestStopsProvider.overrideWith((ref) async => const <NearbyStop>[]),

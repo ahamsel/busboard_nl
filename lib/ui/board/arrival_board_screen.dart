@@ -14,6 +14,7 @@ import '../alerts/service_alert_card.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../arrival_alerts/alert_strip.dart';
 import '../kit/kit.dart';
+import '../shell/top_actions.dart';
 import 'arrival_row_tile.dart';
 import 'first_bus_note.dart';
 
@@ -213,14 +214,14 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
                 alert: relevantAlerts.first,
                 stopNames: stopInfo == null ? const {} : {widget.stopId: stopInfo.stopName},
                 compact: true,
-                onTap: () => context.go('/alerts'),
+                onTap: () => context.push('/alerts'),
               ),
               if (relevantAlerts.length > 1)
                 BBButton(
                   label:
                       '${relevantAlerts.length - 1} more relevant ${relevantAlerts.length == 2 ? "alert" : "alerts"}',
                   kind: BBButtonKind.quiet,
-                  onPressed: () => context.go('/alerts'),
+                  onPressed: () => context.push('/alerts'),
                 ),
             ]),
           );
@@ -240,30 +241,34 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.s, BBSpace.xs, 0),
-            child: Row(children: [
-              // Pill and Change share the width the 44 pt settings button leaves,
-              // so large text ellipsises them instead of overflowing the row.
-              Expanded(
-                flex: 3,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: BBPill(
-                    label: 'STOP ${widget.stopId}',
-                    background: bb.colors.ink,
-                    foreground: bb.colors.bg,
-                  ),
-                ),
-              ),
-              Flexible(
-                flex: 2,
-                child: BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop()),
-              ),
-              BBIconButton(
-                icon: BBIcons.settings,
-                semanticLabel: 'Settings',
-                onPressed: () => context.push('/settings'),
-              ),
-            ]),
+            child: LayoutBuilder(builder: (context, box) {
+              final pill = BBPill(label: 'STOP ${widget.stopId}', background: bb.colors.ink, foreground: bb.colors.bg);
+              final change = BBButton(label: 'Change', kind: BBButtonKind.quiet, onPressed: () => context.pop());
+              // Pill and Change share the width the three 44 pt buttons (Plan, Alerts, Settings) leave, as they did
+              // beside the gear. When either would be cut (large text on a small phone), the buttons take a row of
+              // their own above them instead.
+              final room = box.maxWidth - TopActions.headerWidth;
+              final pillWidth =
+                  TopActions.textWidth(context, pill.label, bb.text.caption.copyWith(fontWeight: FontWeight.w700)) +
+                      2 * BBSpace.s;
+              final changeWidth = TopActions.textWidth(
+                      context, change.label, bb.text.label.copyWith(fontSize: 15, fontWeight: FontWeight.w800)) +
+                  36;
+              if (pillWidth <= room * 3 / 5 && changeWidth <= room * 2 / 5) {
+                return Row(children: [
+                  Expanded(flex: 3, child: Align(alignment: Alignment.centerLeft, child: pill)),
+                  Flexible(flex: 2, child: change),
+                  const TopActions(),
+                ]);
+              }
+              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Align(alignment: Alignment.centerRight, child: TopActions()),
+                Row(children: [
+                  Expanded(child: Align(alignment: Alignment.centerLeft, child: pill)),
+                  change,
+                ]),
+              ]);
+            }),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(BBSpace.screen, BBSpace.xs, BBSpace.screen, 0),

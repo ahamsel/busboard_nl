@@ -259,7 +259,7 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
               ],
             ),
           ),
-          SizedBox(height: BBNavBar.reservedHeight(context) + BBSpace.l),
+          SizedBox(height: MediaQuery.paddingOf(context).bottom + BBSpace.l),
         ],
       ),
     );

@@ -51,6 +51,29 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
                       return _page(state, ArrivalBoardScreen(stopId: stopId));
                     },
                   ),
+                  // The trip planner and the service alerts are pages over the tabs, opened from the buttons at
+                  // the top right of both (pushed, so back returns to the tab they came from). Under '/' so that a
+                  // link straight to one still has the Board under it.
+                  GoRoute(
+                    parentNavigatorKey: rootNavigatorKey,
+                    path: 'plan',
+                    pageBuilder: (context, state) => _page(state, const PlanScreen()),
+                    routes: [
+                      GoRoute(
+                        parentNavigatorKey: rootNavigatorKey,
+                        path: 'journey',
+                        // A deep link or a restored route carries no journey: back to the planner.
+                        redirect: (context, state) => state.extra is Journey ? null : '/plan',
+                        pageBuilder: (context, state) =>
+                            _page(state, JourneyDetailScreen(journey: state.extra! as Journey)),
+                      ),
+                    ],
+                  ),
+                  GoRoute(
+                    parentNavigatorKey: rootNavigatorKey,
+                    path: 'alerts',
+                    pageBuilder: (context, state) => _page(state, const AlertsScreen()),
+                  ),
                 ],
               ),
             ],
@@ -61,27 +84,6 @@ GoRouter buildAppRouter({String initialLocation = '/'}) {
               GoRoute(
                 path: '/map',
                 pageBuilder: (context, state) => _page(state, MapScreen(pick: state.uri.queryParameters['pick'])),
-              ),
-            ],
-          ),
-          // Branch 2: Service alerts
-          StatefulShellBranch(
-            routes: [GoRoute(path: '/alerts', pageBuilder: (context, state) => _page(state, const AlertsScreen()))],
-          ),
-          // Branch 3: Trip planner
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/plan',
-                pageBuilder: (context, state) => _page(state, const PlanScreen()),
-                routes: [
-                  GoRoute(
-                    path: 'journey',
-                    // A deep link or a restored route carries no journey: back to the planner.
-                    redirect: (context, state) => state.extra is Journey ? null : '/plan',
-                    pageBuilder: (context, state) => _page(state, JourneyDetailScreen(journey: state.extra! as Journey)),
-                  ),
-                ],
               ),
             ],
           ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -37,7 +39,8 @@ Future<void> showMapPlanSheet(BuildContext context, WidgetRef ref, LatLng at) as
   if (fromHere == null || !context.mounted) return;
   final q = ref.read(planQueryProvider.notifier);
   fromHere ? q.setFrom(place) : q.setTo(place);
-  context.go('/plan');
+  // The planner opens over the map; back returns to it.
+  unawaited(context.push('/plan'));
 }
 
 class _MapPlanCard extends StatelessWidget {
