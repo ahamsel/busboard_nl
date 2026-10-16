@@ -122,7 +122,7 @@ void main() {
     expect(find.text('BOARD 1150'), findsOneWidget);
   });
 
-  testWidgets('stop card: Plan a trip from here starts a plan from this stop on the Plan tab', (tester) async {
+  testWidgets('stop card: Plan a trip from here starts a plan from this stop on the planner page', (tester) async {
     await _host(tester, header: const StopCardHeader(stop: _mun), body: const StopCardBody(stop: _mun));
     final open = tester.getTopLeft(find.text('Open board')).dy;
     expect(tester.getTopLeft(find.text('Plan a trip from here')).dy, greaterThan(open), reason: 'under Open board');

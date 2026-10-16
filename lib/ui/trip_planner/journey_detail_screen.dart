@@ -87,7 +87,7 @@ class _JourneyDetailScreenState extends ConsumerState<JourneyDetailScreen> {
   /// An add is in flight: a second tap must not fire another.
   bool _saving = false;
 
-  /// The live feed, for re-timing the alert. Paused while the Plan tab is hidden: unlike a watch, a manual listen is
+  /// The live feed, for re-timing the alert. Paused while the steps are hidden (another page over them): unlike a watch, a manual listen is
   /// not paused with the tickers, and it would keep the feed refreshing every 30 s behind the other tabs.
   late final ProviderSubscription<TimeTrackFetchResult?> _feedSub;
   bool _feedPaused = false;

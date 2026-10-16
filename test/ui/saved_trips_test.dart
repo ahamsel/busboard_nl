@@ -31,7 +31,7 @@ final _aToC = SavedTrip(
 ProviderContainer _container(WidgetTester tester) =>
     ProviderScope.containerOf(tester.element(find.byType(PlanScreen)));
 
-/// Opens the Plan tab at [now] with [trips] saved.
+/// Opens the planner at [now] with [trips] saved.
 Future<void> _pump(
   WidgetTester tester, {
   DateTime? now,
