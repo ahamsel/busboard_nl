@@ -115,9 +115,15 @@ class _RecordingSurface extends FakeMapSurface {
     _held.clear();
   }
 
+  /// How many images were refused because [failImages] was set.
+  int rejectedImages = 0;
+
   @override
   Future<void> addImage(String name, Uint8List bytes) async {
-    if (failImages) throw StateError('addImage failed');
+    if (failImages) {
+      rejectedImages++;
+      throw StateError('addImage failed');
+    }
     return super.addImage(name, bytes);
   }
 
@@ -162,6 +168,16 @@ Future<void> _frames(WidgetTester tester, int n) async {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump();
   }
+}
+
+/// Frames until [done] holds, for at most 30 s of real time. Installs and image rasterising run in real time, outside
+/// the test clock, so a fixed sleep is a race that a loaded machine loses.
+Future<void> _framesUntil(WidgetTester tester, bool Function() done, String what) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  while (!done() && DateTime.now().isBefore(deadline)) {
+    await _frames(tester, 1);
+  }
+  expect(done(), isTrue, reason: 'gave up waiting: $what');
 }
 
 Future<void> _pump(
@@ -525,21 +541,26 @@ void main() {
     testWidgets('a failed style reload leaves the stale layers undrawn', (tester) async {
       final printed = debugPrint;
       debugPrint = (message, {wrapWidth}) {}; // the expected install failure is logged
-      final old = _RecordingSurface();
-      _surface = old;
-      await _pump(tester, buses: {'2573': _bus()});
-      await tester.runAsync(() => _styleLoaded(old));
-      await _frames(tester, 3);
-      expect(old.busSets, isNotEmpty, reason: 'the first install draws buses');
+      try {
+        // A slow device: every layer call takes real time, so an install outlasts any fixed sleep. The test waits on
+        // what it needs to have happened instead of on the clock.
+        final old = _RecordingSurface()..layerDelay = const Duration(milliseconds: 200);
+        _surface = old;
+        await _pump(tester, buses: {'2573': _bus()});
+        _config!.onStyleLoaded();
+        await _framesUntil(tester, () => old.busSets.isNotEmpty, 'the first install draws buses');
 
-      final broken = _RecordingSurface()..failImages = true;
-      _config!.onReady(broken, broken);
-      await tester.runAsync(() => _styleLoaded(broken));
-      old.busSets.clear();
-      await _frames(tester, 4);
-      expect(old.busSets, isEmpty, reason: 'nothing may draw on the surface the old style left behind');
-      expect(broken.busSets, isEmpty);
-      debugPrint = printed;
+        final broken = _RecordingSurface()..failImages = true;
+        _config!.onReady(broken, broken);
+        _config!.onStyleLoaded();
+        await _framesUntil(tester, () => broken.rejectedImages > 0, 'the reloaded style\'s install fails');
+        old.busSets.clear();
+        await _frames(tester, 4);
+        expect(old.busSets, isEmpty, reason: 'nothing may draw on the surface the old style left behind');
+        expect(broken.busSets, isEmpty);
+      } finally {
+        debugPrint = printed;
+      }
     });
 
     testWidgets('draws one bus update at a time, with the bus, and honours the route filter', (tester) async {
