@@ -114,11 +114,16 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
   /// An add is in flight: a second tap must not fire another.
   bool _saving = false;
 
+  /// The live feed, for re-timing the alert. Paused while the Map tab is hidden: unlike a watch, a manual listen is
+  /// not paused with the tickers, and it would keep the feed refreshing every 30 s behind the Board.
+  late final ProviderSubscription<TimeTrackFetchResult?> _feedSub;
+  bool _feedPaused = false;
+
   @override
   void initState() {
     super.initState();
     // As the Board does on each refresh: a newer live time for the first ride re-times its alert (iPhone).
-    ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
+    _feedSub = ref.listenManual(plannerLiveFeedProvider.select((f) => f.value), (_, feed) => _retimeAlert(feed));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _retimeAlert(ref.read(plannerLiveFeedProvider).value);
@@ -127,6 +132,19 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
         ref.read(journeyOnMapProvider.notifier).show(widget.journey);
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final paused = !TickerMode.valuesOf(context).enabled;
+    if (paused == _feedPaused) return;
+    _feedPaused = paused;
+    if (paused) {
+      _feedSub.pause();
+    } else {
+      _feedSub.resume();
+    }
   }
 
   void _retimeAlert(TimeTrackFetchResult? feed) {
@@ -153,8 +171,10 @@ class _JourneyBodyState extends ConsumerState<_JourneyBody> {
     // Refreshes every 30 s: the legs' live times, the bell and Follow with it.
     final feed = ref.watch(plannerLiveFeedProvider).value;
     final draft = ref.watch(planQueryProvider);
-    // Kept alive under the steps, so back shows the options at once instead of planning again.
-    ref.listen(planResultsProvider, (_, _) {});
+    // Kept alive under the steps, so back shows the options at once instead of planning again. A watch that never
+    // rebuilds, not a listen: a watch is paused with the tickers, so the plan and its live feed stop refreshing behind
+    // the Board, and are kept all the same.
+    ref.watch(planResultsProvider.select((_) => null));
     final now = ref.read(plannerClockProvider)();
     final use24h = BBTime.use24h(context);
     final live = feed != null && feed.succeeded;

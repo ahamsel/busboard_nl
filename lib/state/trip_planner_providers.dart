@@ -121,8 +121,26 @@ class PlanQueryNotifier extends Notifier<PlanDraft> {
 final planQueryProvider = NotifierProvider<PlanQueryNotifier, PlanDraft>(PlanQueryNotifier.new);
 
 /// The live feed for plans, fetched again every 30 s while anything watches it (spec §3.4); null when unreadable.
+///
+/// Not while every listener is paused (the trip's sheets on the Map tab, hidden behind the Board): the refresh that
+/// falls due then waits for a listener to resume, so a hidden sheet that rebuilds reads the last answer instead of
+/// fetching, and coming back fetches once.
 final plannerLiveFeedProvider = FutureProvider.autoDispose<TimeTrackFetchResult?>((ref) async {
-  final timer = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+  var watched = true;
+  var stale = false;
+  ref.onCancel(() => watched = false);
+  ref.onResume(() {
+    watched = true;
+    // Invalidating from inside the resume callback itself has no effect (as with the stop's departures).
+    if (stale) scheduleMicrotask(() => ref.mounted ? ref.invalidateSelf() : null);
+  });
+  final timer = Timer(const Duration(seconds: 30), () {
+    if (watched) {
+      ref.invalidateSelf();
+    } else {
+      stale = true;
+    }
+  });
   ref.onDispose(timer.cancel);
   try {
     return await ref.read(timetrackApiProvider).fetchLiveVehiclesResult();

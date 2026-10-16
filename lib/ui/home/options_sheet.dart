@@ -320,7 +320,12 @@ class _OptionsBodyState extends ConsumerState<_OptionsBody> {
       // The drawn trip was planned for the old form; the new one's is drawn when its results arrive.
       if (ref.read(homeSheetProvider) is OptionsSheet) _clearDrawn();
     });
-    ref.listen<AsyncValue<PlanOutcome?>>(planResultsProvider, (_, next) => _onResults(next));
+    // Only while the Map shows: unlike the watch above, a listen is not paused with the tickers, and it would keep the
+    // plan and its live feed refreshing every 30 s behind the Board. The rebuild on a ticker change drops it, and adds
+    // it back on return, when the paused plan refreshes.
+    if (TickerMode.valuesOf(context).enabled) {
+      ref.listen<AsyncValue<PlanOutcome?>>(planResultsProvider, (_, next) => _onResults(next));
+    }
     if (!results.isLoading) _formChanged = false;
     final now = ref.read(plannerClockProvider)();
     final when = draft.usesDefaultTime ? ref.watch(planDefaultTimeProvider) : draft.time ?? now;

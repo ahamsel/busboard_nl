@@ -4,10 +4,14 @@ import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
 import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
+import 'package:busboard_nl/domain/trip_planner/place.dart';
+import 'package:busboard_nl/domain/trip_planner/trip_planner.dart';
+import 'package:busboard_nl/state/home_sheet_provider.dart';
 import 'package:busboard_nl/state/home_tab_provider.dart';
 import 'package:busboard_nl/state/map_providers.dart';
 import 'package:busboard_nl/state/providers.dart';
 import 'package:busboard_nl/state/seen_flags.dart';
+import 'package:busboard_nl/state/trip_planner_providers.dart';
 import 'package:busboard_nl/ui/board/arrival_row_tile.dart';
 import 'package:busboard_nl/ui/board/board_tab.dart';
 import 'package:busboard_nl/ui/home/home_screen.dart';
@@ -18,6 +22,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator_platform_interface/geolocator_platform_interface.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/planner_app.dart';
@@ -355,4 +361,45 @@ void main() {
     expect(mobile.asked.where((id) => id == 'A').length, before + 1, reason: 'one refresh on coming back');
     await tester.pumpAndSettle();
   });
+
+  // The trip's sheets refresh their live times every 30 s (the planner's live feed). Like the departures (M5), that
+  // stops while the Board covers the map, and comes back with the Map.
+  for (final sheet in ['options', 'steps']) {
+    testWidgets("the trip's $sheet stop refreshing their live times behind the Board, and refresh on return",
+        (tester) async {
+      var fetches = 0;
+      final live = MockClient((_) async {
+        fetches++;
+        return http.Response('', 503);
+      });
+      await pumpPlannerApp(tester,
+          net: TestNetwork(), now: DateTime(testDay.year, testDay.month, testDay.day, 7, 50), liveClient: live);
+      final c = _c(tester);
+      c.read(planQueryProvider.notifier)
+        ..setFrom(StopPlace(stopId: 'A', name: 'Stop A'))
+        ..setTo(StopPlace(stopId: 'C', name: 'Stop C'));
+      c.read(homeSheetProvider.notifier).open(const OptionsSheet());
+      await tester.pump(const Duration(seconds: 1));
+      if (sheet == 'steps') {
+        final journey = (await tester.runAsync(() => c.read(planResultsProvider.future)))! as PlanFound;
+        c.read(homeSheetProvider.notifier).open(JourneySheet(journey.journeys.first));
+        await tester.pump(const Duration(seconds: 1));
+      }
+      final first = fetches;
+      await tester.pump(const Duration(seconds: 31));
+      expect(fetches, greaterThan(first), reason: 'refreshed every 30 s on the Map');
+      await tester.tap(find.byKey(HomeShell.boardTabKey));
+      await tester.pump(const Duration(seconds: 1));
+      final hidden = fetches;
+      for (var i = 0; i < 3; i++) {
+        await tester.pump(const Duration(seconds: 31));
+      }
+      expect(fetches, hidden, reason: 'no refresh behind the Board');
+      await tester.tap(find.byKey(HomeShell.mapTabKey));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fetches, greaterThan(hidden), reason: 'refreshed on coming back to the Map');
+      expect(c.read(homeSheetProvider), sheet == 'steps' ? isA<JourneySheet>() : isA<OptionsSheet>());
+    });
+  }
 }
