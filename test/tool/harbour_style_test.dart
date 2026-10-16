@@ -170,4 +170,24 @@ void main() {
       expect(ratio(hex(p.label), hex(p.land)), greaterThanOrEqualTo(3.0), reason: p.name);
     }
   });
+
+  test('map labels stay readable on the water too (3:1 or more), and the shipped styles use the palette', () {
+    Color hex(String h) => Color(int.parse('FF${h.substring(1)}', radix: 16));
+    double ratio(Color a, Color b) {
+      final la = a.computeLuminance(), lb = b.computeLuminance();
+      return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+    }
+
+    for (final (p, asset) in [(HarbourPalette.light, 'harbour_light'), (HarbourPalette.dark, 'harbour_dark')]) {
+      expect(ratio(hex(p.label), hex(p.water)), greaterThanOrEqualTo(3.0), reason: '${p.name} label on water');
+      // The labels drawn on water in the bundled styles carry that same label and water colour.
+      final style = jsonDecode(File('assets/map/$asset.json').readAsStringSync()) as Map<String, dynamic>;
+      final layers = (style['layers'] as List).cast<Map<String, dynamic>>();
+      Map<String, dynamic> paint(String id) => layers.firstWhere((l) => l['id'] == id)['paint'] as Map<String, dynamic>;
+      expect(paint('water')['fill-color'], p.water, reason: asset);
+      for (final id in ['water_name_point_label', 'water_name_line_label', 'waterway_line_label']) {
+        expect(paint(id)['text-color'], p.label, reason: '$asset $id');
+      }
+    }
+  });
 }

@@ -146,12 +146,12 @@ void main() {
   });
 
   test('the brand is a fill only: no icon, text or cursor uses colors.brand (spec 2026-10-14 §2.1)', () {
-    final greenForeground = RegExp(r'(Icon\(|copyWith\(color:|cursorColor:|TextStyle\()[^;]*colors\.brand\b(?!Ink|Soft)');
+    final brandForeground = RegExp(r'(Icon\(|copyWith\(color:|cursorColor:|TextStyle\()[^;]*colors\.brand\b(?!Ink|Soft)');
     final offenders = [
       for (final f in Directory('lib/ui').listSync(recursive: true).whereType<File>())
         if (f.path.endsWith('.dart'))
           for (final (i, line) in f.readAsLinesSync().indexed)
-            if (greenForeground.hasMatch(line)) '${f.path}:${i + 1}: ${line.trim()}',
+            if (brandForeground.hasMatch(line)) '${f.path}:${i + 1}: ${line.trim()}',
     ];
     expect(offenders, isEmpty, reason: 'Use bb.brandEdge (icons) or colors.brandInk (text):\n${offenders.join('\n')}');
   });

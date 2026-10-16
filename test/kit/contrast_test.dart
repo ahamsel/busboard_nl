@@ -20,6 +20,12 @@ double chroma(Color c) {
   return math.sqrt(lab[1] * lab[1] + lab[2] * lab[2]);
 }
 
+/// The neutrality rule (spec 2026-10-14 §2.1): a plain grey, with no hue tint, is at most this far from grey in OKLCH.
+const neutralChroma = 0.015;
+
+/// Whether [c] counts as a neutral grey. The token test and the old-values test both go through this.
+bool isNeutral(Color c) => chroma(c) <= neutralChroma;
+
 void main() {
   for (final (name, t) in [('light', BBTokens.light), ('dark', BBTokens.dark)]) {
     final c = t.colors;
@@ -112,7 +118,7 @@ void main() {
           ('muted', c.muted),
           ('highlight', c.highlight.withValues(alpha: 1)),
         ]) {
-          expect(chroma(color), lessThanOrEqualTo(0.015), reason: '$name $tName is tinted (${chroma(color)})');
+          expect(isNeutral(color), isTrue, reason: '$name $tName is tinted (${chroma(color)})');
         }
       });
 
@@ -127,10 +133,27 @@ void main() {
     });
   }
 
-  test('the old green and purple tints are gone (they failed the neutrality check)', () {
-    expect(chroma(const Color(0xFFF6FAF6)), greaterThan(0.005), reason: 'the old light bg is tinted');
-    expect(chroma(const Color(0xFF1D2540)), greaterThan(0.015), reason: 'the old dark surface is tinted');
-    expect(chroma(const Color(0xFF5F7366)), greaterThan(0.015), reason: 'the old light muted is tinted');
+  test('the old green and purple tints fail the neutrality check', () {
+    // The same predicate the tokens must pass: the old values must not.
+    for (final (what, old) in [
+      ('dark surface', const Color(0xFF1D2540)),
+      ('light muted', const Color(0xFF5F7366)),
+    ]) {
+      expect(isNeutral(old), isFalse, reason: 'the old $what is tinted (${chroma(old)})');
+    }
+    // The old light bg is only faintly green (chroma 0.0067), inside the 0.015 limit, so the predicate cannot catch
+    // it (the limit is loose: final review T1). It is still clearly more tinted than the bg that replaced it.
+    const oldBg = Color(0xFFF6FAF6);
+    expect(chroma(oldBg), greaterThan(2 * chroma(BBColors.light.bg)), reason: 'the old light bg is tinted');
+  });
+
+  test('the neutrality check accepts greys and rejects tints', () {
+    for (final grey in [const Color(0xFF000000), const Color(0xFFFFFFFF), const Color(0xFF808080), const Color(0xFFF4F5F7)]) {
+      expect(isNeutral(grey), isTrue, reason: '$grey');
+    }
+    for (final tint in [const Color(0xFFFF0000), const Color(0xFF1272C9), const Color(0xFF45D695)]) {
+      expect(isNeutral(tint), isFalse, reason: '$tint');
+    }
   });
 
   test('light focus rings use the deeper brandInk; dark ones the brand', () {

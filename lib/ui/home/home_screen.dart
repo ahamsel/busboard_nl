@@ -109,10 +109,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// [_maxActionsPeek], lifting the half detent above it.
   static const double _maxPeek = 0.45;
 
-  /// The home sheet's own, taller cap.
+  /// The home sheet's own cap on its peek. The bar is slim (spec 2026-10-14 §3.1), so this only matters while the
+  /// one-time tip sits in it, which can make the bar taller than a card's peek may be.
   static const double _maxHomePeek = 0.55;
 
-  /// The home sheet's half: well above its tall peek.
+  /// The home sheet's half: most of the screen, above even a bar grown tall by the tip.
   static const double _homeHalf = 0.75;
 
   /// A card's half (a stop, a bus, the options, the follow card): above a card's peek, capped at [_maxPeek].
