@@ -27,6 +27,7 @@ import '../../state/journey_on_map_provider.dart';
 import '../../state/map_pick_provider.dart';
 import '../../state/map_providers.dart';
 import '../../state/providers.dart';
+import '../../state/recent_stops_provider.dart';
 import '../../state/seen_flags.dart';
 import '../../state/trip_planner_providers.dart';
 import '../arrival_alerts/alert_bell.dart';
@@ -793,6 +794,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
       case StopSheet(:final stopId):
         _toHalfAfterBuild();
         _centreOnStop(stopId);
+        // A stop's card counts as viewing it: it joins the Board's recent stops (spec 2026-10-15 §3).
+        unawaited(ref.read(recentStopsProvider.notifier).push(stopId));
       case BusSheet() || OptionsSheet() || JourneySheet():
         _centrePending = null;
         _toHalfAfterBuild();

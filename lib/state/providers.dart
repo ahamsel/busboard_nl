@@ -59,9 +59,13 @@ class AppSettings {
 }
 
 class SettingsNotifier extends Notifier<AppSettings> {
+  /// Completes once the saved settings are read: at once for a notifier that reads none (tests).
+  Future<void> get loaded => _loaded;
+  Future<void> _loaded = Future.value();
+
   @override
   AppSettings build() {
-    _loadFromPrefs();
+    _loaded = _loadFromPrefs();
     return const AppSettings();
   }
 
@@ -131,6 +135,9 @@ class SettingsNotifier extends Notifier<AppSettings> {
     state = state.copyWith(forceGtfsRefresh: false);
   }
 }
+
+/// Done once [settingsProvider] holds the saved settings, not the defaults it starts with.
+final settingsLoadedProvider = FutureProvider<void>((ref) => ref.watch(settingsProvider.notifier).loaded);
 
 final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
   SettingsNotifier.new,
