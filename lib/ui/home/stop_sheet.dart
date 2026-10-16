@@ -200,11 +200,15 @@ class _StopBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Every new list feeds the arrival alerts, as the Board did.
-    ref.listen<AsyncValue<List<ArrivalRow>>>(stopArrivalsProvider(stopId), (_, next) {
-      final rows = next.value;
-      if (rows != null) ref.read(arrivalAlertProvider.notifier).onBoardArrivals(stopId, rows);
-    });
+    // Every new list feeds the arrival alerts, as the Board did. Only while this tab shows: unlike a watch, a listen
+    // is not paused with the tickers, and it would keep the departures polling behind the other tab (final review M5).
+    // The rebuild on a ticker change drops it, and adds it back on return.
+    if (TickerMode.valuesOf(context).enabled) {
+      ref.listen<AsyncValue<List<ArrivalRow>>>(stopArrivalsProvider(stopId), (_, next) {
+        final rows = next.value;
+        if (rows != null) ref.read(arrivalAlertProvider.notifier).onBoardArrivals(stopId, rows);
+      });
+    }
     final stop = ref.watch(stopInfoProvider(stopId));
     final name = stop?.stopName ?? 'Stop $stopId';
     final arrivals = ref.watch(stopArrivalsProvider(stopId));

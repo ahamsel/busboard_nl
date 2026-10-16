@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/realtime/metrobus_mobile_api.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/map/bus_tracking_state.dart';
 import 'package:busboard_nl/state/home_tab_provider.dart';
@@ -99,6 +100,16 @@ class _LaterGeolocator extends GeolocatorPlatform {
       granted ? LocationPermission.whileInUse : LocationPermission.denied;
   @override
   Future<LocationPermission> requestPermission() async => checkPermission();
+}
+
+/// The stop-prediction feed, counting the stops it is asked about.
+class _CountingMobile extends MetrobusMobileApi {
+  final asked = <String>[];
+  @override
+  Future<MetrobusDeparturesResult> fetchDeparturesResult(String stopId, {bool forceRefresh = false}) async {
+    asked.add(stopId);
+    return MetrobusDeparturesResult.failure();
+  }
 }
 
 void main() {
@@ -314,5 +325,34 @@ void main() {
     await tester.tap(find.byKey(HomeShell.mapTabKey));
     await tester.pumpAndSettle();
     expect(map.config!.myLocationEnabled, isTrue, reason: 'no need to tap My location for the dot');
+  });
+
+  testWidgets("the Board behind the Map stops polling its stop's departures, and refreshes them once on return (M5)",
+      (tester) async {
+    final mobile = _CountingMobile();
+    await pumpPlannerApp(tester,
+        net: TestNetwork(),
+        now: _now,
+        tab: HomeTab.board,
+        overrides: [settingsProvider.overrideWith(_StopC.new), metrobusMobileApiProvider.overrideWithValue(mobile)]);
+    // Not your stop (C), which is kept alive for the stop line: a stop picked on the Board.
+    _c(tester).read(boardStopProvider.notifier).select('A');
+    await tester.pumpAndSettle();
+    final seconds = _c(tester).read(settingsProvider).refreshIntervalSeconds;
+    await tester.pump(Duration(seconds: seconds + 1));
+    final shown = mobile.asked.where((id) => id == 'A').length;
+    expect(shown, greaterThanOrEqualTo(2), reason: 'polled while the Board shows');
+    await tester.tap(find.byKey(HomeShell.mapTabKey));
+    await tester.pumpAndSettle();
+    final before = mobile.asked.where((id) => id == 'A').length;
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(Duration(seconds: seconds));
+    }
+    expect(mobile.asked.where((id) => id == 'A').length, before, reason: 'no fetches behind the Map');
+    await tester.tap(find.byKey(HomeShell.boardTabKey));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(mobile.asked.where((id) => id == 'A').length, before + 1, reason: 'one refresh on coming back');
+    await tester.pumpAndSettle();
   });
 }
