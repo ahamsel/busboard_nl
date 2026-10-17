@@ -36,6 +36,7 @@ final _rows = [
 Widget _app(Widget home, Brightness b) => ProviderScope(
       overrides: [
         gtfsRepositoryProvider.overrideWith((ref) async => GtfsRepository()),
+        appVersionProvider.overrideWith((ref) async => '1.5.0'),
         serviceUpdatesProvider.overrideWith((ref) => Stream.value(ServiceUpdates(
               alerts: [
                 ServiceAlert(sourceIds: const {'a'}, header: 'Water Street Detour',

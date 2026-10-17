@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../data/gtfs/gtfs_models.dart';
 import '../data/gtfs/gtfs_repository.dart';
 import '../data/realtime/metrobus_mobile_api.dart';
@@ -340,3 +341,6 @@ final busTrackingStreamProvider = StreamProvider<Map<String, BusTrackingState>>(
 final stopInfoProvider = Provider.family<StopInfo?, String>((ref, stopId) {
   return ref.watch(gtfsRepositoryProvider.select((s) => s.value?.stopsById[stopId]));
 });
+
+/// The version the app was built as (pubspec's version, e.g. "1.5.1"), for Settings → About.
+final appVersionProvider = FutureProvider<String>((ref) async => (await PackageInfo.fromPlatform()).version, retry: (_, _) => null);
