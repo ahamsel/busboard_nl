@@ -35,6 +35,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final bb = context.bb;
     final settings = ref.watch(settingsProvider);
+    final version = ref.watch(appVersionProvider).value;
     final notifier = ref.read(settingsProvider.notifier);
     final mapChoice = switch (settings.mapThemeMode) {
       BBThemeMode.light => _MapThemeChoice.light,
@@ -139,7 +140,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ]),
                 const SizedBox(height: BBSpace.l),
                 section('About', BBIcons.info, [
-                  Text('BusBoard NL v1.1.0', style: bb.text.label),
+                  Text(version == null ? 'BusBoard NL' : 'BusBoard NL v$version', style: bb.text.label),
                   const SizedBox(height: BBSpace.xs),
                   Text(
                     'Personalized arrival board for Metrobus\n'
