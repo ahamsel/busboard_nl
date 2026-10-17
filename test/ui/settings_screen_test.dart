@@ -8,6 +8,7 @@ import 'package:busboard_nl/ui/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<ProviderContainer> _pump(WidgetTester tester, {Future<GtfsRepository> Function()? gtfs, double textScale = 1, Map<String, Object> prefs = const {}}) async {
@@ -34,6 +35,15 @@ Future<ProviderContainer> _pump(WidgetTester tester, {Future<GtfsRepository> Fun
 }
 
 void main() {
+  testWidgets('About shows the version the app was built as, not a typed-in one', (tester) async {
+    PackageInfo.setMockInitialValues(
+        appName: 'BusBoard NL', packageName: 'com.ahamsel.busboard_nl', version: '1.5.1', buildNumber: '13', buildSignature: '');
+    await _pump(tester);
+    await tester.scrollUntilVisible(find.textContaining('BusBoard NL v'), 200);
+    expect(find.text('BusBoard NL v1.5.1'), findsOneWidget);
+    expect(find.textContaining('v1.1.0'), findsNothing);
+  });
+
   testWidgets('app theme segments write themeMode', (tester) async {
     final c = await _pump(tester);
     await tester.tap(find.text('Dark').first);
