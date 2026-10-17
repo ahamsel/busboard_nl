@@ -1,7 +1,7 @@
 name: busboard_nl
 description: "BusBoard NL - Personalized arrival board for Metrobus St. John's, NL"
 publish_to: 'none'
-version: 1.5.0+11
+version: 1.5.0+12
 
 environment:
   sdk: ^3.13.0
