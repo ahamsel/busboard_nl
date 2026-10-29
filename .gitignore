@@ -52,3 +52,6 @@ app.*.map.json
 
 # Brainstorming companion mockups (local only)
 .superpowers/
+
+# Reddit drafts: kept local
+store/marketing/reddit/
