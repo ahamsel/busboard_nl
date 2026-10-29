@@ -1,47 +1,57 @@
 # BusBoard NL
 
-Personalized arrival board and live bus tracking map for **Metrobus** — St. John's, Mount Pearl & Paradise, NL.
+Live arrivals and a live bus map for **Metrobus** riders in St. John's, Mount Pearl and Paradise, NL. Published on iOS and Android, used by 100+ riders a month.
 
-## What It Does
+[App Store](https://apps.apple.com/ca/app/busboard-nl/id6759234328) · [Google Play](https://play.google.com/store/apps/details?id=com.ahamsel.busboard_nl) · [Project page](https://ahamsel.com/busboard)
 
-### Arrival Board
-- **Select a stop** by entering its 4-digit ID or using **Near Me** GPS discovery
-- **View an arrival board** showing all upcoming departures: route number, headsign, scheduled time, and "in X min" countdown
-- **Live ETA adjustments** via TimeTrack — shows AHEAD / BEHIND / ON TIME badges when live data is available
-- **Pull-to-refresh** for immediate updates
+<!-- Demo video: drag BusBoardNL-1.5-tour.mp4 into this README in the GitHub web editor, it uploads and inserts a player link here -->
 
-### Live Map
-- **Harbour map styles** — quiet light and dark basemaps built on OpenFreeMap (no API key), following the app theme or the Settings map-theme override
-- **Real-time bus positions** as route-badge markers (the route's number on its colour) with a heading notch; a bus with no recent fix turns grey
-- **Smooth animation** — buses are drawn a little behind live and glide along route shapes between GPS updates (see Bus Motion)
-- **Your stop** is marked with a brand-blue star; other stops appear as small dots once you zoom in
-- **Stop and route chips** — the top-left chip names your stop and opens the stop picker; the top-right chip opens the route filter, a card of route badges to show only the routes you choose
-- **My location** control to recentre on where you are
-- **One floating sheet** that follows what you tap: your stop's next arrivals by default, a stop card (arrivals, *Set as my stop*, *Open board*) when you tap a stop, and a bus card (route, destination, early/late, technical details) when you tap a bus; drag it between peek, half and full
-- **Map credit link** — "© OpenStreetMap · OpenFreeMap" opens the full credits
-- **Follow mode** — follow one bus from **Follow** on a bus card, or by tapping a live row on the Board
-  - the bus's route line is drawn in the route colour (the part already driven fades), the followed bus is drawn larger and the other buses fade
-  - the camera keeps the bus and your stop in view and closes in as the bus nears; a pan or zoom pauses it and shows a "Back to bus" chip that resumes it
-  - the follow card shows the stops to your stop, a stop strip (driven, the bus, upcoming, your stop) and *Stop following* and *See all stops* (a timeline of the rest of the trip with ETAs)
-  - it ends on its own: "Arrived at …" and 10 s later, a toast when the bus passes your stop or its trip ends, and "Last seen …" when the bus drops out of the feed (a toast after 5 min); it never switches to another bus
-  - a bus that never shows up on the map ("Finding bus …") ends the follow with a toast after 60 s
-  - the feed relabels trips on the timetable clock, so a new trip ID alone does not end it: it keeps the old trip while the bus is still driving it, and moves to the new trip when that one serves your stop
-  - after the phone has been locked, nothing ends until the first fresh poll
+<table>
+  <tr>
+    <td><img src="store/marketing/out/iphone/01-arrivals.png" width="200" alt="Arrival board"></td>
+    <td><img src="store/marketing/out/iphone/02-map.png" width="200" alt="Live map"></td>
+    <td><img src="store/marketing/out/iphone/03-follow.png" width="200" alt="Follow a bus"></td>
+    <td><img src="store/marketing/out/iphone/04-plan.png" width="200" alt="Trip planner"></td>
+  </tr>
+</table>
 
-### Settings
-- **Configurable refresh interval** (5–60s, default 5s) — controls both map and board polling
-- **GTFS data management** — force re-download of schedule data
-- **Selected stop** persisted across sessions
+## Features
+
+- **Arrival board** for any stop (4-digit ID or Near Me), with live AHEAD / BEHIND / ON TIME badges
+- **Live map** of every bus, gliding along its route between GPS fixes instead of jumping
+- **Follow a bus** to your stop, with a stop strip and ETAs for the rest of the trip
+- **Trip planner**, **arrival alerts** and **service alerts**
+- Light and dark map styles built on OpenFreeMap (no API key)
+
+## Tech
+
+Flutter / Dart, Riverpod, GoRouter, MapLibre, the GTFS static schedule plus Metrobus's public GTFS-Realtime feeds. Map motion logic is pure Dart in `lib/domain/map/` and is tested by replaying recorded live-feed captures (`test/fixtures/timetrack/`). About 100 test files.
+
+## How it's built (Claude Code)
+
+I build this app with Claude Code. Each feature starts as a written spec, then a step-by-step plan, then a build ledger, all kept in the repo:
+
+- Specs: [`docs/superpowers/specs/`](docs/superpowers/specs/) (redesign, arrival alerts, trip planner)
+- Plans: [`docs/superpowers/plans/`](docs/superpowers/plans/)
+- Build notes: [`docs/superpowers/notes/`](docs/superpowers/notes/)
+
+I review every diff and test on real devices before a store release.
+
+---
 
 ## Data Sources
 
 | Source | URL | Purpose |
 |--------|-----|---------|
-| GTFS Schedule ZIP | `metrobus.com/gtfs.asp` | Static schedule (stops, routes, trips, stop times, shapes, calendars) |
-| TimeTrack JSON | `metrobus.co.ca/api/timetrack/json/` | Live vehicle positions, speed, heading, schedule adherence |
+| GTFS Schedule ZIP | `metrobustransit.ca/google/google_transit.zip` | Static schedule (stops, routes, trips, stop times, shapes, calendars) |
+| GTFS-Realtime Vehicle Positions | `mbusapi.ca/gtfsrt/vehiclepositions` | Live position, heading and trip of each bus |
+| GTFS-Realtime Trip Updates | `mbusapi.ca/gtfsrt/tripupdates` | Predicted arrival times |
+| GTFS-Realtime Service Alerts | `mbusapi.ca/gtfsrt/servicealerts` | Detours, delays and service changes |
 
-### TimeTrack API Data
-Each vehicle reports: lat/lon, speed (km/h), compass heading, route number, headsign, GTFS trip ID, schedule deviation. GPS hardware on buses updates every ~15 seconds (variable per bus, 9–60s observed).
+All of these are public feeds Metrobus publishes for apps to use. If the GTFS-Realtime positions are unavailable, the app falls back to the older Metrobus TimeTrack JSON feed.
+
+### Live data
+Each vehicle reports its position, heading, physical vehicle ID and GTFS trip. GPS hardware on buses updates every ~15 seconds (variable per bus, 9–60s observed).
 
 ## Caching & Refresh Policy
 
@@ -67,7 +77,7 @@ lib/
   routing/router.dart               → GoRouter (bottom nav: Board, Map, Settings)
   data/
     gtfs/                           → GTFS download, parse, models, time utils
-    realtime/                       → TimeTrack API client & models
+    realtime/                       → GTFS-Realtime client (TimeTrack fallback) & models
   domain/
     arrival/                        → Arrival computation & live merging
     location/                       → Nearest stop (haversine)
