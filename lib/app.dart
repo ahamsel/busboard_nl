@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'demo/demo_tour.dart';
 import 'routing/notification_route.dart';
 import 'routing/router.dart';
 import 'ui/kit/bb_theme.dart';
@@ -52,6 +53,7 @@ class _BusboardAppState extends ConsumerState<BusboardApp> {
       themeMode: settings.themeMode,
       scrollBehavior: const BBScrollBehavior(),
       routerConfig: appRouter,
+      builder: kDemoTour ? (context, child) => DemoTouches(child: child!) : null,
     );
   }
 }

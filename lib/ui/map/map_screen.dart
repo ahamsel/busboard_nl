@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' show LatLng;
 
 import '../../data/gtfs/gtfs_models.dart';
+import '../../demo/demo_tour.dart';
 import '../../data/gtfs/gtfs_repository.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/map/bus_tracking_state.dart';
@@ -273,6 +274,14 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     _surface = surface;
     _camera = camera;
     _fitJourneyIfDue();
+    if (kDemoTour && surface is MapLibreSurface) {
+      DemoMapHooks.current = DemoMapHooks(
+        controller: surface.controller,
+        tap: _onTap,
+        selectStop: (id) => _select(StopSelection(id)),
+        markers: () => _lastMarkers,
+      );
+    }
   }
 
   Future<void> _onStyleLoaded() async {

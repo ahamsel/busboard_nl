@@ -37,6 +37,8 @@ dev_dependencies:
   test: ^1.29.0
   flutter_driver:
     sdk: flutter
+  integration_test:
+    sdk: flutter
   flutter_launcher_icons: ^0.14.4
   shared_preferences_platform_interface: ^2.4.1
 
