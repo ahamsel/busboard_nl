@@ -1,6 +1,6 @@
 [
   {
     "language": "en-US",
-    "text": "New in 1.5.0:\n• A fresh look: new icon, brighter blue, cleaner greys\n• Two tabs, Board and Map. Plan a trip, service alerts and settings sit at the top of both\n• A Plan a trip card on the first screen, with your saved trips and their next bus\n• Live buses show a Follow button: tap the row to follow your bus on the map\n• Trip names read normally instead of in capitals\n• Late at night, a stop shows when its first bus comes\n• Times no longer freeze when the schedule reloads, plus other fixes"
+    "text": "New in 1.5.1:\n• When Metrobus's live tracking stops updating, the app says so and shows the schedule instead of treating old bus positions as live\n• The map tells you when no buses are reporting\n• Phones stay upright; tablets still turn\n• Settings shows the right app version"
   }
 ]
