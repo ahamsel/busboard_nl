@@ -3,6 +3,7 @@ import '../../data/gtfs/gtfs_time.dart';
 import '../../data/realtime/metrobus_mobile_api.dart';
 import '../../data/realtime/timetrack_models.dart';
 import '../../data/realtime/timetrack_api.dart';
+import '../arrival_alerts/gtfs_rt_source.dart' show isLiveFix;
 import 'arrival_models.dart';
 
 /// Computes upcoming arrivals for a given stop.
@@ -43,9 +44,9 @@ class ArrivalService {
     // times count from that same midnight: yesterday's 24:15 is today's 00:15.
     final nowTime = GtfsTime.fromDateTime(now);
 
-    // Build live vehicle index if available
+    // Build live vehicle index if available. A frozen feed's days-old fixes carry trip ids that run again today.
     final liveIndex = liveVehicles != null
-        ? TimeTrackApi.buildTripIndex(liveVehicles, now: now)
+        ? TimeTrackApi.buildTripIndex([for (final v in liveVehicles) if (isLiveFix(v, now)) v], now: now)
         : <String, TimeTrackVehicle>{};
 
     final arrivals = <ArrivalRow>[];

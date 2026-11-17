@@ -11,6 +11,7 @@ import '../../data/realtime/service_alert_models.dart';
 import '../../data/realtime/timetrack_models.dart';
 import '../../domain/arrival/arrival_models.dart';
 import '../../domain/arrival/arrival_service.dart';
+import '../../domain/arrival_alerts/gtfs_rt_source.dart' show isLiveFix;
 import '../alerts/service_alert_card.dart';
 import '../arrival_alerts/alert_bell.dart';
 import '../arrival_alerts/alert_strip.dart';
@@ -123,9 +124,10 @@ class _ArrivalBoardScreenState extends ConsumerState<ArrivalBoardScreen>
         final result = await api.fetchVehiclesResult();
         if (result.succeeded) {
           liveVehicles = result.vehicles;
-          liveOk = liveVehicles.isNotEmpty;
+          final fetchedAt = DateTime.now();
+          liveOk = liveVehicles.any((v) => isLiveFix(v, fetchedAt));
           if (!liveOk) {
-            liveIssue = 'No live vehicles';
+            liveIssue = liveVehicles.isEmpty ? 'No live vehicles' : 'Live feed out of date';
           }
         } else {
           liveIssue = 'Live feed error';

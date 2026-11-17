@@ -54,6 +54,26 @@ final _liveFeed = MockClient((request) async {
   return http.Response('down', 500);
 });
 
+/// [_liveFeed] frozen, as Metrobus's tracking was 2026-11-14 to 17: the feed answers, its one fix 3 days old.
+final _frozenFeed = MockClient((request) async {
+  if (!request.url.path.endsWith('vehiclepositions')) return http.Response('down', 500);
+  final fixedAt = DateTime.now().subtract(const Duration(days: 3));
+  return http.Response.bytes(
+    FeedMessage(header: FeedHeader(gtfsRealtimeVersion: '2.0'), entity: [
+      FeedEntity(
+        id: 'vehicle-0859',
+        vehicle: VehiclePosition(
+          trip: TripDescriptor(tripId: 'trip-20', routeId: '20'),
+          position: Position(latitude: 47.53, longitude: -52.75),
+          timestamp: Int64(fixedAt.millisecondsSinceEpoch ~/ 1000),
+          vehicle: VehicleDescriptor(id: '0859'),
+        ),
+      ),
+    ]).writeToBuffer(),
+    200,
+  );
+});
+
 /// Same feed as [_liveFeed] but for vehicle 2573 on trip-20.
 final _liveFeed2573 = MockClient((request) async {
   if (request.url.path.endsWith('vehiclepositions')) {
@@ -267,6 +287,11 @@ void main() {
       find.semantics.byLabel('Live feed error · showing schedule'),
       isSemantics(isLiveRegion: true, label: 'Live feed error · showing schedule'),
     );
+    await _unmount(tester);
+
+    await _pump(tester, repo: _repo(), timeTrackClient: _frozenFeed);
+    expect(find.textContaining('Live feed out of date · showing schedule'), findsOneWidget,
+        reason: 'a feed that answers with days-old fixes is not live');
     await _unmount(tester);
 
     await _pump(tester, repo: _repo(), timeTrackClient: _liveFeed);
