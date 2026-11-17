@@ -8,6 +8,13 @@ import 'arrival_alert.dart';
 /// A vehicle fix older than this is a feed ghost, not a live bus.
 const liveFixMaxAge = Duration(minutes: 5);
 
+/// The Board's live test: a fix under [liveFixMaxAge] old, read from either feed's time. A fix the feed gives no time
+/// for still counts, as before. When Metrobus's tracking freezes, the feed keeps answering with days-old fixes.
+bool isLiveFix(TimeTrackVehicle v, DateTime now) {
+  final age = TimeTrackApi.positionAge(v, now);
+  return age == null || age <= liveFixMaxAge;
+}
+
 /// The alert's live departure from the GTFS-RT feeds, in the shape [AlertTracker] reads (spec §3.1, §3.2).
 ///
 /// The time is the trip update's own time at the alert's stop ([TimeTrackFetchResult.stopTimes], matched by stop

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:busboard_nl/data/gtfs/gtfs_models.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_repository.dart';
 import 'package:busboard_nl/data/gtfs/gtfs_time.dart';
+import 'package:busboard_nl/data/realtime/timetrack_api.dart';
 import 'package:busboard_nl/domain/arrival/arrival_models.dart';
 import 'package:busboard_nl/domain/trip_planner/journey.dart';
 import 'package:busboard_nl/domain/trip_planner/place.dart';
@@ -281,6 +282,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Stop 1150'), findsNothing);
     expect(find.text('Choose a stop to see its next buses'), findsOneWidget);
+  });
+
+  testWidgets('an empty map says no buses are reporting, once a feed has answered', (tester) async {
+    // 2026-11-14 to 17: Metrobus's tracking froze, the feed answered with days-old fixes and the map stayed blank.
+    const banner = 'No buses are reporting right now';
+    void answer() => ProviderScope.containerOf(tester.element(find.byType(MapScreen)))
+        .read(recentLiveFeedProvider.notifier)
+        .record(DateTime(2026, 11, 17), const TimeTrackFetchResult.success([], source: LiveDataSource.gtfsRealtime));
+
+    await _pump(tester);
+    expect(find.text(banner), findsNothing, reason: 'no poll has answered yet');
+    answer();
+    await tester.pump();
+    expect(find.text(banner), findsOneWidget);
+  });
+
+  testWidgets('a map with buses on it shows no such notice', (tester) async {
+    await _pump(tester, buses: {'2573': _bus()});
+    ProviderScope.containerOf(tester.element(find.byType(MapScreen)))
+        .read(recentLiveFeedProvider.notifier)
+        .record(DateTime(2026, 11, 17), const TimeTrackFetchResult.success([], source: LiveDataSource.gtfsRealtime));
+    await tester.pump();
+    expect(find.text('No buses are reporting right now'), findsNothing);
   });
 
   testWidgets('tapping near a bus opens its card', (tester) async {

@@ -802,6 +802,9 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
     final settings = ref.watch(settingsProvider);
     final myStop = settings.selectedStopId == null ? null : ref.watch(stopInfoProvider(settings.selectedStopId!));
     final filter = ref.watch(mapRouteFilterProvider);
+    // Once a feed has answered: an empty map then says why (overnight, or Metrobus's tracking frozen).
+    final noBuses = ref.watch(recentLiveFeedProvider.select((f) => f != null)) &&
+        ref.watch(busTrackingStreamProvider.select((t) => t.value?.isEmpty ?? false));
     final selection = ref.watch(mapSelectionProvider);
     final selectedStop = selection is StopSelection ? ref.watch(stopInfoProvider(selection.stopId)) : null;
     final repo = gtfs.value!;
@@ -965,6 +968,7 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
                       ),
                     ),
                   ],
+                  if (noBuses) ...[const SizedBox(height: BBSpace.m), _noBusesBanner()],
                 ],
               ),
             ),
@@ -1049,6 +1053,29 @@ class _MapScreenState extends ConsumerState<MapScreen> with WidgetsBindingObserv
         ),
       );
     });
+  }
+
+  /// Why the map is empty: the feed answered, but no bus is on it.
+  Widget _noBusesBanner() {
+    final bb = context.bb;
+    return DecoratedBox(
+      decoration: bb.floating(radius: BBRadius.sheet),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: BBSpace.l, vertical: BBSpace.m),
+        child: Row(
+          children: [
+            Icon(BBIcons.noService, size: 20, color: bb.colors.brand),
+            const SizedBox(width: BBSpace.s),
+            Expanded(
+              child: Semantics(
+                liveRegion: true,
+                child: Text('No buses are reporting right now', style: bb.text.body),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// What the next tap chooses, and a way out without choosing.

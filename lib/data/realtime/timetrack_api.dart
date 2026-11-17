@@ -658,7 +658,7 @@ class TimeTrackApi {
     for (final vehicle in vehicles) {
       final trip = vehicle.gtfsTripId;
       if (trip.isEmpty) continue;
-      final age = _positionAge(vehicle, at) ?? _unknownPositionAge;
+      final age = positionAge(vehicle, at) ?? _unknownPositionAge;
       final best = ages[trip];
       if (best == null || age <= best) {
         map[trip] = vehicle;
@@ -673,7 +673,7 @@ class TimeTrackApi {
   /// How old [v]'s position is at [now]: from its full timestamp when it has
   /// one, else from its seconds of the day, read as the most recent such
   /// time (so 00:00:30 is newer than 23:40 just after midnight).
-  static Duration? _positionAge(TimeTrackVehicle v, DateTime now) {
+  static Duration? positionAge(TimeTrackVehicle v, DateTime now) {
     final stamp = DateTime.tryParse(v.positionTime);
     if (stamp != null) return now.difference(stamp);
     final seconds = v.positionTimeSeconds;
